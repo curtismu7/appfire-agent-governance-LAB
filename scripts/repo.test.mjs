@@ -72,7 +72,7 @@ test('the CI workflow is GitHub-hosted, Node 26 only, and carries the forbidden-
   assert.match(ci, /runs-on: ubuntu-latest/); assert.ok(!/self-hosted/.test(ci));
   const versions = [...ci.matchAll(/node-version: (\S+)/g)].map((m) => m[1]);
   assert.ok(versions.length >= 3 && versions.every((v) => v === '26'), versions.join());
-  assert.match(ci, /forbidden-strings:/); assert.match(ci, /gitleaks/); assert.match(ci, /PORT=5609 npm run doctor/);
+  assert.match(ci, /forbidden-strings:/); assert.match(ci, /gitleaks/); assert.match(ci, /PORT=7816 npm run doctor/);
   assert.match(ci, /actions\/checkout@v5/); assert.match(ci, /actions\/setup-node@v5/);
   assert.match(ci, /scripts\/validate-content-pack\.mjs/);
 });
