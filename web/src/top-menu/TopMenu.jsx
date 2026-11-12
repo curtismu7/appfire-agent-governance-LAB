@@ -132,6 +132,8 @@ export default function TopMenu({
         {onReset && (
           <button type="button" data-testid="reset" onClick={onReset}>Reset</button>
         )}
+        {extra && <span className="top-menu__extra">{extra}</span>}
+        {children}
       </span>
       {/* row 2: theme + text size */}
       <span className="top-menu__row">
@@ -162,8 +164,6 @@ export default function TopMenu({
           </>
         )}
       </span>
-      {extra && <span className="top-menu__extra">{extra}</span>}
-      {children}
     </span>
   );
 }

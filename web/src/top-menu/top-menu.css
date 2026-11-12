@@ -114,8 +114,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
+  white-space: nowrap;
 }
 
 /* Sign in stands alone: centered on the bar's top line. The slot is absolutely
