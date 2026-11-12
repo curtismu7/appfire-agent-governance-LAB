@@ -20,7 +20,7 @@ import { loadResume, saveResume, takeReturn } from "./resume";
 import ShelfLink from "./components/ShelfLink.jsx";
 import DemoGuide from "./components/DemoGuide";
 import SignInDialog from "./components/SignInDialog";
-import TopMenu from "./top-menu/TopMenu.jsx";
+import TopMenu, { applyFontSize } from "./top-menu/TopMenu.jsx";
 import "./top-menu/top-menu.css";
 import "./layout.css";
 
@@ -41,6 +41,7 @@ const PRESENTER_TALK = { agent: ["say-first", "tracks", "delegation", "live"], r
 const THEME_KEY = "cal.theme";
 const THEMES = [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]];
 
+const FONT_KEY = "aag-font-step";
 const savedTheme = () => { try { const t = window.localStorage.getItem(THEME_KEY); return THEMES.some(([id]) => id === t) ? t : "auto"; } catch { return "auto"; } };
 const applyTheme = (t) => { const root = document.documentElement; if (t === "light" || t === "dark") root.setAttribute("data-theme", t); else root.removeAttribute("data-theme"); };
 const viewFromHash = () => window.location.hash.replace("#", "");
@@ -71,6 +72,8 @@ export default function App() {
   const [runCount, setRunCount] = useState(0);
   const [view, setView_] = useState(viewFromHash());
   const [theme, setThemeState] = useState(savedTheme);
+  const [fontStep, setFontStep] = useState(() => { try { return window.localStorage.getItem(FONT_KEY) || "M"; } catch { return "M"; } });
+  useEffect(() => { applyFontSize(fontStep); try { window.localStorage.setItem(FONT_KEY, fontStep); } catch { /* storage blocked */ } }, [fontStep]);
   const [cfg, setCfg] = useState(() => loadConfig(workspaceId()));
   const [qcOpen, setQcOpen] = useState(false);
   const [turns, setTurns] = useState(resumed?.turns || []);
@@ -369,6 +372,7 @@ export default function App() {
           <TopMenu
             mode={{ value: mode === "live" ? "real" : "mock", onChange: (m) => chooseMode(m === "real" ? "live" : "mock"), realAvailable: hostedOnly ? false : Boolean(liveReason) && mode !== "live" ? false : null, realHint: liveReason || (hostedOnly ? HOSTED_REAL_NOTE : realTitle) }}
             theme={{ value: theme, onChange: setTheme }}
+            fontSize={{ value: fontStep, onChange: setFontStep }}
             present={{ active: presenter, onToggle: () => setPresenter((v) => !v), label: "Presenter (P)" }}
             help={{ onClick: () => setGuideOpen(true), label: "Demo guide" }}
             version={info?.version || null}
