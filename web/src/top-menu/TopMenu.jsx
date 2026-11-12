@@ -122,8 +122,8 @@ export default function TopMenu({
           </a>
         )}
         {help && (
-          <button type="button" className="top-menu__shelf" onClick={help.onClick || (() => { window.location.hash = "#readme"; })} title="Open this lab's documentation" data-testid="help-link">
-            Help
+          <button type="button" className="top-menu__shelf" onClick={help.onClick || (() => { window.location.hash = "#readme"; })} title={help.title || "Open this lab's documentation"} data-testid="help-link">
+            {help.label || "Help"}
           </button>
         )}
         {version && (

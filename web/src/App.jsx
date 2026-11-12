@@ -18,6 +18,7 @@ import { chooseTab, cleanConfig, loadConfig, saveConfig, setView } from "./quick
 import { workspaceId } from "./workspace";
 import { loadResume, saveResume, takeReturn } from "./resume";
 import ShelfLink from "./components/ShelfLink.jsx";
+import DemoGuide from "./components/DemoGuide";
 import SignInDialog from "./components/SignInDialog";
 import TopMenu from "./top-menu/TopMenu.jsx";
 import "./top-menu/top-menu.css";
@@ -82,6 +83,8 @@ export default function App() {
   // Full Real (owner, 2026-11-10): who is signed in for this workspace, the Sign in dialog, and the run that waits for the sign-in.
   const [signin, setSignin] = useState(null);
   const [signOpen, setSignOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideRunning, setGuideRunning] = useState(null); // the use case a guide step's Run button started
   const pendingRun = useRef(null);
   const runRef = useRef(null);
   const runSeq = useRef(0);
@@ -220,6 +223,16 @@ export default function App() {
   };
   const run = () => startRun(uc, { said: `Run ${uc?.id} (picked from the list)`, how: "picked" });
 
+  // The demo guide's Run button: select the use case (which also sets the persona it needs), run it in the agent column.
+  const guideRun = (step) => {
+    if (!step?.uc) return;
+    pick(step.uc);
+    const u = allUc.find((x) => x.id === step.uc);
+    if (!u) return;
+    setGuideRunning(step.uc);
+    startRun(u, null, personaFor(u) || persona).finally(() => setGuideRunning(null));
+  };
+
   // The brain picks one use case of this vertical's What to type list, and the engine runs it. Scripted matches the words here. llama.cpp asks the
   // server, which returns only an id from that list (or a reason); when it cannot answer, Routing decides: Fallback uses Scripted and says so,
   // LLM only says so and runs nothing. Neither brain ever writes the answer.
@@ -357,7 +370,7 @@ export default function App() {
             mode={{ value: mode === "live" ? "real" : "mock", onChange: (m) => chooseMode(m === "real" ? "live" : "mock"), realAvailable: hostedOnly ? false : Boolean(liveReason) && mode !== "live" ? false : null, realHint: liveReason || (hostedOnly ? HOSTED_REAL_NOTE : realTitle) }}
             theme={{ value: theme, onChange: setTheme }}
             present={{ active: presenter, onToggle: () => setPresenter((v) => !v), label: "Presenter (P)" }}
-            help={{ href: "./#readme" }}
+            help={{ onClick: () => setGuideOpen(true), label: "Demo guide" }}
             version={info?.version || null}
             onReset={reset}
             showSignIn={mode === "live" && realLevel === "full"}
@@ -429,6 +442,7 @@ export default function App() {
         </div>
       </main>
       <SignInDialog isOpen={signOpen} username={signin?.username} onClose={() => { setSignOpen(false); pendingRun.current = null; }} onSignedIn={afterSignIn} />
+      <DemoGuide isOpen={guideOpen} onClose={() => setGuideOpen(false)} onRun={guideRun} activeUc={guideRunning} />
     </div>
   );
 }
