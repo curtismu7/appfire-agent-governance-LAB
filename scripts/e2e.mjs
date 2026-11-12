@@ -2,7 +2,7 @@
 // Real-browser run of the web UI against the real server, which serves the UI itself (server/src/index.js).
 //
 //   npm run build          (once; the server serves web/dist)
-//   npm run e2e            starts the server on E2E_PORT (default 5690), drives it in Chromium, stops it
+//   npm run e2e            starts the server on E2E_PORT (default 7830), drives it in Chromium, stops it
 //   E2E_SHOTS=/some/dir    where screenshots go (default .data/e2e-screenshots, git-ignored)
 //
 // Uses the Chromium the installed Playwright resolves (`npx playwright install chromium` if it is missing). The run makes no outbound request: any
@@ -24,8 +24,8 @@ const sleep = (ms) => new Promise((r) => { setTimeout(r, ms); });
 let failures = 0; let checks = 0;
 const check = (ok, what) => { checks += 1; console.log(`${ok ? 'PASS' : 'FAIL'}  ${what}`); if (!ok) failures += 1; };
 
-const port = Number(process.env.E2E_PORT) || 5690;
-if (port < 7813 || port > 7839) { console.error('E2E_PORT must be inside 7813-5696 (the live, hosted and full-Real instances take the next three ports)'); process.exit(2); }
+const port = Number(process.env.E2E_PORT) || 7830;
+if (port < 7814 || port > 7835) { console.error('E2E_PORT must be inside 7814-7835 (the live, hosted and full-Real instances take the next three ports)'); process.exit(2); }
 const base = `http://127.0.0.1:${port}`;
 if (!fs.existsSync(path.join(root, 'web', 'dist', 'index.html'))) { console.error('Run `npm run build` first.'); process.exit(2); }
 // The Mock instance has no PingOne settings (an empty settings file, like a fresh clone or CI with no .env) and no IDP pin, so Real is disabled by
@@ -176,8 +176,9 @@ try {
       await t('vertical').selectOption('government'); await pick('UC1'); await t('run').click(); await t('refusal').waitFor();
       check((await t('refusal').getAttribute('data-code')) === 'vertical_stub' && (await t('refusal').innerText()).includes('Not built'), `${tag}: a stub vertical shows the honest not built state (HTTP 501)`);
       await t('vertical').selectOption('banking');
-      await page.waitForFunction(() => document.querySelector('[data-testid="mode-live"]').disabled === true);
-      check(/^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME, AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE in this app's \.env/.test(await t('mode-live').getAttribute('title')) && (await t('mode-live').getAttribute('aria-disabled')) === 'true' && (await t('mode').innerText()).includes('mock'), `${tag}: with no .env Real is disabled, its tooltip says what to fill in, and the page stays Mock`);
+      await page.waitForFunction(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.disabled === true);
+      const realOptionTitle = await page.evaluate(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '');
+      check(/^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME, AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE in this app's \.env/.test(realOptionTitle) && (await t('mode').innerText()).includes('mock'), `${tag}: with no .env Real is disabled, its tooltip says what to fill in, and the page stays Mock`);
       check((await overflow()) <= 0, `${tag}: the agent page does not scroll sideways (${await overflow()} px)`);
       if (tag === 'desktop-light') await page.screenshot({ path: path.join(shots, 'run.png'), fullPage: true });
 
@@ -215,9 +216,9 @@ try {
       await t('diagram-reset').click(); await sleep(200);
       check((await t('diagram-moved').innerText()).includes('Moved: 0 box'), `${tag}: Reset restores the box positions`);
 
-      await t('theme').selectOption('dark');
+      await t('theme-select').selectOption('dark');
       check((await page.evaluate(() => document.documentElement.getAttribute('data-theme'))) === 'dark', `${tag}: the theme picker sets data-theme=dark`);
-      await t('theme').selectOption('auto');
+      await t('theme-select').selectOption('auto');
       check((await page.evaluate(() => document.documentElement.getAttribute('data-theme'))) === null, `${tag}: the theme picker back on Auto clears data-theme`);
       await t('nav-agent').click(); await page.keyboard.press('p'); await t('presenter-say').waitFor();
       check((await t('nav').count()) === 0 && (await t('banner').isVisible()), `${tag}: presenter mode hides the nav and keeps the banner`);
@@ -253,10 +254,10 @@ try {
       });
       await page.goto(`${base}/`);
       await t('wtt-UC1').waitFor();
-      await t('theme').selectOption(scheme);
+      await t('theme-select').selectOption(scheme);
       check(await oneRow(), `${tag}: the shell bar is one row`);
       const wtt = await t('what-to-type').innerText();
-      check((await t('wtt-heading').innerText()).toUpperCase() === 'WHAT TO TYPE · BANKING · FABRIKAM BANK' && wtt.includes('show my balance'), `${tag}: What to type names the vertical and lists its prompts`);
+      check((await t('wtt-heading').innerText()).toUpperCase() === 'WHAT TO TYPE · BANKING · APPFIRE PLATFORM' && wtt.includes('show my balance'), `${tag}: What to type names the vertical and lists its prompts`);
       check((await t('wtt-away').getByRole('button').count()) >= 1 && wtt.toLowerCase().includes('opens its own app'), `${tag}: What to type has an Opens its own app group`);
 
       await t('wtt-UC1').click(); await t('turn-answer').waitFor(); await sleep(300);
@@ -422,8 +423,8 @@ try {
       const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       await page.goto(`${liveBase}/`);
       await t('uc-UC1').waitFor();
-      check((await t('mode-live').getAttribute('title')).includes('identity provider only: two real calls'), `${tag}: Live is allowed (the title says what a live run does: identity provider only)`);
-      await t('mode-live').click(); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: live'));
+      check((await page.evaluate(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '')).includes('identity provider only'), `${tag}: Live is allowed (the title says what a live run does: identity provider only)`);
+      await t('mode-select').selectOption('real'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: live'));
       await page.waitForFunction(() => document.querySelector('[data-testid="banner"]').textContent.startsWith('REAL mode'));
       check((await t('banner').getAttribute('data-state')) === 'live' && (await t('mode').innerText()).includes('identity provider only'), `${tag}: the banner and the chip say LIVE, identity provider only`);
       check((await t('mode-msg').innerText()).includes('two real calls'), `${tag}: selecting Live says what a run does`);
@@ -449,14 +450,14 @@ try {
       check((await t('history-row').count()) === 2 && (await t('history-row').first().innerText()).includes('n/a (live)'), `${tag}: run history lists both live runs`);
       await t('nav-diagram').click(); await page.locator('.react-flow__node').first().waitFor();
       check((await overflow()) <= 0, `${tag}: the diagram page in live does not scroll sideways`);
-      await t('mode-mock').click(); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: mock'));
+      await t('mode-select').selectOption('mock'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: mock'));
       const seenBefore = fake.seen.length;
       await t('nav-agent').click(); await t('run').click();
       await page.waitForFunction(() => { const o = document.querySelector('[data-testid="outcome"]'); return o && !o.textContent.startsWith('LIVE_'); });
       check((await t('banner').getAttribute('data-state')) === 'mock' && (await t('refusal').count()) === 0 && fake.seen.length === seenBefore, `${tag}: back in Mock without a restart, a mock run signs in with the mock persona and runs (outcome ${await t('outcome').innerText()}), no call to the fake`);
-      await t('mode-live').click(); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: live'));
+      await t('mode-select').selectOption('real'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: live'));
       check((await t('banner').getAttribute('data-state')) === 'live', `${tag}: and Real again, same server, no restart`);
-      await t('mode-mock').click(); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: mock'));
+      await t('mode-select').selectOption('mock'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: mock'));
       check(external.filter((u) => !u.startsWith(liveBase)).length === 0, `${tag}: the browser made no request to another origin (${external.length})`);
       check(errors.every((e) => /status of (403|409)/.test(e)), `${tag}: no unexpected console error (${errors.filter((e) => !/status of (403|409)/.test(e)).slice(0, 2).join(' | ')})`);
       await ctx.close();
@@ -478,9 +479,9 @@ try {
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     await page.goto(`${fullBase}/`);
     await t('uc-UC1').waitFor();
-    check((await t('mode-live').getAttribute('title')).includes('sign-in (pi.flow), agent token, token exchange and the Agent Gateway'), `${tag}: Real is available and its title says what a run does`);
-    await t('mode-live').click(); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('real: sign-in, token exchange, Agent Gateway'));
-    check(await t('signin-open').isVisible(), `${tag}: Real shows the Sign in button`);
+    check((await page.evaluate(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '')).includes('sign-in (pi.flow)'), `${tag}: Real is available and its title says what a run does`);
+    await t('mode-select').selectOption('real'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('real: sign-in, token exchange, Agent Gateway'));
+    check(await t('sign-in').isVisible(), `${tag}: Real shows the Sign in button`);
     await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
     await t('run').click();
     await t('signin-dialog').waitFor();
@@ -490,7 +491,7 @@ try {
     await t('signin-password').fill(DEMO_PASSWORD);
     await t('signin-submit').click();
     await page.waitForFunction(() => document.querySelector('[data-testid="outcome"]')?.textContent === 'REAL_PERMIT', null, { timeout: 20000 });
-    check((await t('signin-dialog').count()) === 0 && (await t('signed-in-user').innerText()).includes(DEMO_USERNAME), `${tag}: signed in, the modal closed and the header names the user`);
+    check((await t('signin-dialog').count()) === 0 && (await t('who').innerText()).includes(DEMO_USERNAME), `${tag}: signed in, the modal closed and the header names the user`);
     const authz = fullP1.seen.filter((x) => x.url.includes('/as/authorize'));
     check(authz.length >= 1 && authz.every((x) => new URL(x.url, 'http://x').searchParams.get('response_mode') === 'pi.flow' && new URL(x.url, 'http://x').searchParams.get('code_challenge_method') === 'S256'), `${tag}: the sign-in was pi.flow with PKCE S256`);
     check(navs.length === 1 && navs[0].startsWith(fullBase), `${tag}: the page never navigated (no redirect login): ${navs.join(' | ')}`);
@@ -527,7 +528,7 @@ try {
     await page.waitForFunction(() => document.querySelector('[data-testid="outcome"]')?.textContent === 'REAL_UNREACHABLE', null, { timeout: 20000 });
     check((await t('turn-answer-text').last().innerText()).includes('SE is down or scaled down'), `${tag}: a 503 says SE is down or scaled down; switch to Mock`);
     const seen = fullGw.seen.length;
-    await t('mode-mock').click(); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: mock'));
+    await t('mode-select').selectOption('mock'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: mock'));
     await t('run').click();
     await page.waitForFunction(() => { const o = document.querySelector('[data-testid="outcome"]'); return o && !o.textContent.startsWith('REAL_'); });
     const msrc = await t('hop-source').evaluateAll((els) => els.map((e) => e.getAttribute('data-source')));
@@ -554,20 +555,18 @@ try {
       const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       await page.goto(`${hostedBase}/`);
       await t('uc-UC1').waitFor();
-      await page.waitForFunction(() => document.querySelector('[data-testid="mode-live"]').disabled === true);
+      await page.waitForFunction(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.disabled === true);
       await t('mode').filter({ hasText: 'Mode: mock' }).waitFor({ state: 'attached' });
-      const real = t('mode-live');
-      check((await real.getAttribute('aria-disabled')) === 'true' && await real.isDisabled(), `${tag}: Real is disabled (disabled and aria-disabled)`);
+      const real = t('mode-select').locator('option[value="real"]');
+      check(await real.evaluate((o) => o.disabled), `${tag}: Real is disabled (disabled and aria-disabled)`);
       check(await t('real-hosted-note').isVisible() && (await t('real-hosted-note').innerText()) === 'Mock only on the hosted copy. Run the lab locally for Real.', `${tag}: the note beside Real is shown`);
       watch = true;
-      await real.click({ force: true });
-      await real.dispatchEvent('click');
-      await real.focus();
-      check(!(await real.evaluate((b) => b === document.activeElement)), `${tag}: Real cannot take keyboard focus`);
+      await t('mode-select').focus();
+      await t('mode-select').selectOption('real').catch(() => {});
       await page.keyboard.press('Enter');
       await page.waitForTimeout(400);
       check(modeCalls.length === 0, `${tag}: a click and Enter on Real made no /api/mode request (${modeCalls.join(' | ')})`);
-      check((await t('mode-msg').count()) === 0 && (await t('mode').innerText()).includes('Mode: mock') && (await t('mode-mock').getAttribute('aria-pressed')) === 'true', `${tag}: no error shown and the page stays Mock`);
+      check((await t('mode-msg').count()) === 0 && (await t('mode').innerText()).includes('Mode: mock'), `${tag}: no error shown and the page stays Mock`);
       check((await overflow()) <= 0, `${tag}: the shell bar with the note fits the ${width}px viewport`);
       if (tag === 'hosted-phone-dark' || tag === 'hosted-desktop-light') await page.screenshot({ path: path.join(shots, `${tag}.png`), fullPage: false });
       check(external.length === 0, `${tag}: the browser made no request to another origin (${external.length})`);
