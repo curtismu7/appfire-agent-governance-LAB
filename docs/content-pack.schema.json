@@ -70,7 +70,7 @@
         },
         "catalog": {
           "type": "string",
-          "pattern": "^[A-Z][0-9]+$",
+          "pattern": "^(D000|[A-Z][0-9]+)$",
           "description": "Family-plan catalog id, e.g. C1."
         },
         "baseUrl": {

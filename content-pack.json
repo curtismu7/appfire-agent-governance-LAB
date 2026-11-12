@@ -6,7 +6,7 @@
   "demo": {
     "id": "appfire-agent-governance-lab",
     "name": "Appfire Agent Governance LAB",
-    "catalog": "D24",
+    "catalog": "D000",
     "baseUrl": "http://localhost:7814",
     "doctor": "/api/health",
     "tags": [

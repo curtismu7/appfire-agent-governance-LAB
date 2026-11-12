@@ -4,13 +4,13 @@
       "id": "appfire-agent-governance-lab",
       "name": "Appfire Agent Governance LAB",
       "kind": "Demo",
-      "description": "The customer-facing AI agent with all 87 use cases, each routed Here, Here + go deeper, Hand off or Guide. AI-DEMO2-depth movie reel, sequence view and step detail in movable cards; hand-offs to 30 labs whose Back strip resumes the chat; an A2A page; Scripted or llama.cpp brain. Mock runs offline.",
+      "description": "Built for the Appfire agentic-AI briefing: Ping governs the agent-facing front end (agent identity, delegated privileges, authorize decisions, risk-based human approval, audit) over the simulated HIVE back-end split. 87 use cases in 8 tracks with AI-DEMO2-depth movie reel, sequence view, 11 attack scenarios and hand-offs to the lab family. Mock runs offline.",
       "url": "http://localhost:7814",
       "healthPath": "/api/health",
       "composeFile": "appfire-agent-governance-LAB/docker-compose.yml",
       "composeOverlays": [],
-      "notes": "Host-run: ./scripts/run.sh (port 7814). Docker: HOST_PORT=7813 docker compose up --build -d (published on 127.0.0.1 only). Mock needs no tenant and no credentials. Settings: the app's own .env beside docker-compose.yml (copy .env.example; Docker takes named values from it by substitution, never env_file). Real works in Docker from the app's .env, and on the host: it is available whenever PINGONE_ENVIRONMENT_ID, PINGONE_REGION, PINGONE_CLIENT_ID and PINGONE_CLIENT_SECRET are set in that .env (no opt-in; AAG_ALLOW_LIVE=0 turns it off), and makes two real calls to one PingOne environment. With no .env Real is disabled and its tooltip says what to fill in. Live was owner-verified 2026-11-05 with the old shared settings file; it is UNVERIFIED after the move to the app's own .env until the owner re-checks it. Catalog id D24.",
-      "catalogId": "D24"
+      "notes": "Host-run: ./scripts/run.sh (port 7814). Docker: HOST_PORT=7814 docker compose up --build -d (published on 127.0.0.1 only). Mock needs no tenant and no credentials. Settings: the app's own .env beside docker-compose.yml (copy .env.example; Docker takes named values from it by substitution, never env_file). Real works in Docker from the app's .env, and on the host: it is available whenever the full-Real settings are set in that .env (no opt-in; AAG_ALLOW_LIVE=0 turns it off), and makes two real calls to one PingOne environment. With no .env Real is disabled and its tooltip says what to fill in. Live is UNVERIFIED (owner runs it). No catalog id yet: the owner assigns one with the board row.",
+      "tags": ["agents", "hitl", "mcp", "simulated", "real"]
     }
   ]
 }

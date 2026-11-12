@@ -9,9 +9,9 @@ import { DEFAULT_CAST } from '../server/src/cast.js';
 const root = new URL('..', import.meta.url);
 const committed = JSON.parse(fs.readFileSync(new URL('content-pack.json', root), 'utf8'));
 
-test('the pack validates against the schema and its cross-references hold, with catalog D24', () => {
+test('the pack validates against the schema and its cross-references hold, with the D000 placeholder catalog', () => {
   assert.deepEqual(validatePack(buildPack()), []);
-  assert.equal(buildPack().demo.catalog, 'D24'); assert.equal(buildPack().schema, 'demo-content-pack/1');
+  assert.equal(buildPack().demo.catalog, 'D000', 'placeholder until the owner assigns the real id'); assert.equal(buildPack().schema, 'demo-content-pack/1');
 });
 
 test('the committed content-pack.json and docs/talk-track.md are exactly what the builders make (no drift)', () => {

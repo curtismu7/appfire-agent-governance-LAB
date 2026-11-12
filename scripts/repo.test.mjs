@@ -26,15 +26,15 @@ test('the shelf entry is valid and portable: relative composeFile, loopback url,
   const e = JSON.parse(read('docs/shelf-entry.json')).demos[0];
   assert.equal(e.id, 'appfire-agent-governance-lab'); assert.equal(e.kind, 'Demo'); assert.equal(e.healthPath, '/api/health');
   assert.match(e.url, /^http:\/\/localhost:78\d\d$/);
-  assert.equal(e.catalogId, 'D24');
+  assert.equal(e.catalogId, undefined, 'no catalog id ships: the owner assigns one with the board row');
   assert.equal(e.composeFile, 'appfire-agent-governance-LAB/docker-compose.yml');
   assert.ok(!path.isAbsolute(e.composeFile)); assert.ok(!/\/Users\//.test(JSON.stringify(e)));
 });
 
-test('the catalog id is D24 in the shelf entry and the content pack alike', () => {
-  assert.equal(JSON.parse(read('docs/shelf-entry.json')).demos[0].catalogId, JSON.parse(read('content-pack.json')).demo.catalog);
-  assert.equal(JSON.parse(read('content-pack.json')).demo.catalog, 'D24');
-  assert.match(read('README.md'), /^Catalog: D24$/m);
+test('the catalog id agrees between the shelf entry and the content pack (both D000 placeholder)', () => {
+  assert.equal(JSON.parse(read('docs/shelf-entry.json')).demos[0].catalogId, undefined, 'no catalog id ships in the shelf entry');
+  assert.equal(JSON.parse(read('content-pack.json')).demo.catalog, 'D000', 'the content pack carries the D000 placeholder');
+  assert.match(read('README.md'), /^Catalog: none yet \(owner assigns with the board row\)$/m);
 });
 
 test('customer.config.json is git-ignored, and its example only sets the two cast values', () => {

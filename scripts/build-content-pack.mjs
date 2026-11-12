@@ -1,6 +1,6 @@
 // Builds content-pack.json for the Learning Hub from the story data and the manifest, so the pack cannot drift from the lab.
 //   node scripts/build-content-pack.mjs        (writes content-pack.json)
-// The pack uses .invalid placeholders and no documentation URLs. Catalog id D24 (Demo tier).
+// The pack uses .invalid placeholders and no documentation URLs. No catalog id yet: the owner assigns one with the board row.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,7 +33,7 @@ export function buildPack() {
     id: 'appfire-agent-governance-lab',
     title: 'Appfire Agent Governance LAB',
     version,
-    demo: { id: 'appfire-agent-governance-lab', name: 'Appfire Agent Governance LAB', catalog: 'D24', baseUrl: 'http://localhost:7814', doctor: '/api/health', tags: ['appfire-agent-governance', 'token-exchange', 'act-claim', 'authorize', 'gateway', 'step-up', 'hitl', 'ciba', 'attacks', 'simulated'] },
+    demo: { id: 'appfire-agent-governance-lab', name: 'Appfire Agent Governance LAB', catalog: 'D000', baseUrl: 'http://localhost:7814', doctor: '/api/health', tags: ['appfire-agent-governance', 'token-exchange', 'act-claim', 'authorize', 'gateway', 'step-up', 'hitl', 'ciba', 'attacks', 'simulated'] },
     glossary: [
       { id: 'appfire-agent-governance', term: 'Customer-facing agent', definition: `An AI agent that acts for a customer: it asks for a balance, a transfer, an order. ${NOTE}`, aliases: ['customer agent'] },
       { id: 'delegation', term: 'Delegation with an act claim', definition: `RFC 8693 token exchange mints a delegated token whose sub is the customer and whose act claim names the agent. Delegation, not impersonation. ${NOTE}`, aliases: ['act claim', 'on behalf of'] },

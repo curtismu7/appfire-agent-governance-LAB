@@ -4,7 +4,7 @@ A simulation of the customer-facing AI agent from the AI-DEMO2 demo, with all 87
 
 Tier: Demo
 Repo: https://github.com/curtismu7/appfire-agent-governance-LAB
-Catalog: D24
+Catalog: none yet (owner assigns with the board row)
 
 **Status: step 3 of 3 (integration), built, not yet independently reviewed.** Steps 1 and 2 (core, API, web) shipped in commit e1e19ca. Step 3 is the integration step: Live mode, the doctor and health reporting of it, the Learning Hub pack and talk track entries for it, and the shelf entry notes. The shelf, hub and doctor artefacts (`docs/shelf-entry.json`, `content-pack.json`, `docs/talk-track.md`, `GET /api/health`) already existed from step 1 and are kept in sync here.
 
