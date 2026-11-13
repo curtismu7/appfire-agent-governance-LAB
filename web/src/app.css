@@ -182,3 +182,6 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 
 /* ===== Sign-in dialog: the action row is always visible (owner 2026-11-13) ===== */
 .signin-actions { position: sticky; bottom: -12px; margin: auto -14px -12px; padding: 10px 14px; background: var(--surface); border-top: 1px solid var(--line); z-index: 1; }
+
+/* ===== Talk track: per-step run links ===== */
+.talk__runs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }

@@ -255,9 +255,14 @@ export default function App() {
   };
 
   // The demo guide's Run button: select the use case (which also sets the persona it needs), run it in the agent column.
+  const talkRun = (step, uc) => {
+    if (!step || !uc) return;
+    guideRun({ uc });
+  };
   const guideRun = (step) => {
     if (!step?.uc) return;
     pick(step.uc);
+    if (current !== "agent" || page) select("agent"); // a run started from the guide or the talk track shows in the Agent column
     const u = allUc.find((x) => x.id === step.uc);
     if (!u) return;
     setGuideRunning(step.uc);
@@ -471,7 +476,7 @@ export default function App() {
           )}
           {current === "runs" && <RunHistory refresh={runCount} />}
           {current === "diagram" && <DiagramView vertical={vertical} resetSignal={resetSignal} lastRun={last} />}
-          {current === "talk" && (story ? <TalkTrack talk={story.talkTrack} /> : <p className="muted">{error ? "The talk track could not be loaded." : "Loading..."}</p>)}
+          {current === "talk" && (story ? <TalkTrack talk={story.talkTrack} onRun={talkRun} activeUc={guideRunning} /> : <p className="muted">{error ? "The talk track could not be loaded." : "Loading..."}</p>)}
           {extraKey && opened[extraKey] && <ExtraPage opens={extraKey} entry={opened[extraKey]} />}
         </div>
       </main>
