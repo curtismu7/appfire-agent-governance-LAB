@@ -173,7 +173,7 @@
 .turn--note { display: block; font-size: 13px; padding: 4px 0 4px 10px; border-left: 3px solid var(--focus); overflow-wrap: anywhere; }
 
 /* Composer: stands out from the column (owner 2026-11-13), and flashes when a prompt chip "sends". Tokens only. */
-.composer input { background: var(--surface-raised, var(--surface)); border-color: var(--accent); border-width: 2px; box-shadow: var(--shadow-1, 0 1px 4px var(--line)); }
-.composer--sending input { background: var(--accent-weak, var(--surface-raised, var(--surface))); border-color: var(--accent); }
-.composer--sending button.primary { filter: brightness(1.25); transform: scale(1.03); }
-.composer button.primary { transition: filter 0.15s ease, transform 0.15s ease; }
+.composer input { background: var(--surface-raised, var(--surface)); border-color: var(--accent); border-width: 2px; box-shadow: 0 1px 4px var(--line); }
+.composer--sending input { background: var(--accent-soft); border-color: var(--accent); }
+.composer--sending .primary { filter: brightness(1.25); transform: scale(1.03); }
+.composer .primary { transition: filter 0.15s ease, transform 0.15s ease; }
