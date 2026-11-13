@@ -253,7 +253,9 @@ try {
       // every direct part of the shell bar sits on one row: their vertical ranges all overlap
       const oneRow = () => page.evaluate(() => {
         const parts = [...document.querySelectorAll('.shell-bar > *')].map((e) => e.getBoundingClientRect()).filter((r) => r.height > 0);
-        const rows = [...new Set(parts.map((r) => Math.round(r.top / 10)))].length;
+        // Cluster tops within 8 px: parts on the same visual row share a top even if their heights differ.
+        const tops = parts.map((r) => r.top).sort((a, b) => a - b);
+        const rows = tops.reduce((n, t, i) => (i === 0 || t - tops[i - 1] > 8 ? n + 1 : n), 0);
         // This lab's shell bar also carries the Demo guide button; at 1280 it may wrap to two rows. At most two, never three.
         return rows <= 2;
       });
