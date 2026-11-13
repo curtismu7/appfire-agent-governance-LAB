@@ -369,18 +369,9 @@ export function createApp({
         if (level === 'full') {
           const gate = realGate(uc, cast);
           if (!gate.real) {
-            // Real mode, but this use case stays Mock: the mock engine runs it (mock sign-in rules apply) and every hop says MOCK and why.
-            const whyMock = mockSignInRefusal(mockCtx(req));
-            if (whyMock) return res.status(403).json({ error: 'mock_signin_refused', detail: `This use case runs Mock in Real mode (${gate.reason}), and the mock sign-in is refused: ${whyMock}` });
-            const out = await workspaces.write(id, (s) => {
-              if (s.runs.length >= MAX_RUNS) throw refuse('workspace_full', `this workspace already holds ${MAX_RUNS} runs; Reset it to continue`, 409);
-              const run = mockInReal(runUseCase(uc, { cast, vertical, persona: body.persona, brain: body.brain, said: body.said === undefined ? undefined : cleanFree(body.said, 400), traceparent, seed: 'run' }), gate.reason);
-              s.seq += 1;
-              s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: run.persona, outcome: run.outcome, matchesExpected: run.matchesExpected, traceId: run.traceId });
-              return { seq: s.seq, run };
-            });
-            res.set('traceparent', out.run.traceparent);
-            return res.json({ ok: true, workspace: id, seq: out.seq, run: out.run });
+            // Owner 2026-11-13: in Real mode nothing runs Mock. A use case that cannot run Real is refused, with the
+            // fixed reason and the way out (switch that run to Mock). The mock engine never silently substitutes.
+            return res.status(403).json({ error: 'mock_in_real_refused', detail: `Real mode runs real only: ${uc.id} cannot run Real (${gate.reason}). Switch the lab to Mock to run it, or pick a Real use case (the help lists them).`, live: liveNote(uc) });
           }
           const session = real.session(id);
           if (!session) return res.status(401).json({ error: 'sign_in_required', detail: 'Sign in first: Real runs as you. Use Sign in (pi.flow, the username is filled in for you).' });

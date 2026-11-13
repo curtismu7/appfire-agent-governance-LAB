@@ -10,6 +10,7 @@ import EvidenceColumn from "./components/EvidenceColumn";
 import FullPageEvidence from "./components/FullPageEvidence";
 import QuickConfig from "./components/QuickConfig";
 import SetupSidebar, { VerticalSelect } from "./components/SetupSidebar";
+import Rail from "./rail/Rail";
 import { getJson, postJson, resetWorkspace } from "./api";
 import { EXTRAS, HOSTED_REAL_NOTE, newTraceparent } from "./lib";
 import { matchPrompt, reasoningOf } from "./chat";
@@ -220,6 +221,8 @@ export default function App() {
     setRunning(false);
     // Real runs as the person: no sign-in yet opens the Sign in dialog, and the run goes again once it succeeds.
     if (res.status === 401 && res.body?.error === "sign_in_required") { pendingRun.current = { u, turn: turn ? { said: turn.said, how: turn.how, source: turn.source } : null, who }; setSignOpen(true); }
+    // Real mode runs real only: a mock-only use case is refused with the reason (owner 2026-11-13).
+    if (res.status === 403 && res.body?.error === "mock_in_real_refused") setModeMsg(res.body.detail);
     setResults((r) => ({ ...r, [key]: res }));
     setRunCount((n) => n + 1);
     if (tid) patchTurn(tid, { status: "done", result: res });
@@ -314,7 +317,7 @@ export default function App() {
     if (res.ok) {
       setMode(res.body.source === "real" ? "live" : "mock");
       setModeMsg(res.body.source !== "real" ? "Mock selected." : realLevel === "full"
-        ? "Real selected. Sign in (pi.flow), then a run calls PingOne (agent token, token exchange) and the Agent Gateway for the use cases SE serves; the others run Mock and say why."
+        ? "Real selected. Sign in (pi.flow), then a run calls PingOne (agent token, token exchange) and the Agent Gateway for the use cases SE serves; the others are refused with the reason (Real runs real only — the Demo guide lists both lists)."
         : "Real selected, identity provider only. A run makes two real calls to your PingOne environment (its discovery document and the worker client's token) and runs nothing else.");
       if (res.body.source === "real" && realLevel === "full") loadSignin();
     }
@@ -436,11 +439,13 @@ export default function App() {
           {current === "agent" && !page && (
             <div className="agno" data-several={several ? "true" : undefined}>
               {!presenter && (
+                <Rail storageKey="aag.setup" label="Setup">
                 <SetupSidebar onNewChat={() => { dropPick(); setTurns([]); setSelHop(null); }} mode={mode} host={cast.castHost} several={several} setSeveral={setSeveral} agent={cast.castAgent}
                   vertical={vertical} verticals={verticals} onVertical={setVertical} sessions={sessions} onSession={pick}
                   brain={cfg.brain} brainInfo={brainInfo} onBrain={(b) => setCfg((c) => ({ ...c, brain: b }))}>
                   <UseCasePicker catalog={catalog} selectedId={selectedId} onPick={pick} failed={!catalog && !!error} keep={several ? isHandoff : null} />
                 </SetupSidebar>
+                </Rail>
               )}
               <div className="work">
                 <AgentColumn agent={cast.castAgent} brand={cast.castBrand} userId={userId} vertical={vertical} verticalLabel={verticalLabel} stub={stub} prompts={prompts} turns={shownTurns}
@@ -471,7 +476,7 @@ export default function App() {
         </div>
       </main>
       <SignInDialog isOpen={signOpen} username={signin?.username} onClose={() => { setSignOpen(false); pendingRun.current = null; }} onSignedIn={afterSignIn} />
-      <DemoGuide isOpen={guideOpen} onClose={() => setGuideOpen(false)} onRun={guideRun} activeUc={guideRunning} />
+      <DemoGuide isOpen={guideOpen} onClose={() => setGuideOpen(false)} onRun={guideRun} activeUc={guideRunning} catalog={catalog} />
       {phoneApproval && <MockPhone approval={phoneApproval} onDecided={onPhoneDecided} onClose={() => {}} />}
     </div>
   );

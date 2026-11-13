@@ -153,9 +153,9 @@ describe("REAL / MOCK labels and the replies", () => {
     const u = await boot({ signedIn: true, realAnswer: (id) => mockInRealBody(id) });
     await u.click(screen.getByTestId("uc-UC1"));
     await runIt(u);
-    expect(screen.getByTestId("hop-sources-why").textContent).toMatch(/runs Mock: agent-to-agent/);
+    expect(screen.getByTestId("hop-sources-why").textContent).toMatch(/cannot run Real \(agent-to-agent/);
     expect(within(screen.getByTestId("hop-sources")).getAllByTestId("hop-source").every((x) => x.getAttribute("data-source") === "mock")).toBe(true);
-    expect(screen.getByTestId("mock-in-real").textContent).toMatch(/runs Mock/);
+    expect(screen.getByTestId("mock-in-real").textContent).toMatch(/cannot run Real/);
     expect(within(screen.getByTestId("hops")).queryByTestId("real-tag")).toBeNull();
   });
 });

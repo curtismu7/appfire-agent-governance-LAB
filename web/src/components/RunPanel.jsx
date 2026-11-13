@@ -71,7 +71,7 @@ export function RunResult({ run }) {
         {isReal ? <RealTag /> : isLive ? <LiveTag /> : <Tag state="info">persona: {run.persona}</Tag>}
       </div>
       <p data-testid="narration">{run.narration}</p>
-      {run.realGate && run.realGate.real === false && <p className="muted" data-testid="mock-in-real">Real mode, but this use case runs Mock: {run.realGate.reason}.</p>}
+      {run.realGate && run.realGate.real === false && <p className="muted" data-testid="mock-in-real">Real mode runs real only: this use case cannot run Real ({run.realGate.reason}). Switch the lab to Mock to run it; the Help page lists what runs Real.</p>}
       {guided && <p className="muted" data-testid="guided-explain">Guided, not computed: the lab opened the page the product would open and shows the catalog's label ({run.expectedOutcome}). It did not run or verify that outcome.</p>}
       {run.live?.status === "needs-flag" && <p className="muted" data-testid="live-note">{run.live.message}</p>}
       {isLive && <NotRun notRun={run.notRun} />}

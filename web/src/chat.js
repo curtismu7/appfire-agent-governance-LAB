@@ -58,7 +58,7 @@ export function reasoningOf(turn, run) {
     if (d) steps.push(`${d.title}: ${d.decision.outcome}${d.decision.by ? ` by ${d.decision.by}` : ""}`);
     return steps;
   }
-  if (run.realGate && run.realGate.real === false) steps.push(`Real mode, but this use case runs Mock: ${run.realGate.reason}`);
+  if (run.realGate && run.realGate.real === false) steps.push(`Real mode runs real only: this use case cannot run Real (${run.realGate.reason})`);
   const decision = run.hops.find((h) => h.decision);
   const stop = run.hops.find((h) => h.verdict && h.verdict !== "ok" && h.verdict !== "skip");
   const ranN = run.hops.filter((h) => h.verdict !== "skip").length; // the not-in-path hops did not run

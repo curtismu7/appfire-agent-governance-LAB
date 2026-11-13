@@ -376,7 +376,7 @@ test('sign-in is per workspace; sign-out works', async () => {
   });
 });
 
-test('use-case gating: only SE mcp-server tools run Real; the rest run Mock in Real mode, every hop MOCK with the reason, with no sign-in needed', async () => {
+test('use-case gating: only SE mcp-server tools run Real; the rest are REFUSED in Real mode (owner 2026-11-13: real only, no mock fallback)', async () => {
   const cast = loadCast('/nonexistent', 'banking');
   const realIds = MANIFEST.usecases.filter((u) => realGate(u, cast).real).map((u) => u.id);
   // Owner 2026-11-13: UC7/UC8 (HITL with the SE gateway's real challenge pipeline) run Real too.
@@ -389,11 +389,12 @@ test('use-case gating: only SE mcp-server tools run Real; the rest run Mock in R
   await withFull(async (url, { gw }) => {
     await toReal(url);
     const r = await run(url, 'UC2', { vertical: 'banking' });
-    assert.equal(r.status, 200); assert.equal(r.body.run.mode, 'mock'); assert.equal(r.body.run.realGate.real, false);
-    assert.ok(r.body.run.hops.filter((h) => h.verdict !== 'skip').every((h) => h.source === 'mock' && /\[MOCK\]/.test(h.label) && /^MOCK in Real mode: agent-to-agent/.test(h.note)));
-    assert.equal(gw.seen.length, 0, 'a Mock use case never calls the gateway');
+    assert.equal(r.status, 403); assert.equal(r.body.error, 'mock_in_real_refused');
+    assert.match(r.body.detail, /Real mode runs real only: UC2 cannot run Real \(agent-to-agent/);
+    assert.equal(gw.seen.length, 0, 'a blocked use case never calls the gateway');
     const list = await (await get(url, '/api/usecases?vertical=banking')).json();
     const uc1 = list.tracks.flatMap((t) => t.usecases).find((u) => u.id === 'UC1'); assert.equal(uc1.realGate.real, true);
+    const uc2 = list.tracks.flatMap((t) => t.usecases).find((u) => u.id === 'UC2'); assert.equal(uc2.realGate.real, false); assert.match(uc2.realGate.reason, /A2A/);
   });
 });
 
