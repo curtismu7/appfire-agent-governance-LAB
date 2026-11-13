@@ -81,7 +81,7 @@ test('Live config loading from the app\'s .env: present, missing and partial (fa
   });
   withFile(fs.readFileSync(path.join(REPO_ROOT, '.env.example'), 'utf8'), (f) => {
     assert.deepEqual(missingLiveSettings(f), ['PINGONE_ENVIRONMENT_ID', 'PINGONE_CLIENT_ID', 'PINGONE_CLIENT_SECRET'], 'an unfilled copy of .env.example still counts as missing');
-    assert.deepEqual(readSharedSettings(f), { AAG_LAB_MODE: 'mock' }, 'empty placeholders are not taken');
+    assert.deepEqual(readSharedSettings(f), { AAG_LAB_MODE: 'live' }, 'empty placeholders are not taken; the example defaults to live (owner 2026-11-13)');
   });
 });
 
@@ -89,7 +89,7 @@ test('.env.example lists the names with placeholder values only; .env is git-ign
   const ex = fs.readFileSync(path.join(REPO_ROOT, '.env.example'), 'utf8');
   const parsed = Object.fromEntries(ex.split('\n').filter((l) => /^[A-Z_]+=/.test(l)).map((l) => l.split(/=(.*)/s).slice(0, 2)));
   for (const k of [...LIVE_KEYS, ...SETTINGS_KEYS]) assert.ok(k in parsed, k);
-  assert.equal(parsed.LAB_ALLOWED_HOSTS, '');
+  assert.equal(parsed.LAB_ALLOWED_HOSTS, ''); assert.equal(parsed.AAG_LAB_MODE, 'live');
   assert.equal(parsed.PINGONE_ENVIRONMENT_ID, '00000000-0000-0000-0000-000000000000'); assert.equal(parsed.PINGONE_CLIENT_ID, '00000000-0000-0000-0000-000000000000');
   assert.equal(parsed.PINGONE_CLIENT_SECRET, 'replace-me'); assert.equal(parsed.SHELF_URL, '');
   for (const f of ['.gitignore', '.dockerignore']) assert.match(fs.readFileSync(path.join(REPO_ROOT, f), 'utf8'), /^\.env$/m, f);
