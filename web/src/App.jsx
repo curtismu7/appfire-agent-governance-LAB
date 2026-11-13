@@ -19,6 +19,7 @@ import { workspaceId } from "./workspace";
 import { loadResume, saveResume, takeReturn } from "./resume";
 import ShelfLink from "./components/ShelfLink.jsx";
 import DemoGuide from "./components/DemoGuide";
+import MockPhone from "./components/MockPhone";
 import SignInDialog from "./components/SignInDialog";
 import TopMenu, { applyFontSize } from "./top-menu/TopMenu.jsx";
 import "./top-menu/top-menu.css";
@@ -88,6 +89,10 @@ export default function App() {
   const [signOpen, setSignOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideRunning, setGuideRunning] = useState(null); // the use case a guide step's Run button started
+  // The mock phone (owner 2026-11-13): opens when a run holds for approval — a REAL_HOLD with the gateway's challenge,
+  // or a mock HITL/step-up hold. kind real = the approval is recorded with the SE HITL service and the run is retried
+  // with the verified receipt; kind mock = the approval discharges the lab's simulated obligation.
+  const [phoneApproval, setPhoneApproval] = useState(null);
   const pendingRun = useRef(null);
   const runRef = useRef(null);
   const runSeq = useRef(0);
@@ -200,7 +205,7 @@ export default function App() {
 
   const patchTurn = (id, patch) => setTurns((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   // One run of use case `u`. `turn` (optional) is the chat exchange it answers; `who` overrides the persona when the use case names one.
-  const startRun = async (u, turn = null, who = persona) => {
+  const startRun = async (u, turn = null, who = persona, extra = null) => {
     if (!u || running) return;
     const mine = ++runSeq.current;
     const key = resultKey(u.id, vertical, who, mode);
@@ -210,7 +215,7 @@ export default function App() {
     // A typed or chip turn tells the server what was said and which brain actually picked the use case ("llama" only when llama.cpp did;
     // a fallback is "scripted"). A picked or previewed run sends neither.
     const typed = turn && turn.how !== "picked" ? { said: String(turn.said).slice(0, 400), brain: turn.how === "llm" ? "llama" : "scripted" } : {};
-    const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
+    const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(extra ?? {}) }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
     if (mine !== runSeq.current) return; // a Reset or a newer run took over
     setRunning(false);
     // Real runs as the person: no sign-in yet opens the Sign in dialog, and the run goes again once it succeeds.
@@ -219,12 +224,32 @@ export default function App() {
     setRunCount((n) => n + 1);
     if (tid) patchTurn(tid, { status: "done", result: res });
     if (res.ok) {
-      setLast({ run: res.body.run, ucId: u.id });
-      setSelHop(focusHop(res.body.run));
-      if (res.body.run.kind !== "live" && Object.hasOwn(EXTRAS, u.opens)) setOpened((o) => ({ ...o, [u.opens]: { run: res.body.run, uc: u } }));
+      const run = res.body.run;
+      setLast({ run, ucId: u.id });
+      setSelHop(focusHop(run));
+      if (run.kind !== "live" && Object.hasOwn(EXTRAS, u.opens)) setOpened((o) => ({ ...o, [u.opens]: { run, uc: u } }));
+      // A hold opens the mock phone. Real: the server session carries the gateway's challenge; Mock: the lab mints one.
+      const hold = run.outcome === "REAL_HOLD" && run.challenge ? "real"
+        : ["HITL_REQUIRED", "STEP_UP", "REAL_HOLD"].includes(run.outcome) ? "mock" : null;
+      if (hold) {
+        postJson("/api/approval/start", {
+          kind: hold, tool: run.real?.tool || u.primaryTool || null,
+          amount: run.real?.tool === "create_transfer" ? 300 : null,
+          description: `${u.id} ${u.title}${run.real?.tool ? ` (tool ${run.real.tool})` : ""}`,
+          ...(hold === "real" ? { challengeId: run.challenge } : {}),
+        }).then((r) => { if (r.ok) setPhoneApproval(r.body.approval); }).catch(() => {});
+      } else setPhoneApproval(null);
     }
   };
   const run = () => startRun(uc, { said: `Run ${uc?.id} (picked from the list)`, how: "picked" });
+
+  // The mock phone decided. On a REAL approval, retry the held use case with the approved session id — the server
+  // swaps in the gateway challenge and the verified receipt discharges the consent obligation.
+  const onPhoneDecided = (state) => {
+    if (state !== "approved" || phoneApproval?.kind !== "real" || !last?.ucId || running) return;
+    const u = allUc.find((x) => x.id === last.ucId);
+    if (u) startRun(u, null, personaFor(u) || persona, { approvalId: phoneApproval.id });
+  };
 
   // The demo guide's Run button: select the use case (which also sets the persona it needs), run it in the agent column.
   const guideRun = (step) => {
@@ -447,6 +472,7 @@ export default function App() {
       </main>
       <SignInDialog isOpen={signOpen} username={signin?.username} onClose={() => { setSignOpen(false); pendingRun.current = null; }} onSignedIn={afterSignIn} />
       <DemoGuide isOpen={guideOpen} onClose={() => setGuideOpen(false)} onRun={guideRun} activeUc={guideRunning} />
+      {phoneApproval && <MockPhone approval={phoneApproval} onDecided={onPhoneDecided} onClose={() => {}} />}
     </div>
   );
 }

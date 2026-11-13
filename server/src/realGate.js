@@ -29,7 +29,11 @@ const APPROVAL = new Set(['ciba-poll', 'ciba-authorize', 'hitl-receipt']);
 export function realGate(uc, cast) {
   if (!isFlow(uc)) return { real: false, reason: 'it is a guided page: the lab shows it and does not compute it' };
   const chain = chainOf(uc);
-  if (uc.track === 'hitl' || chain.some((k) => APPROVAL.has(k))) return { real: false, reason: 'its human approval (HITL, CIBA or elicitation) is simulated in this lab' };
+  // Owner 2026-11-13: UC7/UC8 (the hitl track, tool create_transfer) run REAL — the SE gateway's HITL pipeline
+  // (428 + challenge, the HITL service, the receipt retry) is live and this lab drives it with the mock phone.
+  // The other approval kinds stay simulated: CIBA needs an out-of-band device flow, elicitation an interactive answer.
+  if (uc.track === 'hitl' && !['UC7', 'UC8'].includes(uc.id)) return { real: false, reason: 'its human approval (CIBA or elicitation) is simulated in this lab' };
+  if (uc.track !== 'hitl' && chain.some((k) => APPROVAL.has(k))) return { real: false, reason: 'its human approval (CIBA or elicitation) is simulated in this lab' };
   if (Object.hasOwn(TRUSTED_FEATURE, uc.id)) return { real: false, reason: `${TRUSTED_FEATURE[uc.id]} is a trusted-caller feature, and this lab never sends trusted-caller headers` };
   if (/\btrat\b|transaction token/i.test(`${uc.title} ${uc.pingOneSolution}`)) return { real: false, reason: 'transaction tokens (TraT) are a trusted-caller feature, and this lab never sends trusted-caller headers' };
   if (chain.some((k) => A2A.test(k)) || uc.primaryTool === 'get_portfolio_summary') return { real: false, reason: 'agent-to-agent (A2A) multi-hop runs on the agent-service, which is scaled to 0 on SE' };

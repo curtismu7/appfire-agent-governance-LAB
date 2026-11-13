@@ -271,7 +271,8 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
 
   // One Real run of a use case the gate let through. session: the workspace's sign-in. Never throws for a refusal by PingOne or the gateway (those
   // are hops with a verdict and a mapped outcome); throws RealRefused('busy') when two Real calls are in flight.
-  async function run(uc, { vertical, tool, traceparent, session }) {
+  async function run(uc, { vertical, tool, traceparent, session, receipt = null }) {
+    let challenge = null; // the gateway's HITL challenge id when the run holds for approval (never leaves here except via the return)
     if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
     if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two Real calls are already in flight; wait for one to finish', 429);
     inFlight += 1;
@@ -352,8 +353,9 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
             finishNotRun(0, 'Not run: the delegated token carries no act claim, so the gateway was not called.');
           } else {
             addToken('delegated token (REAL, exchange 2: for the gateway)', delegated, `REAL delegated token: your subject, the agent in the act claim, the gateway audience and scope. Shown raw for teaching.${audNote}`, true);
-            const gw = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun });
+            const gw = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun, receipt });
             outcome = gw.outcome; reply = gw.reply;
+            if (gw.challengeId) challenge = gw.challengeId; // a REAL_HOLD with a minted challenge: the mock phone can approve it
           }
         }
       }
@@ -362,12 +364,13 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         expectedOutcome: uc.expectedOutcome, real: { level: 'full', tool }, labSimulated: false, computed: false, persona: null, outcome, matchesExpected: null, reply,
         hops: hops.map(({ shortTitle, ...h }) => { const e = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'redact' }); return shortTitle ? { ...e, title: shortTitle } : e; }), tokens, traceId: trace.traceId, traceparent: formatTraceparent(trace.traceId, rootSpan),
         narration: reply?.text ?? '',
+        ...(outcome === 'REAL_HOLD' && challenge ? { challenge } : {}),
       };
     } finally { inFlight -= 1; }
   }
 
   // 4-8: the Agent Gateway as an MCP client, the decision read from its answer, the tool, the API behind it and the reply.
-  async function gatewayLeg({ token, vertical, tool, uc, tp, push, notRun }) {
+  async function gatewayLeg({ token, vertical, tool, uc, tp, push, notRun, receipt = null }) {
     const gs = createGatewaySession({ url: config.gatewayUrl, token, vertical, nextTraceparent: tp, fetchImpl: gatewayFetch ?? fetchImpl });
     const shownReq = (c, body) => ({ method: 'POST', url: config.gatewayUrl, headers: Object.fromEntries(c.sentHeaders.map((k) => [k, k === 'authorization' ? 'Bearer [the delegated token]' : k === 'traceparent' ? c.traceparent : k === 'x-active-vertical' ? vertical : k === 'x-token-validation' ? 'jwks' : k === 'mcp-session-id' ? short(gs.sessionId()) : k === 'mcp-protocol-version' ? '(from initialize)' : k === 'accept' ? 'application/json, text/event-stream' : 'application/json'])), body });
     const shownRes = (c, body) => ({ status: c.status, headers: Object.fromEntries(Object.entries(c.headers).map(([k, v]) => [k, k === 'mcp-session-id' ? short(v) : v])), body });
@@ -409,6 +412,9 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       return { outcome: 'REAL_TOOL_ERROR', reply: { who: 'Agent', text: `I could not find ${needTwo ? 'two accounts' : 'an account'} of yours for ${tool}, so I did not call it.` } };
     }
     const args = toolArgs(tool, { vertical, accounts, amount: situationOf(uc.id).amount });
+    // Owner 2026-11-13: a HITL retry echoes the gateway's challenge id as the control field _hitl_challenge_id
+    // (the gateway strips it before dispatch; a verified receipt discharges the consent obligation).
+    if (receipt) args._hitl_challenge_id = receipt;
     const call = pre ? null : await gs.callTool(tool, args);
     if (call) calls.push(call);
     const last = call ?? pre;
@@ -461,7 +467,27 @@ export function mapAnswer(c) {
   switch (c.kind) {
     case 'deny': return { outcome: 'REAL_DENY', note: `The gateway answered 403: a policy DENY${audit?.decision ? ` (audit trail decision: ${audit.decision})` : ''}.`, reply: { who: 'Authorize', text: `Authorize denied this request (HTTP 403 from the Agent Gateway${audit?.decision ? `, decision ${audit.decision}` : ''}). Nothing was sent to the tool.` } };
     case 'token': return { outcome: 'REAL_TOKEN_PROBLEM', note: `The gateway answered 401: a token problem${www ? ` (WWW-Authenticate: ${www})` : ''}.`, reply: { who: 'Gateway', text: `The Agent Gateway did not accept the delegated token (HTTP 401)${www ? `: ${www}` : ''}. Check the token exchange audience and scope.` } };
-    case 'hold': return { outcome: 'REAL_HOLD', note: 'The gateway answered 428: the call is held for a person (HITL or step-up). The hold is REAL; the approval is simulated in this lab and is never sent.', reply: { who: 'Authorize', approval: { head: 'Held for approval (REAL)', body: 'The real Agent Gateway answered 428: this call needs a person to approve it (HITL or step-up). The hold is real; in this lab the approval is simulated, so nothing is approved for you and nothing was sent to the tool.' } } };
+    case 'hold': {
+      const body = c.rpc?.error ?? c.body ?? null;
+      const challengeId = typeof body?.challengeId === 'string' ? body.challengeId : null;
+      const isStepUp = body?.error === 'step_up_required';
+      return {
+        outcome: 'REAL_HOLD',
+        ...(challengeId && !isStepUp ? { challengeId } : {}),
+        note: isStepUp
+          ? 'The gateway answered 428: step-up (a stronger authentication) is required. The hold is REAL; the second factor is simulated in this lab and cannot discharge a real step-up, so the call is not retried.'
+          : `The gateway answered 428: a person must approve (challenge ${challengeId ? 'minted' : 'not minted'}). The hold is REAL; approve on the mock phone and the lab retries with the receipt.`,
+        reply: {
+          who: 'Authorize',
+          approval: {
+            head: isStepUp ? 'Held for step-up (REAL)' : 'Held for approval (REAL)',
+            body: isStepUp
+              ? 'The real Agent Gateway answered 428: this call needs step-up authentication. The hold is real; this lab simulates the second factor and cannot discharge a real step-up, so nothing was sent to the tool.'
+              : 'The real Agent Gateway answered 428: this call needs a person to approve it. The hold is real; approve (or deny) on the mock phone — an approval is recorded with the HITL service and the call is retried with the verified receipt.',
+          },
+        },
+      };
+    }
     case 'unreachable': return { outcome: 'REAL_UNREACHABLE', note: `SE is down or scaled down (${c.status ? `HTTP ${c.status}` : 'no connection'}); the lab does not retry. Switch to Mock.`, reply: { who: 'Gateway', text: `SE is down or scaled down: the Agent Gateway ${c.status ? `answered HTTP ${c.status}` : 'did not answer'}. Switch to Mock to keep going.` } };
     default: return { outcome: 'REAL_REFUSED', note: `The gateway answered HTTP ${c.status}${c.status >= 300 && c.status < 400 ? ' (a redirect, never followed)' : ''}.`, reply: { who: 'Gateway', text: `The Agent Gateway answered HTTP ${c.status}; the agent stopped there.` } };
   }

@@ -46,8 +46,10 @@ test('no shipped text names a real customer, company or tenant', () => {
   const skip = new Set(['node_modules', 'dist', '.git', '.data', 'package-lock.json', '.env', 'customer.config.json']); // git-ignored files (local settings: the e2e screenshots are binary; .env holds this Mac's host names)
   // local .env backups (git-ignored pattern .env.bak.*): skipped by name below
   const allowed = { 'docker-compose.yml': ['appfire-agent-governance.local.ping-devops.com'], // proxy-served lab host (default LAB_ALLOWED_HOSTS): no real tenant or customer
+    '.env.example': ['hitl.ai-demo.ping-devops.com'], // the SE HITL service's public host (the mock phone's real approvals); not a tenant or a customer
     // owner-run setup (2026-11-10): the public Agent Gateway host, its namespace and the lab-proxy callback, exact strings in these files only
     'deploy/k8s-owner/agent-gateway-ingress.yaml': ['agent-gateway.ai-demo.ping-devops.com', 'ping-devops-cmuir'],
+    'deploy/k8s-owner/hitl-service-ingress.yaml': ['hitl.ai-demo.ping-devops.com', 'ping-devops-cmuir'],
     'scripts/owner/agent-gateway-ingress.sh': ['agent-gateway.ai-demo.ping-devops.com', 'ping-devops-cmuir'],
     'scripts/owner/pingone-real-setup.mjs': ['agent-gateway.ai-demo.ping-devops.com', 'local.ping-devops.com:8443/appfire-agent-governance/callback'] };
   const hits = [];
@@ -98,7 +100,7 @@ test('docs never use the word "door"', () => {
 });
 
 test('the only k8s manifests are the hosted mock build in deploy/k8s (owner exception, 2026-11-09) and the owner-run Agent Gateway ingress in deploy/k8s-owner, and there is no bare MODE', () => {
-  assert.ok(!fs.existsSync(path.join(root, 'k8s'))); assert.deepEqual(fs.readdirSync(path.join(root, 'deploy')).sort(), ['k8s', 'k8s-owner']); assert.deepEqual(fs.readdirSync(path.join(root, 'deploy/k8s-owner')), ['agent-gateway-ingress.yaml']);
+  assert.ok(!fs.existsSync(path.join(root, 'k8s'))); assert.deepEqual(fs.readdirSync(path.join(root, 'deploy')).sort(), ['k8s', 'k8s-owner']); assert.deepEqual(fs.readdirSync(path.join(root, 'deploy/k8s-owner')).sort(), ['agent-gateway-ingress.yaml', 'hitl-service-ingress.yaml']);
   const files = (dir) => fs.readdirSync(path.join(root, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? files(`${dir}/${e.name}`) : [`${dir}/${e.name}`]));
   for (const f of files('server/src')) assert.ok(!/process\.env\.MODE\b/.test(read(f)), f);
 });

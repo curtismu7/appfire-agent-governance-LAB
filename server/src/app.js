@@ -24,6 +24,7 @@ import { situationOf } from './situations.js';
 import { parseTraceparent, randomTraceparent } from './trace.js';
 import { createLive, LiveRefused } from './live.js';
 import { createReal, RealRefused, REDIRECT_URI } from './real.js';
+import { createApprovals } from './approval.js';
 import { realGate } from './realGate.js';
 import { shelfInfo } from './shelfLink.js';
 import { promptsFor, routeOf } from './routes.js';
@@ -101,6 +102,9 @@ export function createApp({
   // Which Real this lab has: 'full' (sign-in, agent token, token exchange, Agent Gateway), 'idp-only' (the OLD two calls with the worker client, only
   // while none of the full-Real settings is set) or null. Once any AAG_* full-Real setting is there, the old path is ignored entirely.
   const realLevel = () => (real.configured() ? 'full' : real.wanted() ? null : live.configured() ? 'idp-only' : null);
+  // The approval service (owner 2026-11-13): the mock phone in both modes. The SE HITL service URL and its internal
+  // secret come from the app's .env (write-only: the secret never reaches the page or a log).
+  const approvals = createApprovals({ hitlUrl: env.AAG_HITL_SERVICE_URL ?? '', hitlSecret: env.AAG_HITL_INTERNAL_SECRET ?? '' });
   const realRefusal = (req) => liveRefusal(realCtx(req)) ?? (realLevel() ? null : notConfiguredText(real.missing(), real.problem()));
   const mockCtx = (req) => ({ env, bind, headers: trustedProxyHeaders(req.headers, proxyOrigin()) });
   // Owner 2026-11-13: Real gets the same trusted-proxy exception as Mock sign-in. The shared lab-proxy is the owner's own
@@ -277,6 +281,43 @@ export function createApp({
     res.json({ workspace: id, mode: s.mode, modes: MODES, live: why === null ? 'allowed' : 'refused', liveReason: why });
   });
 
+  // ---- The approval service (owner 2026-11-13): the mock phone, reusable for any hold ----
+  // POST /api/approval/start {kind, tool, amount, description, challengeId?} — mock sessions mint a lab challenge;
+  // real sessions REQUIRE the challengeId a REAL_HOLD run returned (the gateway minted it). The session id is
+  // lab-minted random hex; the gateway's id never leaves the server.
+  api.post('/approval/start', jsonWrites, (req, res) => {
+    const id = ws(req, res); if (!id) return;
+    noStore(res);
+    const b = bodyOf(req);
+    const kind = b.kind === 'real' ? 'real' : 'mock';
+    if (kind === 'real' && (typeof b.challengeId !== 'string' || b.challengeId.length > 128 || !/^[A-Za-z0-9-]+$/.test(b.challengeId))) return res.status(400).json({ error: 'bad_challenge', detail: 'a real approval needs the challengeId the run returned' });
+    if (b.tool !== undefined && (typeof b.tool !== 'string' || b.tool.length > 120)) return res.status(400).json({ error: 'bad_tool', detail: 'tool must be a short string' });
+    if (b.amount !== undefined && b.amount !== null && !Number.isFinite(b.amount)) return res.status(400).json({ error: 'bad_amount', detail: 'amount must be a number' });
+    if (b.description !== undefined && (typeof b.description !== 'string' || b.description.length > 300)) return res.status(400).json({ error: 'bad_description', detail: 'description must be a short string' });
+    return res.json({ ok: true, approval: approvals.start({ workspace: id, kind, tool: b.tool, amount: b.amount ?? null, description: b.description ?? '', challengeId: b.challengeId ?? null }) });
+  });
+  // GET /api/approval/status?id= — the phone polls this while pending.
+  api.get('/approval/status', (req, res) => {
+    const id = ws(req, res); if (!id) return;
+    noStore(res);
+    const approval = approvals.status(id, req.query.id);
+    if (!approval) return res.status(404).json({ error: 'unknown_approval', detail: 'no such approval session in this workspace' });
+    return res.json({ ok: true, approval });
+  });
+  // POST /api/approval/decide {id, approved} — the mock phone's answer. A REAL approval is recorded with the SE HITL
+  // service (fail closed: a failed record is not an approval) and the session then carries the receipt for the retry.
+  api.post('/approval/decide', jsonWrites, async (req, res, next) => {
+    const id = ws(req, res); if (!id) return;
+    noStore(res);
+    const b = bodyOf(req);
+    if (typeof b.id !== 'string' || typeof b.approved !== 'boolean') return res.status(400).json({ error: 'bad_decision', detail: 'id and approved (boolean) are required' });
+    try {
+      const approval = await approvals.decide(id, b.id, b.approved);
+      if (!approval) return res.status(404).json({ error: 'unknown_approval', detail: 'no such approval session in this workspace' });
+      return res.json({ ok: true, approval });
+    } catch (e) { next(e); }
+  });
+
   api.put('/mode', jsonWrites, async (req, res, next) => {
     try {
       const id = ws(req, res); if (!id) return;
@@ -344,7 +385,11 @@ export function createApp({
           const session = real.session(id);
           if (!session) return res.status(401).json({ error: 'sign_in_required', detail: 'Sign in first: Real runs as you. Use Sign in (pi.flow, the username is filled in for you).' });
           let run;
-          try { run = await real.run(uc, { vertical, tool: gate.tool, traceparent, session }); } catch (e) {
+          // Owner 2026-11-13: body.approvalId carries an APPROVED HITL session id; the lab swaps it for the gateway's
+          // challenge id (server-side only) so the retry discharges the consent. The approval must belong to this
+          // workspace and be approved — otherwise it is ignored (a plain run).
+          const approvalReceipt = typeof body.approvalId === 'string' ? approvals.receiptOf(id, body.approvalId) : null;
+          try { run = await real.run(uc, { vertical, tool: gate.tool, traceparent, session, receipt: approvalReceipt ?? null }); } catch (e) {
             if (e instanceof RealRefused) return res.status(e.code === 'busy' ? 429 : e.status).json({ error: e.code === 'busy' ? 'live_busy' : e.code, detail: e.message });
             throw e;
           }

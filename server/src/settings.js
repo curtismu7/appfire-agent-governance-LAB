@@ -41,7 +41,7 @@ export const FULL_REQUIRED = ['PINGONE_ENVIRONMENT_ID', ...FULL_KEYS];
 // Optional (never required, never makes full Real "wanted"): the scope the agent token and exchange 1 ask for (the scope of the resource whose `act`
 // attribute stamps the agent into the token). Empty or absent means the default; the owner's setup script writes it only when it is not the default.
 export const DEFAULT_AGENT_SCOPE = 'agent:invoke';
-export const OPTIONAL_KEYS = ['AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH'];
+export const OPTIONAL_KEYS = ['AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET'];
 export const REAL_KEYS = [...LIVE_KEYS, ...FULL_KEYS, ...OPTIONAL_KEYS];
 export function readLiveSettings(file) {
   try {

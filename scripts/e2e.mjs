@@ -147,6 +147,9 @@ try {
       check((await t('nav-page-consent').count()) === 1, `${tag}: UC1 brought in the Consent and step-up page`);
       await pick('UC7'); await t('run').click(); await t('result').waitFor();
       check((await t('outcome').innerText()) === 'STEP_UP' && (await t('nav-page-approval').count()) === 1, `${tag}: UC7 is STEP_UP and brings in Human approval`);
+      // The hold opens the mock phone (owner 2026-11-13); deny it so the run can continue.
+      await t('mp-deny').click(); await t('mp-outcome').waitFor();
+      check((await t('mp-outcome').innerText()).includes('Denied'), `${tag}: UC7's hold opened the mock phone and a deny was recorded`);
       // The persona the engine needs is selected by the use case itself: the default Run of UC21 permits and UC9 denies, as the README says.
       await pick('UC21');
       check((await t('persona').inputValue()) === 'premium', `${tag}: picking UC21 selects the premium persona it needs`);
@@ -325,6 +328,8 @@ try {
       await t('wtt-UC7').click(); await t('turn-approval').waitFor();
       check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AUTHORIZE', `${tag}: the step-up hold is labelled Authorize and carries no reasoning or pills`);
       check((await lastTurn().getByTestId('turn-approval-say').innerText()) === "I'm ready to move $600 from checking to savings.", `${tag}: the held $600 transfer says what the agent is ready to do, with the amount`);
+      // The hold opened the mock phone; deny it so the rest of the flow is not behind its backdrop.
+      if (await t('mp-deny').isVisible().catch(() => false)) { await t('mp-deny').click(); await t('mp-outcome').waitFor(); }
       check(!/mock result of|Here is what I found/.test(await t('agent-column').innerText()), `${tag}: nothing in the chat says mock result of`);
       check(await oneRow(), `${tag}: the shell bar is still one row after a second extra page`);
       check((await page.evaluate(() => [...document.querySelectorAll('[data-testid="nav-more"] option')].length)) === 3, `${tag}: both extra pages are in the More menu`);

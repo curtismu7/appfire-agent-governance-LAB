@@ -71,8 +71,8 @@ export const COMPOSE_ENV = {
   substituted: ['SHELF_URL', 'AAG_LAB_MODE', 'AAG_BRAIN_URL', 'LAB_ALLOWED_HOSTS', 'AAG_ALLOW_LIVE', 'PINGONE_ENVIRONMENT_ID', 'PINGONE_REGION', 'PINGONE_CLIENT_ID', 'PINGONE_CLIENT_SECRET',
     // Full Real (owner, 2026-11-10): exactly these eight names, which the owner's scripts write ...
     'AAG_USER_CLIENT_ID', 'AAG_USER_CLIENT_SECRET', 'AAG_AGENT_CLIENT_ID', 'AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME', 'AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE',
-    // ... and, optional, the agent scope (empty = agent:invoke) and the agent client's token auth (empty = Basic; CLIENT_SECRET_POST for AI_AGENT apps).
-    'AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH'],
+    // ... and, optional, the agent scope (empty = agent:invoke), the agent client's token auth, and the SE HITL service (the mock phone's real approvals).
+    'AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET'],
   fixed: ['PORT', 'CALAB_BIND', 'AAG_PUBLISH', 'ALLOW_MOCK_SIGNIN', 'AAG_DEPLOY_MODE', 'AAG_LIVE_FROM_ENV'],
 };
 export function environmentOf(text) {
@@ -92,7 +92,7 @@ test('owner 2026-11-09/11-10: no env_file; the container gets exactly the listed
   assert.deepEqual(Object.keys(env).sort(), [...COMPOSE_ENV.substituted, ...COMPOSE_ENV.fixed].sort(), 'exactly these names, no other');
   for (const k of COMPOSE_ENV.substituted) assert.match(env[k], new RegExp(`^\\$\\{${k}:-[^}$]*\\}$`), `${k} comes from its own name by substitution`);
   for (const k of ['PINGONE_ENVIRONMENT_ID', 'PINGONE_REGION', 'PINGONE_CLIENT_ID', 'PINGONE_CLIENT_SECRET', 'AAG_ALLOW_LIVE', ...REAL_KEYS.filter((x) => x.startsWith('AAG_'))]) assert.equal(env[k], `\${${k}:-}`, `${k} defaults to empty: a clone with no .env is Mock with Real disabled`);
-  assert.deepEqual(Object.keys(env).filter((k) => /SECRET|PASSWORD|TOKEN|KEY|PINGONE|CLIENT|USERNAME|GATEWAY|AUDIENCE|SCOPE/.test(k)).sort(), [...REAL_KEYS].sort(), 'no other secret-like name: exactly the Real settings the server reads');
+  assert.deepEqual(Object.keys(env).filter((k) => /SECRET|PASSWORD|TOKEN|KEY|PINGONE|CLIENT|USERNAME|GATEWAY|AUDIENCE|SCOPE|HITL/.test(k)).sort(), [...REAL_KEYS].sort(), 'no other secret-like name: exactly the Real settings the server reads');
   assert.ok(!Object.keys(env).some((k) => /PASSWORD/.test(k)), 'no password is ever passed: the person types it in the Sign in dialog');
 });
 

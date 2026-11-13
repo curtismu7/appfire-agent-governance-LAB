@@ -139,7 +139,7 @@ test('error mapping: 403 DENY with the audit trail, 401 token problem with WWW-A
         assert.equal(d.decision.outcome, 'DENY'); assert.deepEqual(d.response['x-gw-audit-trail'], JSON.parse(AUDIT_TRAIL));
       }
       if (behaviour === 'token') assert.match(x.hops.find((h) => h.kind === 'gateway-check').note, /WWW-Authenticate: Bearer error="invalid_token"/);
-      if (behaviour === 'hold') { assert.equal(x.reply.approval.head, 'Held for approval (REAL)'); assert.match(x.reply.approval.body, /approval is simulated/); assert.equal(x.hops.find((h) => h.kind === 'tool-held').verdict, 'held'); }
+      if (behaviour === 'hold') { assert.equal(x.reply.approval.head, 'Held for approval (REAL)'); assert.match(x.reply.approval.body, /approve \(or deny\) on the mock phone/); assert.equal(x.hops.find((h) => h.kind === 'tool-held').verdict, 'held'); }
       const calls = gw.seen.filter((c) => c.rpc.method === 'initialize').length;
       assert.equal(calls, 1, `${behaviour}: initialize once, no retry loop`);
     }, { gateway: behaviour });
@@ -379,10 +379,11 @@ test('sign-in is per workspace; sign-out works', async () => {
 test('use-case gating: only SE mcp-server tools run Real; the rest run Mock in Real mode, every hop MOCK with the reason, with no sign-in needed', async () => {
   const cast = loadCast('/nonexistent', 'banking');
   const realIds = MANIFEST.usecases.filter((u) => realGate(u, cast).real).map((u) => u.id);
-  assert.deepEqual(realIds, ['UC1', 'UC3', 'UC19', 'UC20', 'UC4', 'UC6', 'UC24', 'UC17', 'UC28']);
+  // Owner 2026-11-13: UC7/UC8 (HITL with the SE gateway's real challenge pipeline) run Real too.
+  assert.deepEqual(realIds, ['UC1', 'UC3', 'UC19', 'UC20', 'UC4', 'UC6', 'UC7', 'UC8', 'UC24', 'UC17', 'UC28']);
   const why = (id) => realGate(findUseCase(id), cast).reason;
   assert.match(why('UC13'), /trusted-caller/); assert.match(why('UC18'), /trusted-caller/); assert.match(why('UC21'), /tiers/);
-  assert.match(why('UC8'), /approval/); assert.match(why('UC22'), /approval/); assert.match(why('UC2'), /A2A/); assert.match(why('UC33'), /scaled to 0/);
+  assert.match(why('UC22'), /approval/); assert.match(why('UC2'), /A2A/); assert.match(why('UC33'), /scaled to 0/);
   assert.match(why('UC40'), /Privilege|ID-JAG/); assert.match(why('UC-TOOL1'), /code-search/); assert.match(why('UC9'), /feature flag/);
   for (const id of realIds) assert.ok(SE_MCP_TOOLS.has(realGate(findUseCase(id), cast).tool));
   await withFull(async (url, { gw }) => {
