@@ -268,7 +268,8 @@ describe("hand-off and go deeper", () => {
     await boot();
     const u = userEvent.setup();
     await u.click(within(screen.getByTestId("wtt-away")).getByTestId("wtt-UC2.6"));
-    const turn = screen.getByTestId("turn");
+    // The chip fills the composer and "sends" after a short flash (owner 2026-11-13): wait for the turn.
+    const turn = await screen.findByTestId("turn");
     expect(turn.getAttribute("data-status")).toBe("handoff");
     onlyReply(turn);
     expect(within(turn).getByTestId("turn-handoff-say").textContent).toBe("This is handled in a2a-lab, its own app.");

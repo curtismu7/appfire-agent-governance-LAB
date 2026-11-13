@@ -13,12 +13,12 @@ export const verticalHeading = (id, label) => {
 };
 const opensApp = (p) => p.route === "Hand off";
 
-function Chips({ list, onSay, disabled, label, testId }) {
+function Chips({ list, typeAndSend, disabled, label, testId }) {
   return (
     <ul className="wtt__list" aria-label={label} data-testid={testId}>
       {list.map((p) => (
         <li key={p.uc}>
-          <button type="button" className="wtt__chip" onClick={() => onSay(p.text, "chip")} aria-disabled={disabled ? "true" : undefined} title={`${opensApp(p) ? "Hands off" : "Runs"} ${p.uc} ${p.title}`} data-testid={`wtt-${p.uc}`}>{p.text}</button>
+          <button type="button" className="wtt__chip" onClick={() => typeAndSend(p.text, "chip")} aria-disabled={disabled ? "true" : undefined} title={`${opensApp(p) ? "Hands off" : "Runs"} ${p.uc} ${p.title}`} data-testid={`wtt-${p.uc}`}>{p.text}</button>
         </li>
       ))}
     </ul>
@@ -27,7 +27,7 @@ function Chips({ list, onSay, disabled, label, testId }) {
 
 // What to type, per vertical: always visible above the input (owner rule). The prompts that run here come first; the ones whose use case opens
 // its own app sit in their own group. A stub vertical says it has no demo pack yet.
-export function WhatToType({ prompts, vertical, verticalLabel, stub, onSay, disabled }) {
+export function WhatToType({ prompts, vertical, verticalLabel, stub, typeAndSend, disabled }) {
   const heading = verticalHeading(vertical, verticalLabel);
   const here = prompts.filter((p) => !opensApp(p));
   const away = prompts.filter(opensApp);
@@ -36,10 +36,10 @@ export function WhatToType({ prompts, vertical, verticalLabel, stub, onSay, disa
       <p className="kicker" data-testid="wtt-heading">What to type · {heading}</p>
       {stub ? <p className="muted" data-testid="wtt-stub">{heading}: no demo pack yet. Pick Banking, Healthcare or Retail to chat.</p> : prompts.length === 0 ? <p className="muted">Loading the prompts...</p> : (
         <div className="wtt__groups">
-          <Chips list={here} onSay={onSay} disabled={disabled} label="Runs here" testId="wtt-here" />
+          <Chips list={here} typeAndSend={typeAndSend} disabled={disabled} label="Runs here" testId="wtt-here" />
           {away.length > 0 && <>
             <p className="wtt__group">Opens its own app</p>
-            <Chips list={away} onSay={onSay} disabled={disabled} label="Opens its own app" testId="wtt-away" />
+            <Chips list={away} typeAndSend={typeAndSend} disabled={disabled} label="Opens its own app" testId="wtt-away" />
           </>}
         </div>
       )}
@@ -48,7 +48,7 @@ export function WhatToType({ prompts, vertical, verticalLabel, stub, onSay, disa
 }
 
 // First open: the agent's name and four starter cards from the vertical's prompts.
-function Starters({ agent, brand, prompts, onSay, stub }) {
+function Starters({ agent, brand, prompts, typeAndSend, stub }) {
   return (
     <div className="starters" data-testid="starters">
       <span className="avatar avatar--agent avatar--big" aria-hidden="true">AI</span>
@@ -58,7 +58,7 @@ function Starters({ agent, brand, prompts, onSay, stub }) {
         <ul className="starters__grid">
           {prompts.filter((p) => !opensApp(p)).slice(0, 4).map((p) => (
             <li key={p.uc}>
-              <button type="button" className="starter" onClick={() => onSay(p.text, "starter")} data-testid={`starter-${p.uc}`}>
+              <button type="button" className="starter" onClick={() => typeAndSend(p.text, "starter")} data-testid={`starter-${p.uc}`}>
                 <Tag state={outcomeState(p.expectedOutcome)}>{p.uc} · {p.expectedOutcome}</Tag>
                 <b>{p.text}</b>
                 <span className="muted">{p.title}</span>
@@ -87,7 +87,22 @@ export default function AgentColumn({ agent, brand, userId, vertical, verticalLa
     box.scrollTop = Math.max(0, top);
   }, [turns.length, turns[turns.length - 1]?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const [word, state] = STATUS[status] || STATUS.idle;
+  const [sending, setSending] = useState(false);
+  const sendTimer = useRef(null);
+  useEffect(() => () => clearTimeout(sendTimer.current), []);
   const send = (e) => { e.preventDefault(); if (!text.trim() || running) return; onSay(text, "typed"); setText(""); };
+  // A prompt chip fills the composer and "sends" visibly (owner 2026-11-13): the text appears, the composer flashes,
+  // then the same send path runs. The flash is short enough that scripted tests waiting ~300ms still see the run.
+  const typeAndSend = (value, source) => {
+    if (running || sending || !value) return;
+    setText(value);
+    setSending(true);
+    sendTimer.current = setTimeout(() => {
+      setSending(false);
+      onSay(value, source);
+      setText("");
+    }, 260);
+  };
   return (
     <section className="agentcol" aria-label="Agent" data-testid="agent-column" data-talking={turns.length ? "true" : undefined}>
       <header className="agentcol__head">
@@ -96,7 +111,7 @@ export default function AgentColumn({ agent, brand, userId, vertical, verticalLa
         <Tag state={state} testId="agent-status">{word}</Tag>
       </header>
       <div className="agentcol__scroll">
-        {turns.length === 0 ? <Starters agent={agent} brand={brand} prompts={prompts} onSay={onSay} stub={stub} /> : (
+        {turns.length === 0 ? <Starters agent={agent} brand={brand} prompts={prompts} typeAndSend={typeAndSend} stub={stub} /> : (
           <ol className="turns" aria-label="Conversation" data-testid="turns">
             {turns.map((t) => <Turn key={t.id} turn={t} onHop={onHop} onPreview={onPreview} userId={userId} running={running} />)}
           </ol>
@@ -104,8 +119,8 @@ export default function AgentColumn({ agent, brand, userId, vertical, verticalLa
         <div ref={endRef} />
       </div>
       <div className="agentcol__foot">
-        <WhatToType prompts={prompts} vertical={vertical} verticalLabel={verticalLabel} stub={stub} onSay={onSay} disabled={running} />
-        <form className="composer" onSubmit={send}>
+        <WhatToType prompts={prompts} vertical={vertical} verticalLabel={verticalLabel} stub={stub} typeAndSend={typeAndSend} disabled={running} />
+        <form className={`composer${sending ? " composer--sending" : ""}`} onSubmit={send}>
           <label className="sr-only" htmlFor="composer-input">Message the agent</label>
           <input id="composer-input" type="text" value={text} maxLength={400} onChange={(e) => setText(e.target.value)} placeholder={stub ? "No demo pack for this vertical yet" : "Type what a customer would say"} autoComplete="off" data-testid="composer-input" />
           <button type="submit" className="primary" aria-disabled={running || !text.trim() ? "true" : undefined} data-testid="composer-send">Send</button>
