@@ -101,8 +101,13 @@ export function createApp({
   // Which Real this lab has: 'full' (sign-in, agent token, token exchange, Agent Gateway), 'idp-only' (the OLD two calls with the worker client, only
   // while none of the full-Real settings is set) or null. Once any AAG_* full-Real setting is there, the old path is ignored entirely.
   const realLevel = () => (real.configured() ? 'full' : real.wanted() ? null : live.configured() ? 'idp-only' : null);
-  const realRefusal = (req) => liveRefusal(guardCtx(req)) ?? (realLevel() ? null : notConfiguredText(real.missing(), real.problem()));
+  const realRefusal = (req) => liveRefusal(realCtx(req)) ?? (realLevel() ? null : notConfiguredText(real.missing(), real.problem()));
   const mockCtx = (req) => ({ env, bind, headers: trustedProxyHeaders(req.headers, proxyOrigin()) });
+  // Owner 2026-11-13: Real gets the same trusted-proxy exception as Mock sign-in. The shared lab-proxy is the owner's own
+  // process on this machine; when a request carries exactly its two headers (X-Forwarded-Host = the proxy origin, proto = its
+  // scheme) and nothing else that names a proxy or a client address, the pair is dropped before the live guard runs. Any other
+  // proxy header, or a mismatch, keeps the headers whole and Real stays refused — an untrusted caller cannot forge the pair.
+  const realCtx = (req) => ({ env, bind, headers: trustedProxyHeaders(req.headers, proxyOrigin()) });
   // vertical: absent means the default; present must be a known id. Returns the id, or null after answering.
   const verticalOf = (v, res) => {
     if (v === undefined) return DEFAULT_VERTICAL;
@@ -210,7 +215,7 @@ export function createApp({
 
   // The Sign in dialog (full Real). GET: whether sign-in is available, who is signed in, and the username to prefill (from AAG_DEMO_USERNAME).
   // POST {password}: the pi.flow sign-in on the server (real.js). The password is used once and never stored, logged or returned; errors are fixed text.
-  const signInRefusal = (req) => liveRefusal(guardCtx(req)) ?? (realLevel() === 'full' ? null : notConfiguredText(real.missing(), real.problem()));
+  const signInRefusal = (req) => liveRefusal(realCtx(req)) ?? (realLevel() === 'full' ? null : notConfiguredText(real.missing(), real.problem()));
   api.get('/signin', (req, res) => {
     const id = ws(req, res); if (!id) return;
     noStore(res);
@@ -280,7 +285,7 @@ export function createApp({
       const mode = modeOf(bodyOf(req).mode);
       if (!mode) return res.status(400).json({ error: 'bad_mode', detail: 'mode must be mock or live' });
       if (mode === 'live') {
-        const why = liveRefusal(guardCtx(req));
+        const why = liveRefusal(realCtx(req));
         if (why) return res.status(403).json({ error: 'live_not_allowed', detail: why });
       }
       await workspaces.write(id, (s) => { s.mode = mode; });
@@ -313,7 +318,7 @@ export function createApp({
       if (!requested) return res.status(400).json({ error: 'bad_mode', detail: 'mode must be mock or live' });
       if (!isFullVertical(vertical)) return res.status(501).json({ error: 'vertical_stub', detail: 'this vertical is a data stub: it has a name and no pack yet' });
       if (requested === 'live') {
-        const why = liveRefusal(guardCtx(req));
+        const why = liveRefusal(realCtx(req));
         if (why) return res.status(403).json({ error: 'live_not_allowed', detail: why, live: liveNote(uc) });
         const level = realLevel();
         if (!level) return res.status(503).json({ error: 'live_not_configured', detail: notConfiguredText(real.missing(), real.problem()), live: liveNote(uc) });

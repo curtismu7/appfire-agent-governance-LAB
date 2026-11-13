@@ -51,7 +51,7 @@ test('a write sent with the shelf proxy origin is accepted only when SHELF_URL n
   }, { env: { ...MOCK_OK, SHELF_URL: 'https://other.example:8443' } });
 });
 
-test("mock sign-in accepts only the shelf proxy's own two headers; any other proxy header, a mismatch, or live mode behind it is refused", async () => {
+test("mock sign-in and Real accept only the shelf proxy's own two headers; any other proxy header or a mismatch is refused (owner 2026-11-13: Real trusts the shared lab-proxy too)", async () => {
   const proxy = 'https://shelf.example:8443';
   const ours = { 'x-forwarded-host': 'shelf.example:8443', 'x-forwarded-proto': 'https', origin: proxy, 'sec-fetch-site': 'same-origin' };
   await withServer(async (url) => {
@@ -61,7 +61,7 @@ test("mock sign-in accepts only the shelf proxy's own two headers; any other pro
     }
     const wrongHost = await post(url, '/api/run/UC1', {}, { ...ours, 'x-forwarded-host': 'evil.example:8443', ...W('proxy-run-03') }); assert.equal(wrongHost.status, 403);
     const wrongProto = await post(url, '/api/run/UC1', {}, { ...ours, 'x-forwarded-proto': 'http', ...W('proxy-run-04') }); assert.equal(wrongProto.status, 403);
-    const live = await put(url, '/api/mode', { mode: 'live' }, { ...ours, ...W('proxy-run-05') }); assert.equal(live.status, 403, 'live never gets the exception');
+    const live = await put(url, '/api/mode', { mode: 'live' }, { ...ours, ...W('proxy-run-05') }); assert.equal(live.status, 200, 'owner 2026-11-13: Real gets the same trusted-proxy exception');
   }, { env: { ...MOCK_OK, SHELF_URL: proxy } });
   await withServer(async (url) => {
     const r = await post(url, '/api/run/UC1', {}, { 'x-forwarded-host': 'shelf.example:8443', 'x-forwarded-proto': 'https', ...W('proxy-run-06') });

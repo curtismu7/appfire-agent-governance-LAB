@@ -120,7 +120,8 @@ export const FORWARDED = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x
 // The one proxy the owner runs: the shared lab-proxy, whose origin is SHELF_URL. When the request carries exactly its two headers
 // (X-Forwarded-Host = that host, X-Forwarded-Proto = that scheme) and nothing else that names a proxy or a client address, the pair is
 // dropped so the MOCK sign-in guard can run on the rest. Any other proxy header, or a mismatch, keeps the headers whole (refused).
-// Used for mock sign-in only: live mode never gets this exception.
+// Used for mock sign-in AND for the Real guards (owner 2026-11-13: the shared lab-proxy is the owner's own process, so its exact
+// two-header pair is trusted for both; any other proxy header still refuses).
 export function trustedProxyHeaders(headers, proxyOrigin) {
   if (!proxyOrigin || !headers) return headers;
   let u; try { u = new URL(proxyOrigin); } catch { return headers; }
