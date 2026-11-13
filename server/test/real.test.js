@@ -51,7 +51,7 @@ test('the full chain: pi.flow sign-in, agent token, TWO token exchanges (act = a
     const auth = p1.seen.find((x) => x.url.includes('/as/authorize'));
     const q = new URL(auth.url, 'http://x').searchParams;
     assert.equal(q.get('response_mode'), 'pi.flow'); assert.equal(q.get('code_challenge_method'), 'S256'); assert.equal(q.get('redirect_uri'), REDIRECT_URI);
-    assert.equal(q.get('scope'), 'openid profile email fake:mcp:invoke', 'the OIDC scopes plus the gateway scope'); assert.equal(REDIRECT_URI, 'http://127.0.0.1:7813/callback', 'one of the URIs the owner setup script registers');
+    assert.equal(q.get('scope'), 'openid profile email agent:invoke', 'the OIDC scopes plus the agent scope (PingOne refuses two resources in one authorize, so the gateway scope arrives on the exchange-2 token)'); assert.equal(REDIRECT_URI, 'http://127.0.0.1:7813/callback', 'one of the URIs the owner setup script registers');
     const r = await run(url, 'UC1', { vertical: 'banking' }, { traceparent: TP });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     const x = r.body.run;

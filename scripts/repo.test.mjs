@@ -44,7 +44,7 @@ test('customer.config.json is git-ignored, and its example only sets the two cas
 
 test('no shipped text names a real customer, company or tenant', () => {
   const skip = new Set(['node_modules', 'dist', '.git', '.data', 'package-lock.json', '.env', 'customer.config.json']); // git-ignored files (local settings: the e2e screenshots are binary; .env holds this Mac's host names)
-  skip.add('.env.bak.2026-11-11T02-06-17-446Z'); skip.add('.env.bak.20261109184126'); // local .env backups (git-ignored pattern .env.bak.*)
+  // local .env backups (git-ignored pattern .env.bak.*): skipped by name below
   const allowed = { 'docker-compose.yml': ['appfire-agent-governance.local.ping-devops.com'], // proxy-served lab host (default LAB_ALLOWED_HOSTS): no real tenant or customer
     // owner-run setup (2026-11-10): the public Agent Gateway host, its namespace and the lab-proxy callback, exact strings in these files only
     'deploy/k8s-owner/agent-gateway-ingress.yaml': ['agent-gateway.ai-demo.ping-devops.com', 'ping-devops-cmuir'],
@@ -53,7 +53,7 @@ test('no shipped text names a real customer, company or tenant', () => {
   const hits = [];
   const walk = (dir) => {
     for (const name of fs.readdirSync(dir)) {
-      if (skip.has(name)) continue;
+      if (skip.has(name) || name.startsWith('.env.bak.')) continue;
       const p = path.join(dir, name);
       if (fs.statSync(p).isDirectory()) walk(p);
       else if (!/\.test\.m?js$|scripts\/gen-manifest\.mjs$/.test(p)) { // the tests and the generator's one redaction rule name the words on purpose
@@ -149,7 +149,7 @@ test('step 2: the web source has no outbound URL, no eval/Function, no raw HTML 
     assert.ok(!/https?:\/\//.test(t.replace(/\/\/ .*$/gm, '')), `${path.basename(f)} names a URL`);
     assert.ok(!/dangerouslySetInnerHTML|\beval\(|new Function|\binnerHTML\b/.test(t), `${path.basename(f)} injects HTML or evaluates text`);
     assert.ok(!/['"]#[0-9a-fA-F]{3,8}['"]/.test(t), `${path.basename(f)} has a colour literal`);
-    assert.ok(!/<a[ >]/.test(t.replace(/<a className="top-menu__shelf" href=\{shelfUrl\}[\s\S]*?<\/a>/g, '')), `${path.basename(f)} renders a link: link-outs are plain labels (the Shelf button is the one family-standard exception)`);
+    assert.ok(!/<a[ >]/.test(t.replace(/<a className="top-menu__shelf[^"]*" href=\{shelfUrl\}[\s\S]*?<\/a>/g, '')), `${path.basename(f)} renders a link: link-outs are plain labels (the Shelf button is the one family-standard exception)`);
   }
 });
 
@@ -231,7 +231,7 @@ test('owner 2026-11-09: no shipped file reads or points at the retired shared se
   const hits = [];
   const walk = (dir) => {
     for (const name of fs.readdirSync(dir)) {
-      if (skip.has(name)) continue;
+      if (skip.has(name) || name.startsWith('.env.bak.')) continue;
       const p = path.join(dir, name);
       if (fs.statSync(p).isDirectory()) walk(p);
       else if (p !== self && !/\.(png|jpe?g|gif|ico|woff2?)$/.test(name) && banned.test(fs.readFileSync(p, 'utf8'))) hits.push(path.relative(root, p));

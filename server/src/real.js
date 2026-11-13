@@ -32,7 +32,9 @@ export const MAX_SESSIONS = 500;
 // The redirect URI the user app must list. pi.flow never redirects: PingOne only checks that it matches the app; nothing is ever served there.
 // It is one of the two URIs scripts/owner/pingone-real-setup.mjs registers on the user app.
 export const REDIRECT_URI = 'http://127.0.0.1:7813/callback';
-// The sign-in asks for the OIDC scopes plus the gateway scope (AAG_GATEWAY_SCOPE), so the user's access token can be the subject of the exchange.
+// The sign-in asks for the OIDC scopes, the gateway scope (AAG_GATEWAY_SCOPE) and the agent scope (AAG_AGENT_SCOPE) when the
+// user app is granted them. The agent scope on the user token is what PingOne's may_act attribute resolves from (the
+// agent-scope resource stamps may_act = the actor the user consented to), so the exchange-1 resource can pass it through as act.
 export const SIGN_IN_SCOPES = 'openid profile email';
 export const PASSWORD_SHOWN = '[typed by you in the Sign in dialog: sent once to PingOne, never stored, logged or shown]';
 const SECRET_SHOWN = 'Basic [write-only: the client secret is never shown]';
@@ -44,7 +46,13 @@ const PW_TYPE = 'application/vnd.pingidentity.usernamePassword.check+json';
 const EX1_TITLE = 'Exchange 1: act = agent';
 const EX2_TITLE = 'Exchange 2: for the gateway';
 // The act claim (an RFC 8693 object that names the actor in sub), or null when the claims have none: an empty object, an array or a string is no act.
-const actOf = (claims) => (claims && claims.act && typeof claims.act === 'object' && !Array.isArray(claims.act) && typeof claims.act.sub === 'string' && claims.act.sub !== '' ? claims.act : null);
+const actOf = (claims) => {
+  if (!claims) return null;
+  // PingOne sometimes serializes the nested act object as a JSON string; accept both shapes.
+  let act = claims.act;
+  if (typeof act === 'string') { try { act = JSON.parse(act); } catch { return null; } }
+  return act && typeof act === 'object' && !Array.isArray(act) && typeof act.sub === 'string' && act.sub !== '' ? act : null;
+};
 // What the hop shows of it: the actor's sub only, or ABSENT.
 const actShown = (act) => (act ? { sub: act.sub.slice(0, 200) } : 'ABSENT'); // actOf guarantees a string sub
 // The reply when the delegated token has no act claim. The same words either way; after exchange 2 it also points at the pass-through.
@@ -86,7 +94,7 @@ export function realConfig(settings = {}, env = {}) {
   }
   return {
     environmentId, base, gatewayUrl: new URL(settings.AAG_AGENT_GATEWAY_URL).toString(), audience: settings.AAG_GATEWAY_AUDIENCE, scope: settings.AAG_GATEWAY_SCOPE, agentScope, username: settings.AAG_DEMO_USERNAME,
-    user: { id: settings.AAG_USER_CLIENT_ID, secret: settings.AAG_USER_CLIENT_SECRET }, agent: { id: settings.AAG_AGENT_CLIENT_ID, secret: settings.AAG_AGENT_CLIENT_SECRET },
+    user: { id: settings.AAG_USER_CLIENT_ID, secret: settings.AAG_USER_CLIENT_SECRET }, agent: { id: settings.AAG_AGENT_CLIENT_ID, secret: settings.AAG_AGENT_CLIENT_SECRET, authMethod: settings.AAG_AGENT_TOKEN_AUTH === 'CLIENT_SECRET_POST' ? 'post' : 'basic' },
   };
 }
 
@@ -165,7 +173,14 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     const cookies = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
     return { status: response.status, redirected: response.status >= 300 && response.status < 400, json, truncated: body.truncated, cookies };
   }
-  const tokenCall = (form, client, traceparent) => p1(`${config.base}/as/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json', authorization: basic(client) }, body: new URLSearchParams(form).toString() }, traceparent);
+  const tokenCall = (form, client, traceparent) => {
+    // CLIENT_SECRET_POST apps (e.g. PingOne AI_AGENT type) refuse the Basic header; the rest keep Basic (write-only either way).
+    const headers = client.authMethod === 'post'
+      ? { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }
+      : { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json', authorization: basic(client) };
+    const body = client.authMethod === 'post' ? new URLSearchParams({ ...form, client_id: client.id, client_secret: client.secret }).toString() : new URLSearchParams(form).toString();
+    return p1(`${config.base}/as/token`, { method: 'POST', headers, body }, traceparent);
+  };
 
   const sessionOf = (ws) => {
     const s = sessions.get(ws);
@@ -197,7 +212,11 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       const verifier = randomBytes(32).toString('base64url');
       const state = randomBytes(12).toString('base64url');
       const nonce = randomBytes(12).toString('base64url');
-      const query = { response_type: 'code', client_id: config.user.id, redirect_uri: REDIRECT_URI, scope: `${SIGN_IN_SCOPES} ${config.scope}`, response_mode: 'pi.flow', code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', state, nonce };
+      // PingOne refuses scopes from two custom resources in one authorize ("May not request scopes for multiple resources"),
+      // so the sign-in asks for the agent scope only (the gateway scope arrives on the exchange-2 token, whose audience the
+      // gateway-scope resource chooses). The agent scope on the user token is also what the resource's may_act attribute
+      // resolves from, so the exchange-1 resource can stamp act.
+      const query = { response_type: 'code', client_id: config.user.id, redirect_uri: REDIRECT_URI, scope: `${SIGN_IN_SCOPES} ${config.agentScope}`, response_mode: 'pi.flow', code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', state, nonce };
       const t1 = tp();
       const a = await p1(`${config.base}/as/authorize?${new URLSearchParams(query)}`, { method: 'GET', headers: { accept: 'application/json' } }, t1);
       keep(a.cookies);

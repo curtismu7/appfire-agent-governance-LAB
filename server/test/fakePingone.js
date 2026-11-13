@@ -68,7 +68,7 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
         if (req.method === 'GET' && u.pathname === `/${ENV_ID}/as/authorize`) {
           const q = Object.fromEntries(u.searchParams);
           if (q.response_mode !== 'pi.flow') return send(400, { error: 'unsupported_response_mode', error_description: 'fake: only pi.flow (no redirect login)' });
-          if (q.client_id !== USER_CLIENT_ID || q.response_type !== 'code' || q.code_challenge_method !== 'S256' || !q.code_challenge || !q.redirect_uri || !String(q.scope || '').split(' ').includes('openid') || !String(q.scope || '').split(' ').includes(SCOPE)) return send(400, { error: 'invalid_request', error_description: 'fake: authorize needs the user client, code, PKCE S256, a redirect_uri and the openid and gateway scopes' });
+          if (q.client_id !== USER_CLIENT_ID || q.response_type !== 'code' || q.code_challenge_method !== 'S256' || !q.code_challenge || !q.redirect_uri || !String(q.scope || '').split(' ').includes('openid') || !String(q.scope || '').split(' ').includes(agentScope)) return send(400, { error: 'invalid_request', error_description: 'fake: authorize needs the user client, code, PKCE S256, a redirect_uri and the openid and agent scopes' });
           const id = randomBytes(8).toString('hex'); const st = randomBytes(12).toString('hex');
           flows.set(id, { cookie: st, challenge: q.code_challenge, state: q.state, nonce: q.nonce, done: false });
           return send(200, { id, status: 'USERNAME_PASSWORD_REQUIRED', _links: { 'usernamePassword.check': { href: `http://fake.invalid/${ENV_ID}/flows/${id}` } } }, { 'set-cookie': [`ST=${st}; Path=/; HttpOnly`, 'interactionId=fake-interaction; Path=/'] });
@@ -101,8 +101,8 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
             if (auth !== basicOf(USER_CLIENT_ID, USER_CLIENT_SECRET)) return send(401, { error: 'invalid_client', error_description: 'fake: user client' });
             const c = codes.get(form.code); codes.delete(form.code);
             if (!c || createHash('sha256').update(String(form.code_verifier || '')).digest('base64url') !== c.challenge) return send(400, { error: 'invalid_grant', error_description: 'fake: bad code or PKCE verifier' });
-            const at = jwt({ sub: USER_SUB, aud: 'fake-user-api', client_id: USER_CLIENT_ID, scope: 'openid profile' }); issued.user.add(at);
-            return send(200, { access_token: at, id_token: jwt({ sub: USER_SUB, aud: USER_CLIENT_ID, nonce: c.nonce, preferred_username: DEMO_USERNAME }), refresh_token: 'fake-refresh-never-shown-0123456789', token_type: 'Bearer', expires_in: 3600, scope: 'openid profile' });
+            const at = jwt({ sub: USER_SUB, aud: AGENT_AUDIENCE, client_id: USER_CLIENT_ID, scope: `openid profile ${agentScope}`, may_act: { sub: AGENT_CLIENT_ID } }); issued.user.add(at);
+            return send(200, { access_token: at, id_token: jwt({ sub: USER_SUB, aud: USER_CLIENT_ID, nonce: c.nonce, preferred_username: DEMO_USERNAME }), refresh_token: 'fake-refresh-never-shown-0123456789', token_type: 'Bearer', expires_in: 3600, scope: `openid profile ${agentScope}` });
           }
           if (form.grant_type === 'client_credentials') {
             if (auth !== basicOf(AGENT_CLIENT_ID, AGENT_CLIENT_SECRET)) return send(401, { error: 'invalid_client', error_description: 'fake: agent client' });

@@ -71,8 +71,8 @@ export const COMPOSE_ENV = {
   substituted: ['SHELF_URL', 'AAG_LAB_MODE', 'AAG_BRAIN_URL', 'LAB_ALLOWED_HOSTS', 'AAG_ALLOW_LIVE', 'PINGONE_ENVIRONMENT_ID', 'PINGONE_REGION', 'PINGONE_CLIENT_ID', 'PINGONE_CLIENT_SECRET',
     // Full Real (owner, 2026-11-10): exactly these eight names, which the owner's scripts write ...
     'AAG_USER_CLIENT_ID', 'AAG_USER_CLIENT_SECRET', 'AAG_AGENT_CLIENT_ID', 'AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME', 'AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE',
-    // ... and, optional (empty = agent:invoke), the scope of the agent token and token exchange 1 (the two-exchange pattern).
-    'AAG_AGENT_SCOPE'],
+    // ... and, optional, the agent scope (empty = agent:invoke) and the agent client's token auth (empty = Basic; CLIENT_SECRET_POST for AI_AGENT apps).
+    'AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH'],
   fixed: ['PORT', 'CALAB_BIND', 'AAG_PUBLISH', 'ALLOW_MOCK_SIGNIN', 'AAG_DEPLOY_MODE', 'AAG_LIVE_FROM_ENV'],
 };
 export function environmentOf(text) {

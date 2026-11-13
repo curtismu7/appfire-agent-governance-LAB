@@ -9,7 +9,8 @@
 # the environment (the image has no .env, .dockerignore). Real is available when they are complete; with none of them the lab is Mock with Real disabled.
 # Full Real (owner, 2026-11-10): the eight AAG_* names (user app, agent app, demo username, Agent Gateway URL, audience, scope) plus
 # PINGONE_ENVIRONMENT_ID and PINGONE_REGION, by the same substitution. When any AAG_* name is set, the old PINGONE_CLIENT_* worker client is ignored.
-# AAG_AGENT_SCOPE (optional, empty = agent:invoke) is the one more name: the scope of the agent token and token exchange 1.
+# AAG_AGENT_SCOPE (optional, empty = agent:invoke) is the scope of the agent token and exchange 1. AAG_AGENT_TOKEN_AUTH=CLIENT_SECRET_POST (optional)
+# switches the agent token call to client_secret_post (PingOne AI_AGENT apps refuse Basic).
 # AAG_ALLOW_LIVE=0 in .env (or the shell) is the explicit OFF switch. IDP is not pinned: each mode uses its own IdP, so the toggle switches both ways.
 # AAG_DEPLOY_MODE=local is this compose file; the dormant hosted build sets hosted in its own k8s manifest.
 # AAG_BRAIN_URL (owner opt-in, off by default): the local llama.cpp model on the Mac, e.g. AAG_BRAIN_URL=http://host.docker.internal:8090.
@@ -43,6 +44,7 @@ services:
       AAG_GATEWAY_AUDIENCE: ${AAG_GATEWAY_AUDIENCE:-}
       AAG_GATEWAY_SCOPE: ${AAG_GATEWAY_SCOPE:-}
       AAG_AGENT_SCOPE: ${AAG_AGENT_SCOPE:-}
+      AAG_AGENT_TOKEN_AUTH: ${AAG_AGENT_TOKEN_AUTH:-}
       AAG_LAB_MODE: ${AAG_LAB_MODE:-mock}
       AAG_BRAIN_URL: ${AAG_BRAIN_URL:-}
       LAB_ALLOWED_HOSTS: ${LAB_ALLOWED_HOSTS:-appfire-agent-governance.local.ping-devops.com}

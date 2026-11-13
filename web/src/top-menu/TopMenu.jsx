@@ -92,7 +92,7 @@ export default function TopMenu({
                 value="real"
                 data-testid="mode-real"
                 disabled={mode.realAvailable === false}
-                title={mode.realAvailable === false ? (mode.realHint || "Real is not configured. Mock keeps working.") : undefined}
+                title={mode.realAvailable === false ? (mode.realHint || "Real is not configured. Mock keeps working.") : (mode.realHint || undefined)}
               >
                 Real
               </option>
@@ -123,9 +123,9 @@ export default function TopMenu({
           </a>
         )}
         {help && (
-          <a className="top-menu__shelf" href={help.href} onClick={help.onClick} target="_blank" rel="noreferrer" title="Open this lab's documentation" data-testid="help-link">
-            Help
-          </a>
+          <button type="button" className="top-menu__shelf" onClick={help.onClick || (() => { window.location.hash = "#readme"; })} title={help.title || "Open this lab's documentation"} data-testid="help-link">
+            {help.label || "Help"}
+          </button>
         )}
         {version && (
           <button type="button" data-testid="version" title="About this lab">{version}</button>
