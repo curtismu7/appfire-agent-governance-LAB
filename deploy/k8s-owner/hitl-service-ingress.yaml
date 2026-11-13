@@ -1,0 +1,39 @@
+# OWNER-RUN (kubectl apply, same pattern as agent-gateway-ingress.yaml). A public URL for the SE HITL service
+# (deployment hitl-service, svc hitl-service:3009), which the Agent Gateway uses for human-approval challenges:
+# the Appfire lab's mock phone answers a challenge through it (POST /challenges/:id/respond) and the gateway
+# verifies the receipt on retry. Only /challenges (Prefix) is exposed; the writes need the internal secret
+# (X-HITL-Internal-Secret), which only this lab's server holds. Same class, issuer and annotation style as the
+# agent-gateway ingress in this namespace.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hitl-service
+  namespace: ping-devops-cmuir
+  labels: { app: hitl-service-public }
+spec:
+  secretName: hitl-service-tls
+  dnsNames:
+    - hitl.ai-demo.ping-devops.com
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-pdo
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hitl-service
+  namespace: ping-devops-cmuir
+  labels: { app: hitl-service-public }
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "256k"
+spec:
+  ingressClassName: nginx-public
+  tls:
+    - hosts: [hitl.ai-demo.ping-devops.com]
+      secretName: hitl-service-tls
+  rules:
+    - host: hitl.ai-demo.ping-devops.com
+      http:
+        paths:
+          - { path: /challenges, pathType: Prefix, backend: { service: { name: hitl-service, port: { number: 3009 } } } }
