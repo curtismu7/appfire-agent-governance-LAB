@@ -184,7 +184,7 @@ test('step 3: CI has no self-skipping conformance job (it would be a green check
   assert.ok(!/conformance/i.test(ci) && !/SKIPPED/.test(ci)); assert.match(read('README.md'), /CI does not run conformance/);
   const pack = JSON.parse(read('content-pack.json'));
   assert.ok(pack.glossary.some((g) => g.id === 'live-mode' && /UNVERIFIED/.test(g.definition))); assert.ok(pack.cards.some((c) => c.id === 'concept-live-mode'));
-  assert.match(read('docs/talk-track.md'), /## Mock and live/); assert.match(read('docs/talk-track.md'), /UNVERIFIED/);
+  assert.match(read('docs/talk-track.md'), /## Real mode: this is live, not slides/); assert.match(read('docs/talk-track.md'), /simulated and labelled/);
   const compose = read('docker-compose.yml').replace(/^\s*#.*$/gm, '');
   assert.ok(!/STANDALONE_ENV|volumes:|env_file/.test(compose), 'no shared settings file, no mount, no env_file (compose.test.mjs pins the exact name list)');
   assert.ok(!/^\s+IDP:/m.test(compose)); assert.match(compose, /^\s+AAG_ALLOW_LIVE: \$\{AAG_ALLOW_LIVE:-\}$/m); assert.match(compose, /^\s+AAG_DEPLOY_MODE: local$/m);
