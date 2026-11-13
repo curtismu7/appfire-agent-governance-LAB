@@ -36,7 +36,7 @@ function RealHelp({ catalog, onRun, activeUc }) {
       <ul className="guide__list" data-testid="guide-real-list">
         {real.map((u) => (
           <li key={u.id}>
-            <button type="button" className="guide__runlink" onClick={() => run(u.id)} data-testid={`guide-real-${u.id}`} aria-pressed={activeUc === u.id}>{u.id} · {u.title}</button>
+            <button type="button" className="guide__runlink" onClick={() => run(u.id)} data-testid={`guide-real-${u.id}`} aria-pressed={activeUc === u.id}>{u.title}</button>
           </li>
         ))}
         {real.length === 0 && <li className="muted">Loading the catalog…</li>}
@@ -44,7 +44,7 @@ function RealHelp({ catalog, onRun, activeUc }) {
       <h4 className="guide__subhead">Blocked in Real ({blocked.length})</h4>
       <ul className="guide__list guide__list--blocked" data-testid="guide-blocked-list">
         {blocked.map((u) => (
-          <li key={u.id}><strong>{u.id}</strong> · {u.title} — {u.realGate.reason}</li>
+          <li key={u.id}>{u.title} — {u.realGate.reason}</li>
         ))}
         {blocked.length === 0 && <li className="muted">Loading the catalog…</li>}
       </ul>

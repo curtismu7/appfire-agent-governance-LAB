@@ -41,7 +41,7 @@ export default function SignInDialog({ isOpen, username, onClose, onSignedIn }) 
           <input ref={pwRef} type="password" name="password" value={password} onChange={(e) => setPassword(e.target.value.slice(0, 256))} autoComplete="current-password" required maxLength={256} data-testid="signin-password" autoFocus />
         </label>
         {error && <p className="field-error" role="alert" data-testid="signin-error">{visible(error)}</p>}
-        <div className="seg">
+        <div className="seg signin-actions">
           <button type="submit" className="primary" disabled={busy || !password} data-testid="signin-submit">{busy ? "Signing in..." : "Sign in"}</button>
           <button type="button" onClick={() => { setPassword(""); onClose?.(); }} data-testid="signin-cancel">Cancel</button>
         </div>
