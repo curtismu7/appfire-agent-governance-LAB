@@ -1,4 +1,9 @@
 import "@testing-library/jest-dom/vitest";
+import { afterEach } from "vitest";
+import { setJsonView } from "./components/JsonPane";
+
+// The Formatted | Raw choice of the JSON panes is module state: every test starts on Formatted.
+afterEach(() => setJsonView("form"));
 
 // React Flow measures the DOM; jsdom has no layout, so give it the few browser APIs it reads.
 class RO { observe() {} unobserve() {} disconnect() {} }

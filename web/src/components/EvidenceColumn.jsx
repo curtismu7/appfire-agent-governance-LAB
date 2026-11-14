@@ -111,7 +111,7 @@ export default function EvidenceColumn({ run, selHop, onSelect, config, onTab, o
             {tab === "topology" && <DiagramView vertical={vertical} resetSignal={resetSignal} lastRun={lastRun} />}
             {tab === "tokens" && (
               <div data-testid="evidence-tokens">
-                <p className="muted">The tokens this run used, raw and decoded. {run?.kind === "real" ? <>Every one is a REAL token <Tag state="ok">REAL</Tag> from your PingOne environment, shown raw for teaching; they expire in minutes. Client secrets and your password are never sent to this page.</> : run?.mode === "live" ? "A live token is masked: the server never sends its raw value." : <>Every one is a MOCK token <Tag state="info">MOCK</Tag> issued by this lab and signed with a public mock key; showing it raw is the point (education).</>}</p>
+                <p className="muted">The tokens this run used, raw and decoded. {run?.kind === "real" ? <>Every one is a REAL token <Tag state="ok">REAL</Tag> from your PingOne environment, shown raw for teaching; they expire in minutes. Client secrets and your password are never sent to this page.</> : run?.mode === "live" ? "A live token is shown raw too (education). The client secret is never sent to this page." : <>Every one is a MOCK token <Tag state="info">MOCK</Tag> issued by this lab and signed with a public mock key; showing it raw is the point (education).</>}</p>
                 {run ? <TokenView tokens={run.tokens} /> : <p className="muted">Run a use case to see its tokens.</p>}
               </div>
             )}

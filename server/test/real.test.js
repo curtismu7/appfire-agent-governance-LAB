@@ -33,10 +33,9 @@ const TX = 'urn:ietf:params:oauth:grant-type:token-exchange';
 const claimsOf = (raw) => JSON.parse(Buffer.from(raw.split('.')[1], 'base64url').toString('utf8'));
 // What the lab sent to the fake PingOne's token endpoint, in order: the form and the Authorization header.
 const tokenCalls = (p1) => p1.seen.filter((c) => c.method === 'POST' && c.url.endsWith('/as/token')).map((c) => ({ form: Object.fromEntries(new URLSearchParams(c.body)), auth: c.headers.authorization }));
-// No raw token (nor its payload segment) and no secret in the words and hops of a run: the one place a raw token may appear is run.tokens[].raw.
-const noRawTokens = (x, what) => {
+// No secret and no password in the words and hops of a run. Tokens are NOT hidden (owner 2026-11-14: this is a demo, tokens are shown raw in the hops and the token list).
+const noSecretsInRun = (x, what) => {
   const text = JSON.stringify({ hops: x.hops, reply: x.reply, narration: x.narration });
-  for (const t of x.tokens) for (const part of [t.raw, t.raw.split('.')[1]]) assert.ok(!text.includes(part), `${what}: a token (${t.label}) is in the hops or the reply`);
   for (const sec of SECRETS) assert.ok(!text.includes(sec), `${what}: a secret is in the hops or the reply`);
 };
 const BASIC_AGENT = `Basic ${Buffer.from(`${AGENT_CLIENT_ID}:${AGENT_CLIENT_SECRET}`).toString('base64')}`;
@@ -95,7 +94,7 @@ test('the full chain: pi.flow sign-in, agent token, TWO token exchanges (act = a
     noSecret(JSON.stringify(r.body) + s.text, 'the run or the sign-in answer');
     assert.ok(!JSON.stringify(r.body).includes('fake-refresh-never-shown'), 'the refresh token is dropped');
     // A token is raw in the token list only: no hop (request, response or note) carries one of the four.
-    for (const t of x.tokens) assert.ok(!JSON.stringify(x.hops).includes(t.raw), `a hop carries the raw ${t.label}`);
+    for (const t of x.tokens) assert.ok(JSON.stringify(x.hops).includes(t.raw), `a hop carries the raw ${t.label} (tokens are not redacted)`);
   });
 });
 
@@ -180,7 +179,7 @@ test('PingOne refusals: wrong password 401, an MFA step 409, refused exchange, n
     const x = (await run(url, 'UC1', { vertical: 'banking' })).body.run;
     assert.equal(x.outcome, 'REAL_REFUSED'); assert.equal(x.reply.who, 'PingOne'); assert.match(x.reply.text, /refused token exchange 1 \(HTTP 400: invalid_request\)/); assert.equal(gw.seen.length, 0);
     assert.deepEqual(x.hops.slice(2, 4).map((h) => [h.source, h.verdict]), [['real', 'deny'], ['not-run', 'skip']]); assert.match(x.hops[3].label, /^Token exchange 2: for the gateway \[NOT RUN\]$/);
-    noRawTokens(x, 'refused exchange 1');
+    noSecretsInRun(x, 'refused exchange 1');
     assert.equal(tokenCalls(p1).filter((c) => c.form.grant_type === TX).length, 1, 'exchange 2 was not attempted');
   }, { exchange: 'refuse' });
   // A refused exchange 2: the exchange-1 token is still shown, the gateway is never called.
@@ -189,7 +188,7 @@ test('PingOne refusals: wrong password 401, an MFA step 409, refused exchange, n
     const x = (await run(url, 'UC1', { vertical: 'banking' })).body.run;
     assert.equal(x.outcome, 'REAL_REFUSED'); assert.match(x.reply.text, /refused token exchange 2 \(HTTP 400: invalid_request\)/); assert.equal(gw.seen.length, 0);
     assert.deepEqual(x.hops.slice(2, 4).map((h) => [h.source, h.verdict]), [['real', 'ok'], ['real', 'deny']]); assert.equal(x.tokens.length, 3, 'user, agent and exchange-1 tokens');
-    noRawTokens(x, 'refused exchange 2');
+    noSecretsInRun(x, 'refused exchange 2');
   }, { exchange: 'refuse-2' });
   // The agent app has no grant for the agent scope (the owner has not re-run the setup script yet): the actor token is refused, and the words say what to do.
   await withFull(async (url, { gw, p1 }) => {
@@ -214,7 +213,7 @@ test('act is required: a token without act after exchange 2 stops the run BEFORE
     assert.equal(x.hops[2].verdict, 'deny'); assert.match(x.hops[2].note, /NO act claim/); assert.equal(x.hops[2].response.body.act_claim, 'ABSENT'); assert.match(x.hops[3].note, /exchange 1 carries no act claim/);
     assert.equal(tokenCalls(p1).filter((c) => c.form.grant_type === TX).length, 1, 'exchange 2 only passes act through, so it is not attempted');
     assert.deepEqual(x.tokens.map((t) => t.claims.act === undefined), [true, true, true]); assert.equal(x.tokens[2].expectAct, true, 'the page can say "no act claim" next to it');
-    noRawTokens(x, 'no act after exchange 1');
+    noSecretsInRun(x, 'no act after exchange 1');
   }, { setup: (p1) => { p1.state.resources.agent.act = 'absent'; } });
   // (b) Exchange 1 has act, but the gateway scope's resource does not pass it through (the old bug's cousin): exchange 2 has none, the gateway is not called.
   await withFull(async (url, { gw }) => {
@@ -226,7 +225,7 @@ test('act is required: a token without act after exchange 2 stops the run BEFORE
     assert.deepEqual(x.hops.slice(2, 4).map((h) => h.verdict), ['ok', 'deny']); assert.equal(x.hops[3].response.body.act_claim, 'ABSENT');
     assert.equal(x.tokens.length, 4); assert.deepEqual(x.tokens[2].claims.act, { sub: AGENT_CLIENT_ID }); assert.equal(x.tokens[3].claims.act, undefined);
     assert.ok(x.hops.every((h) => (h.source === 'not-run' ? /\[NOT RUN\]$/ : /\[REAL\]/).test(h.label)));
-    noRawTokens(x, 'no act after exchange 2');
+    noSecretsInRun(x, 'no act after exchange 2');
   }, { setup: (p1) => { p1.state.resources.gateway.act = 'absent'; } });
   // (d) An act that names nobody (no sub) is no act: HasValidActorChain could not match it.
   await withFull(async (url, { gw }) => {
@@ -508,18 +507,16 @@ test('review fixes: a gateway redirect is never followed; one account means no t
   }, { gateway: 'audit-ctl' });
 });
 
-test('an error PingOne writes that echoes the subject token or the agent secret is scrubbed before the hop or the reply keeps it (exchange 1 and exchange 2)', async () => {
+test('an error PingOne writes that echoes the agent secret is scrubbed before the hop or the reply keeps it (exchange 1 and exchange 2); an echoed token stays (not redacted)', async () => {
   for (const exchange of ['echo', 'echo-2']) {
     await withFull(async (url, { gw }) => {
       await toReal(url); await signIn(url);
       const x = (await run(url, 'UC1', { vertical: 'banking' })).body.run;
       assert.equal(x.outcome, 'REAL_REFUSED', exchange); assert.equal(gw.seen.length, 0);
-      noRawTokens(x, exchange);
-      const text = JSON.stringify({ hops: x.hops, reply: x.reply });
-      assert.ok(!/eyJ[A-Za-z0-9_-]{8,}/.test(text), `${exchange}: nothing JWT-shaped, not even a cut-off prefix, outside tokens[].raw`);
-      assert.match(text, /\[redacted-jwt\]/, `${exchange}: the echo is replaced, not just dropped silently`);
+      noSecretsInRun(x, exchange);
     }, { exchange });
   }
   assert.deepEqual(scrubError({ error: 'e', access_token: 'eyJabcdef.eyJxyz.sig', details: [{ message: 'x eyJabcdef.eyJxyz', code: 'C' }, 5] }, ['s3cr3t-value']).access_token, 'eyJabcdef.eyJxyz.sig', 'a success answer\'s access_token is not touched');
   assert.equal(scrubError({ message: 'is s3cr3t-value ok' }, ['s3cr3t-value']).message, 'is [secret] ok');
+  assert.equal(scrubError({ message: 'x eyJabcdef.eyJxyz' }, ['s3cr3t-value']).message, 'x eyJabcdef.eyJxyz', 'a token echoed in an error is not redacted');
 });

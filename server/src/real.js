@@ -12,7 +12,8 @@
 //
 // Secrets: the two client secrets are held in a closure and sent only in the Authorization header of a token call. The password is a function
 // argument used once in one request body and kept nowhere: not stored, not logged, not returned, not in a hop (a hop shows a fixed placeholder).
-// Real tokens are shown raw in the run's token list (rule 4: tokens are education) and redacted inside hop details; the refresh token is dropped.
+// Real tokens are shown raw in the run's token list AND in the hop details (rule 4: tokens are education; owner 2026-11-14: nothing token-shaped is redacted in this demo, nor are the
+// authorization code, state, nonce, PKCE verifier or flow cookies). Only the password and the client secrets stay write-only; the refresh token is dropped.
 // Every PingOne call goes through assertAuthUrl(): https (http only to a loopback fake), the configured environment, one of four fixed paths.
 import { createHash, randomBytes } from 'node:crypto';
 import { isLoopbackHost } from './safety.js';
@@ -121,8 +122,6 @@ export function decodeJwt(raw) {
   try { const header = JSON.parse(b64(parts[0])); const claims = JSON.parse(b64(parts[1])); return header && claims && typeof claims === 'object' ? { header, claims } : null; } catch { return null; }
 }
 const str = (v, n = 300) => (typeof v === 'string' ? v.slice(0, n) : null);
-const short = (v) => (typeof v === 'string' && v.length > 10 ? `${v.slice(0, 6)}...` : '[short]');
-const maskCookie = (c) => String(c).split(';')[0].replace(/=(.*)$/, (_m, v) => `=${short(v)}`);
 // The same form the owner verified on the identity-provider-only path (live.js): id:secret, base64.
 const basic = (c) => `Basic ${Buffer.from(`${c.id}:${c.secret}`).toString('base64')}`;
 
@@ -143,11 +142,10 @@ async function readCapped(response, max) {
 const p1Error = (r) => (r.json ? { error: str(r.json.error) ?? str(r.json.code), error_description: str(r.json.error_description) ?? str(r.json.message) ?? str(r.json.details?.[0]?.message), detail_code: str(r.json.details?.[0]?.code) } : { note: r.unreachable ? 'no answer' : r.redirected ? 'a redirect (never followed)' : 'the answer was not a JSON object' });
 // After the password has been sent, PingOne's free text is never passed on (it could echo what was typed): codes only.
 const p1Codes = (r) => (r.json ? { error: str(r.json.error, 80) ?? str(r.json.code, 80), detail_code: str(r.json.details?.[0]?.code, 80) } : p1Error(r));
-// PingOne's own error words can echo what was sent (a subject token, a client secret): the free-text fields of an answer are scrubbed of anything JWT-shaped
-// (even a cut-off one) and of the two client secrets before any of it is kept (hop details, replies). The access_token of a success is not touched.
-const JWT_RUN = /eyJ[A-Za-z0-9_-]{3,}(?:\.[A-Za-z0-9_-]*){0,2}/g;
+// PingOne's own error words can echo what was sent (a client secret): the free-text fields of an answer are scrubbed of the two client secrets before any of it is kept
+// (hop details, replies). Tokens are shown raw (owner 2026-11-14), so a JWT echoed in an error stays; the secrets never do.
 export function scrubError(json, secrets = []) {
-  const clean = (v) => (typeof v === 'string' ? secrets.filter((x) => typeof x === 'string' && x.length >= 4).reduce((t, x) => t.split(x).join('[secret]'), v.replace(JWT_RUN, '[redacted-jwt]')) : v);
+  const clean = (v) => (typeof v === 'string' ? secrets.filter((x) => typeof x === 'string' && x.length >= 4).reduce((t, x) => t.split(x).join('[secret]'), v) : v);
   const out = { ...json };
   for (const k of ['error', 'error_description', 'message', 'code']) if (k in out) out[k] = clean(out[k]);
   if (Array.isArray(out.details)) out.details = out.details.map((d) => (d && typeof d === 'object' ? { ...d, ...('message' in d ? { message: clean(d.message) } : {}), ...('code' in d ? { code: clean(d.code) } : {}) } : d));
@@ -202,7 +200,6 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     const jar = new Map();
     const keep = (cookies) => { for (const c of cookies) { const pair = String(c).split(';')[0]; const i = pair.indexOf('='); if (i > 0) jar.set(pair.slice(0, i).trim(), pair.slice(i + 1)); } };
     const cookieHeader = () => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
-    const shownCookie = () => [...jar].map(([k, v]) => `${k}=${short(v)}`).join('; ');
     let sent = false; // true once the password has gone to PingOne: from then on, only error codes are kept
     // Belt and braces: the exact password, if it ever appears in what is returned, is replaced (only for passwords long enough to be unambiguous).
     const scrub = (v) => (password.length >= 4 ? JSON.parse(JSON.stringify(v).split(JSON.stringify(password).slice(1, -1)).join('[the password]')) : v);
@@ -220,7 +217,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       const t1 = tp();
       const a = await p1(`${config.base}/as/authorize?${new URLSearchParams(query)}`, { method: 'GET', headers: { accept: 'application/json' } }, t1);
       keep(a.cookies);
-      steps.push({ step: 'authorize (response_mode=pi.flow, PKCE S256)', traceparent: t1, request: { method: 'GET', url: `${config.base}/as/authorize`, query: { ...query, state: short(state), nonce: short(nonce) } }, response: { status: a.status, body: a.json ? { id: str(a.json.id, 64), status: str(a.json.status, 64), ...(a.status === 200 ? {} : p1Error(a)) } : p1Error(a), 'set-cookie': a.cookies.map(maskCookie) } });
+      steps.push({ step: 'authorize (response_mode=pi.flow, PKCE S256)', traceparent: t1, request: { method: 'GET', url: `${config.base}/as/authorize`, query }, response: { status: a.status, body: a.json ? { id: str(a.json.id, 64), status: str(a.json.status, 64), ...(a.status === 200 ? {} : p1Error(a)) } : p1Error(a), 'set-cookie': a.cookies.map(String) } });
       if (a.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network, or switch to Mock.', a);
       if (a.status !== 200 || !a.json || !FLOW_ID.test(String(a.json.id || ''))) return fail(502, 'signin_refused', `PingOne refused to start the sign-in (${failText(a)}).`, a);
       let flow = a.json;
@@ -232,7 +229,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         sent = true;
         const r = await p1(`${config.base}/flows/${flowId}`, { method: 'POST', headers: { 'content-type': PW_TYPE, accept: '*/*', ...(jar.size ? { cookie: cookieHeader() } : {}) }, body: JSON.stringify({ username: config.username, password }) }, t2);
         keep(r.cookies);
-        steps.push({ step: 'flows API: username and password', traceparent: t2, request: { method: 'POST', url: `${config.base}/flows/${flowId}`, headers: { 'content-type': PW_TYPE, cookie: shownCookie() }, body: { username: config.username, password: PASSWORD_SHOWN } }, response: { status: r.status, body: r.json && r.status === 200 ? { id: str(r.json.id, 64), status: str(r.json.status, 64) } : p1Codes(r) } });
+        steps.push({ step: 'flows API: username and password', traceparent: t2, request: { method: 'POST', url: `${config.base}/flows/${flowId}`, headers: { 'content-type': PW_TYPE, cookie: cookieHeader() }, body: { username: config.username, password: PASSWORD_SHOWN } }, response: { status: r.status, body: r.json && r.status === 200 ? { id: str(r.json.id, 64), status: str(r.json.status, 64) } : p1Codes(r) } });
         if (r.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network, or switch to Mock.', r);
         if (r.status === 400 || r.status === 401) return fail(401, 'signin_rejected', 'PingOne did not accept the username or password.', r);
         if (r.status !== 200 || !r.json) return fail(502, 'signin_refused', `PingOne refused the sign-in (${failText(r)}).`, r);
@@ -244,7 +241,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       if (!code) {
         const t3 = tp();
         const r = await p1(`${config.base}/as/resume?flowId=${encodeURIComponent(flowId)}`, { method: 'GET', headers: { accept: 'application/json', ...(jar.size ? { cookie: cookieHeader() } : {}) } }, t3);
-        steps.push({ step: 'resume: the authorization code', traceparent: t3, request: { method: 'GET', url: `${config.base}/as/resume?flowId=${flowId}`, headers: { cookie: shownCookie() } }, response: { status: r.status, body: r.json?.authorizeResponse ? { authorizeResponse: { code: short(r.json.authorizeResponse.code), state: short(r.json.authorizeResponse.state) } } : p1Codes(r) } });
+        steps.push({ step: 'resume: the authorization code', traceparent: t3, request: { method: 'GET', url: `${config.base}/as/resume?flowId=${flowId}`, headers: { cookie: cookieHeader() } }, response: { status: r.status, body: r.json?.authorizeResponse ? { authorizeResponse: { code: str(r.json.authorizeResponse.code, 2000), state: str(r.json.authorizeResponse.state, 200) } } : p1Codes(r) } });
         if (r.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network, or switch to Mock.', r);
         code = str(r.json?.authorizeResponse?.code, 2000); gotState = r.json?.authorizeResponse?.state;
         if (r.status !== 200 || !code) return fail(502, 'signin_refused', `PingOne did not hand back an authorization code (${failText(r)}).`, r);
@@ -254,7 +251,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       const t4 = tp();
       const tok = await tokenCall({ grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: REDIRECT_URI }, config.user, t4);
       const at = typeof tok.json?.access_token === 'string' ? tok.json.access_token : null;
-      steps.push({ step: 'token: the code for the user\'s tokens', traceparent: t4, request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: 'authorization_code', code: short(code), code_verifier: '[the PKCE verifier, never shown]', redirect_uri: REDIRECT_URI } }, response: { status: tok.status, body: at ? { access_token: '[the user access token: in the token list]', id_token: tok.json.id_token ? '[decoded in the token list]' : null, token_type: str(tok.json.token_type), expires_in: Number.isFinite(tok.json.expires_in) ? tok.json.expires_in : null, scope: str(tok.json.scope) } : p1Codes(tok) } });
+      steps.push({ step: 'token: the code for the user\'s tokens', traceparent: t4, request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: REDIRECT_URI } }, response: { status: tok.status, body: at ? { access_token: at, id_token: str(tok.json.id_token, 8000), token_type: str(tok.json.token_type), expires_in: Number.isFinite(tok.json.expires_in) ? tok.json.expires_in : null, scope: str(tok.json.scope) } : p1Codes(tok) } });
       if (tok.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network, or switch to Mock.', tok);
       if (tok.status !== 200 || !at) return fail(502, 'signin_refused', `PingOne did not issue the user's tokens (${failText(tok)}).`, tok);
       const idClaims = typeof tok.json.id_token === 'string' ? decodeJwt(tok.json.id_token)?.claims ?? null : null;
@@ -293,20 +290,20 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       };
 
       // 1. Sign-in (done in the dialog before this run): what happened, and the user's token.
-      push({ kind: 'sign-in', label: 'Sign-in [REAL]: pi.flow with the password you typed in the Sign in dialog (no redirect)', from: 'browser', to: 'idp', verdict: 'ok', traceparent: session.steps[0]?.traceparent ?? tp(), note: 'Done once in the Sign in dialog: authorize with response_mode=pi.flow and PKCE S256, the flows API username/password step, then the code for tokens. The password was sent once and is shown nowhere.', request: { steps: session.steps.map((s) => ({ step: s.step, ...s.request })) }, response: { steps: session.steps.map((s) => ({ step: s.step, ...s.response })), user: userOf(session) } });
+      push({ kind: 'sign-in', label: 'Sign-in [REAL]: pi.flow with the password you typed in the Sign in dialog (no redirect)', from: 'browser', to: 'pingone', verdict: 'ok', traceparent: session.steps[0]?.traceparent ?? tp(), note: 'Done once in the Sign in dialog: authorize with response_mode=pi.flow and PKCE S256, the flows API username/password step, then the code for tokens. The password was sent once and is shown nowhere.', request: { steps: session.steps.map((s) => ({ step: s.step, ...s.request })) }, response: { steps: session.steps.map((s) => ({ step: s.step, ...s.response })), user: userOf(session) } });
       addToken('user access token (REAL, from the pi.flow sign-in)', session.accessToken, 'REAL token from your PingOne environment, shown raw for teaching (rule 4). It expires in minutes; secrets and your password are never shown.');
 
       // 2. Agent token (the actor), with the agent scope.
       const t2 = tp();
       const ag = await tokenCall({ grant_type: 'client_credentials', scope: config.agentScope }, config.agent, t2);
       const agent = typeof ag.json?.access_token === 'string' ? ag.json.access_token : null;
-      push({ kind: 'actor-token', label: `Agent token [REAL]: the agent app's own client-credentials token (scope ${config.agentScope})`, from: 'agent', to: 'idp', verdict: agent ? 'ok' : 'deny', traceparent: t2, note: agent ? 'The agent app (AAG_AGENT_CLIENT_ID) authenticated with its own secret (write-only). This is the actor token for exchange 1.' : failText(ag), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: 'client_credentials', scope: config.agentScope } }, response: { status: ag.status, body: agent ? { access_token: '[the agent token: in the token list]', token_type: str(ag.json.token_type), expires_in: Number.isFinite(ag.json.expires_in) ? ag.json.expires_in : null, scope: str(ag.json.scope) } : p1Error(ag) } });
+      push({ kind: 'actor-token', label: `Agent token [REAL]: the agent app's own client-credentials token (scope ${config.agentScope})`, from: 'agent', to: 'pingone', verdict: agent ? 'ok' : 'deny', traceparent: t2, note: agent ? 'The agent app (AAG_AGENT_CLIENT_ID) authenticated with its own secret (write-only). This is the actor token for exchange 1.' : failText(ag), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: 'client_credentials', scope: config.agentScope } }, response: { status: ag.status, body: agent ? { access_token: agent, token_type: str(ag.json.token_type), expires_in: Number.isFinite(ag.json.expires_in) ? ag.json.expires_in : null, scope: str(ag.json.scope) } : p1Error(ag) } });
       if (!agent) {
         outcome = ag.unreachable ? 'REAL_UNREACHABLE' : 'REAL_REFUSED';
         const noGrant = !ag.unreachable && p1Error(ag).error === 'invalid_scope';
         reply = { who: 'PingOne', text: ag.unreachable ? 'PingOne did not answer the agent\'s token request. Check the network, or switch to Mock.' : noGrant ? `PingOne refused the agent's token for the scope ${config.agentScope} (invalid_scope): the agent app has no grant for it. Ask the owner to re-run scripts/owner/pingone-real-setup.mjs --apply, or set AAG_AGENT_SCOPE to the scope that was granted.` : `PingOne refused the agent's own token (HTTP ${ag.status}). Check AAG_AGENT_CLIENT_ID and its secret.` };
-        notRun('token-exchange', 'Token exchange 1: act = agent', 'bff', 'idp', 'Not run: the agent has no token.', EX1_TITLE);
-        notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'idp', 'Not run: the agent has no token.', EX2_TITLE);
+        notRun('token-exchange', 'Token exchange 1: act = agent', 'bff', 'pingone', 'Not run: the agent has no token.', EX1_TITLE);
+        notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'pingone', 'Not run: the agent has no token.', EX2_TITLE);
         finishNotRun(0, 'Not run: the agent has no token.');
       } else {
         addToken('agent token (REAL, client credentials)', agent, 'REAL token for the agent app, shown raw for teaching. This is the actor token. The agent secret is write-only.');
@@ -316,19 +313,19 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         const first = typeof ex1.json?.access_token === 'string' ? ex1.json.access_token : null;
         const dec1 = first ? decodeJwt(first) : null;
         const act1 = actOf(dec1?.claims);
-        const answerOf = (ex, tok, act) => ({ status: ex.status, body: tok ? { access_token: `[the ${tok} token: in the token list]`, issued_token_type: str(ex.json.issued_token_type), token_type: str(ex.json.token_type), expires_in: Number.isFinite(ex.json.expires_in) ? ex.json.expires_in : null, scope: str(ex.json.scope), act_claim: actShown(act) } : p1Error(ex) });
-        push({ kind: 'token-exchange', shortTitle: EX1_TITLE, label: 'Token exchange 1 [REAL]: act = agent (RFC 8693 at PingOne, your token as subject, the agent token as actor)', from: 'bff', to: 'idp', verdict: first && act1 ? 'ok' : 'deny', traceparent: t3, note: first ? (act1 ? 'PingOne stamped act = the agent into the token (the resource that owns the agent scope reads the actor token\'s client_id).' : (dec1 ? 'PingOne answered, but the token has NO act claim: check the act attribute of the resource that owns the agent scope.' : 'PingOne answered with a token that is not a JWT (opaque), so the lab cannot read an act claim from it and treats it as having none.')) : failText(ex1), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: '[the user access token]', subject_token_type: AT, actor_token: '[the agent token]', actor_token_type: AT, scope: config.agentScope } }, response: answerOf(ex1, first ? 'exchange-1' : null, act1) });
+        const answerOf = (ex, tok, act) => ({ status: ex.status, body: tok ? { access_token: ex.json.access_token, issued_token_type: str(ex.json.issued_token_type), token_type: str(ex.json.token_type), expires_in: Number.isFinite(ex.json.expires_in) ? ex.json.expires_in : null, scope: str(ex.json.scope), act_claim: actShown(act) } : p1Error(ex) });
+        push({ kind: 'token-exchange', shortTitle: EX1_TITLE, label: 'Token exchange 1 [REAL]: act = agent (RFC 8693 at PingOne, your token as subject, the agent token as actor)', from: 'bff', to: 'pingone', verdict: first && act1 ? 'ok' : 'deny', traceparent: t3, note: first ? (act1 ? 'PingOne stamped act = the agent into the token (the resource that owns the agent scope reads the actor token\'s client_id).' : (dec1 ? 'PingOne answered, but the token has NO act claim: check the act attribute of the resource that owns the agent scope.' : 'PingOne answered with a token that is not a JWT (opaque), so the lab cannot read an act claim from it and treats it as having none.')) : failText(ex1), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: session.accessToken, subject_token_type: AT, actor_token: agent, actor_token_type: AT, scope: config.agentScope } }, response: answerOf(ex1, first ? 'exchange-1' : null, act1) });
         if (!first) {
           outcome = ex1.unreachable ? 'REAL_UNREACHABLE' : 'REAL_REFUSED';
           reply = { who: 'PingOne', text: ex1.unreachable ? 'PingOne did not answer token exchange 1. Check the network, or switch to Mock.' : `PingOne refused token exchange 1 (HTTP ${ex1.status}${p1Error(ex1).error ? `: ${p1Error(ex1).error}` : ''}). Check that the agent app has the token-exchange grant and the ${config.agentScope} scope.` };
-          notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'idp', 'Not run: exchange 1 gave no token.', EX2_TITLE);
+          notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'pingone', 'Not run: exchange 1 gave no token.', EX2_TITLE);
           finishNotRun(0, 'Not run: there is no delegated token.');
         } else if (!act1) {
           // The final token would have no act either (exchange 2 only passes act through): stop before spending exchange 2, and never reach the gateway.
           addToken('exchange 1 token (REAL, NO act claim)', first, 'REAL token from exchange 1, but it has NO act claim, so nothing was sent on. Shown raw for teaching.', true);
           outcome = 'REAL_NO_ACT';
           reply = { who: 'PingOne', text: noActText(config.agentScope, false) };
-          notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'idp', 'Not run: exchange 1 carries no act claim, and exchange 2 only passes act through.', EX2_TITLE);
+          notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'pingone', 'Not run: exchange 1 carries no act claim, and exchange 2 only passes act through.', EX2_TITLE);
           finishNotRun(0, 'Not run: the delegated token carries no act claim, so the gateway was not called.');
         } else {
           addToken('exchange 1 token (REAL, act = agent)', first, 'REAL token from exchange 1: your subject, the agent in the act claim, the audience of the agent scope\'s resource. Shown raw for teaching.', true);
@@ -341,7 +338,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
           const opaque2 = Boolean(delegated) && dClaims === null;
           const auds = [].concat(dClaims?.aud ?? []).filter((a) => typeof a === 'string');
           const audNote = delegated && dClaims && !auds.includes(config.audience) ? ` The token's aud (${cleanFree(auds.join(' ') || 'none', 300)}) is not AAG_GATEWAY_AUDIENCE: the gateway may refuse it. Check which resource owns the gateway scope.` : '';
-          push({ kind: 'token-exchange', shortTitle: EX2_TITLE, label: 'Token exchange 2 [REAL]: for the gateway (RFC 8693 at PingOne, the exchange-1 token as subject, no actor, the gateway scope)', from: 'bff', to: 'idp', verdict: delegated && act2 ? 'ok' : 'deny', traceparent: t4, note: delegated ? `${act2 ? 'act carried over from exchange 1; the audience comes from the resource that owns the gateway scope (no audience parameter is sent).' : (opaque2 ? 'The token is not a JWT (opaque), so the lab cannot read an act claim from it and treats it as having none.' : 'The token has NO act claim: exchange 2 should pass the exchange-1 token\'s act through.')}${audNote}` : failText(ex2), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: '[the exchange-1 token]', subject_token_type: AT, scope: config.scope } }, response: answerOf(ex2, delegated ? 'delegated' : null, act2) });
+          push({ kind: 'token-exchange', shortTitle: EX2_TITLE, label: 'Token exchange 2 [REAL]: for the gateway (RFC 8693 at PingOne, the exchange-1 token as subject, no actor, the gateway scope)', from: 'bff', to: 'pingone', verdict: delegated && act2 ? 'ok' : 'deny', traceparent: t4, note: delegated ? `${act2 ? 'act carried over from exchange 1; the audience comes from the resource that owns the gateway scope (no audience parameter is sent).' : (opaque2 ? 'The token is not a JWT (opaque), so the lab cannot read an act claim from it and treats it as having none.' : 'The token has NO act claim: exchange 2 should pass the exchange-1 token\'s act through.')}${audNote}` : failText(ex2), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: first, subject_token_type: AT, scope: config.scope } }, response: answerOf(ex2, delegated ? 'delegated' : null, act2) });
           if (!delegated) {
             outcome = ex2.unreachable ? 'REAL_UNREACHABLE' : 'REAL_REFUSED';
             reply = { who: 'PingOne', text: ex2.unreachable ? 'PingOne did not answer token exchange 2. Check the network, or switch to Mock.' : `PingOne refused token exchange 2 (HTTP ${ex2.status}${p1Error(ex2).error ? `: ${p1Error(ex2).error}` : ''}). Check that the agent app is granted the gateway scope and that the scope's resource exists.` };
@@ -362,7 +359,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       return {
         schema: 'appfire-agent-governance-run/1', mode: 'live', kind: 'real', useCase: { id: uc.id, track: uc.track, title: uc.title, maturity: uc.maturity, flag: uc.flag }, vertical,
         expectedOutcome: uc.expectedOutcome, real: { level: 'full', tool }, labSimulated: false, computed: false, persona: null, outcome, matchesExpected: null, reply,
-        hops: hops.map(({ shortTitle, ...h }) => { const e = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'redact' }); return shortTitle ? { ...e, title: shortTitle } : e; }), tokens, traceId: trace.traceId, traceparent: formatTraceparent(trace.traceId, rootSpan),
+        hops: hops.map(({ shortTitle, ...h }) => { const e = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'raw' }); return shortTitle ? { ...e, title: shortTitle } : e; }), tokens, traceId: trace.traceId, traceparent: formatTraceparent(trace.traceId, rootSpan),
         narration: reply?.text ?? '',
         ...(outcome === 'REAL_HOLD' && challenge ? { challenge } : {}),
       };
@@ -372,8 +369,8 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
   // 4-8: the Agent Gateway as an MCP client, the decision read from its answer, the tool, the API behind it and the reply.
   async function gatewayLeg({ token, vertical, tool, uc, tp, push, notRun, receipt = null }) {
     const gs = createGatewaySession({ url: config.gatewayUrl, token, vertical, nextTraceparent: tp, fetchImpl: gatewayFetch ?? fetchImpl });
-    const shownReq = (c, body) => ({ method: 'POST', url: config.gatewayUrl, headers: Object.fromEntries(c.sentHeaders.map((k) => [k, k === 'authorization' ? 'Bearer [the delegated token]' : k === 'traceparent' ? c.traceparent : k === 'x-active-vertical' ? vertical : k === 'x-token-validation' ? 'jwks' : k === 'mcp-session-id' ? short(gs.sessionId()) : k === 'mcp-protocol-version' ? '(from initialize)' : k === 'accept' ? 'application/json, text/event-stream' : 'application/json'])), body });
-    const shownRes = (c, body) => ({ status: c.status, headers: Object.fromEntries(Object.entries(c.headers).map(([k, v]) => [k, k === 'mcp-session-id' ? short(v) : v])), body });
+    const shownReq = (c, body) => ({ method: 'POST', url: config.gatewayUrl, headers: Object.fromEntries(c.sentHeaders.map((k) => [k, k === 'authorization' ? `Bearer ${token}` : k === 'traceparent' ? c.traceparent : k === 'x-active-vertical' ? vertical : k === 'x-token-validation' ? 'jwks' : k === 'mcp-session-id' ? gs.sessionId() : k === 'mcp-protocol-version' ? '(from initialize)' : k === 'accept' ? 'application/json, text/event-stream' : 'application/json'])), body });
+    const shownRes = (c, body) => ({ status: c.status, headers: Object.fromEntries(Object.entries(c.headers).map(([k, v]) => [k, v])), body });
     const rest = (from, why) => {
       const all = [['authorize-decision', 'Authorize decision', 'gateway', 'authorize'], ['tool-dispatched', 'MCP tool', 'gateway', 'mcp'], ['api-call', 'API', 'mcp', 'api'], ['agent-reply', 'Agent reply', 'agent', 'page']];
       for (const [kind, label, f, t] of all.slice(from)) notRun(kind, label, f, t, why);

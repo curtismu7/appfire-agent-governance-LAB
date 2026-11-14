@@ -9,7 +9,7 @@ import { LiveRefused, createLive, liveConfig } from '../src/live.js';
 import { MAX_RUNS } from '../src/workspaces.js';
 import { createWorkspaces } from '../src/workspaces.js';
 import { get, post, put, run, W, withServer } from './helpers.js';
-import { CLIENT_ID, CLIENT_SECRET, ENV_ID, FAKE_TOKEN, settingsFor, startFakePingOne } from './fakePingone.js';
+import { CLIENT_ID, CLIENT_SECRET, ENV_ID, settingsFor, startFakePingOne } from './fakePingone.js';
 
 const LIVE_ENV = { AAG_ALLOW_LIVE: '1', IDP: 'pingone' };
 const TP = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
@@ -18,7 +18,8 @@ async function withLive(fn, { behaviour = 'ok', env = LIVE_ENV, workspaces } = {
   const live = createLive({ config: liveConfig(settingsFor(), { AAG_LIVE_TEST_BASE: fake.base }) });
   try { await withServer((url, ctx) => fn(url, { fake, ...ctx }), { env, live, ...(workspaces ? { workspaces } : {}) }); } finally { await fake.close(); }
 }
-const secrets = [CLIENT_SECRET, FAKE_TOKEN, FAKE_TOKEN.split('.')[2], Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')];
+// The client secret and its Basic form never appear. The token itself is shown raw (owner 2026-11-14), so it is not on this list.
+const secrets = [CLIENT_SECRET, Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')];
 const noSecret = (text, what) => { for (const s of secrets) assert.ok(!text.includes(s), `${what} carries a secret`); };
 
 test('live run over HTTP: 200 with a live run, the traceparent continued, a history row without a persona, and the fake saw exactly two calls', async () => {

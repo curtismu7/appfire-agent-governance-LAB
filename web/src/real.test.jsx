@@ -78,14 +78,16 @@ describe("REAL / MOCK labels and the replies", () => {
     const u = await boot({ signedIn: true });
     await u.click(screen.getByTestId("uc-UC1"));
     await runIt(u);
-    const hops = screen.getByTestId("hops");
-    expect(within(hops).getAllByTestId("real-tag")).toHaveLength(9);
-    expect(within(hops).queryByTestId("mock-tag")).toBeNull();
+    // One hop view (owner 2026-11-14): the Sequence draws the nine hops, and the identity provider is PingOne, not "Mock IdP", in a real run.
+    expect(screen.getAllByTestId(/^row-\d+$/)).toHaveLength(9);
+    expect(screen.getByTestId("sequence-view").textContent).toContain("PingOne");
+    expect(screen.getByTestId("sequence-view").textContent).not.toContain("Mock IdP");
     const src = screen.getByTestId("hop-sources");
     expect(within(src).getAllByTestId("hop-source").map((x) => x.getAttribute("data-source"))).toEqual(Array(9).fill("real"));
     expect(within(src).getAllByTestId("hop-source").map((x) => x.textContent)).toEqual(["Sign-in", "Agent token", "Exchange 1: act = agent", "Exchange 2: for the gateway", "Agent Gateway", "Authorize decision", "MCP tool", "API", "Agent reply"].map((t, i) => `${i + 1} ${t} REAL`));
     expect(screen.getByTestId("real-note-tag").textContent).toMatch(/Real: sign-in, token exchange, Agent Gateway/);
     // The Tokens tab: the user, the agent (actor), exchange 1 and the delegated token, raw, in that order; the two exchange tokens show their act.
+    await u.click(screen.getByTestId("evtab-tokens"));
     expect(screen.getAllByTestId("token-raw").map((x) => x.textContent)).toEqual(realBody().run.tokens.map((t) => t.raw));
     const tokens = screen.getAllByTestId("token");
     expect(tokens).toHaveLength(4);
@@ -95,7 +97,9 @@ describe("REAL / MOCK labels and the replies", () => {
     expect(within(tokens[0]).queryByTestId("token-act")).toBeNull(); expect(within(tokens[1]).queryByTestId("token-act")).toBeNull();
     expect(screen.queryByTestId("token-no-act")).toBeNull();
     expect(screen.getAllByTestId("token-act").map((x) => x.getAttribute("data-state"))).toEqual(["ok", "ok"]);
-    expect(within(tokens[3]).getAllByTestId("token-claims")[0].textContent).toMatch(/"act": \{\s*"sub": "agent-1"/);
+    expect(within(tokens[3]).getAllByTestId("token-claims")[0].textContent).toMatch(/act\s*sub\s*agent-1/); // Formatted: the act group, with sub inside it
+    await u.click(within(tokens[3]).getByTestId("token-claims-raw"));
+    expect(within(tokens[3]).getAllByTestId("token-claims")[0].textContent).toMatch(/"act": \{\s*"sub": "agent-1"/); // Raw: the exact JSON
     const turn = screen.getAllByTestId("turn").pop();
     expect(within(turn).getByTestId("turn-who").textContent).toBe("Agent");
     expect(within(turn).getByTestId("turn-answer-text").textContent).toMatch(/balance 1200\.5/);
@@ -125,6 +129,7 @@ describe("REAL / MOCK labels and the replies", () => {
     const srcs = within(screen.getByTestId("hop-sources")).getAllByTestId("hop-source");
     expect(srcs.map((x) => x.getAttribute("data-source"))).toEqual(["real", "real", "real", "real", "not-run", "not-run", "not-run", "not-run", "not-run"]);
     expect(srcs[3].textContent).toMatch(/Exchange 2: for the gateway/);
+    await u.click(screen.getByTestId("evtab-tokens"));
     expect(screen.getAllByTestId("token-act")).toHaveLength(1); // exchange 1 has act
     expect(within(screen.getAllByTestId("token")[3]).getByTestId("token-no-act").textContent).toBe("NO act claim");
     expect(screen.getByTestId("token-no-act").getAttribute("data-state")).toBe("bad");
@@ -135,6 +140,7 @@ describe("REAL / MOCK labels and the replies", () => {
       const u = await boot({ signedIn: true, realAnswer: (id) => { const b = noActBody(id); b.run.tokens[3] = { ...b.run.tokens[3], claims: { sub: "u-1", act } }; return b; } });
       await u.click(screen.getByTestId("uc-UC1"));
       await runIt(u);
+      await u.click(screen.getByTestId("evtab-tokens"));
       expect(within(screen.getAllByTestId("token")[3]).getByTestId("token-no-act").textContent, JSON.stringify(act)).toBe("NO act claim");
       expect(screen.getAllByTestId("token-act")).toHaveLength(1);
       cleanup(); vi.unstubAllGlobals(); forgetWorkspace(); try { window.localStorage.clear(); window.sessionStorage.clear(); } catch { /* ignore */ }
@@ -156,6 +162,6 @@ describe("REAL / MOCK labels and the replies", () => {
     expect(screen.getByTestId("hop-sources-why").textContent).toMatch(/cannot run Real \(agent-to-agent/);
     expect(within(screen.getByTestId("hop-sources")).getAllByTestId("hop-source").every((x) => x.getAttribute("data-source") === "mock")).toBe(true);
     expect(screen.getByTestId("mock-in-real").textContent).toMatch(/cannot run Real/);
-    expect(within(screen.getByTestId("hops")).queryByTestId("real-tag")).toBeNull();
+    expect(within(screen.getByTestId("hop-sources")).queryByTestId("real-tag")).toBeNull();
   });
 });

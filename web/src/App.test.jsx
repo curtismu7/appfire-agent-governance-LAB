@@ -131,25 +131,27 @@ describe("run view", () => {
     expect(post.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
     expect(screen.getByTestId("outcome").textContent).toBe("PERMIT");
     expect(screen.getByTestId("matches").textContent).toBe("engine result matches the catalog label");
-    expect(screen.getAllByTestId("hop")).toHaveLength(4);
-    expect(screen.getAllByTestId("hop").map((h) => h.textContent.match(/^\d+\./)[0])).toEqual(["1.", "2.", "3.", "4."]);
+    // One hop view for every run (owner 2026-11-14): the Sequence in the evidence column, no second list of collapsed hops under the result.
+    expect(screen.queryByTestId("hop")).toBeNull(); expect(screen.queryByTestId("hops-toggle")).toBeNull();
+    expect(screen.getAllByTestId(/^row-\d+$/).map((r) => r.getAttribute("data-testid"))).toEqual(["row-1", "row-2", "row-3", "row-4"]);
     expect(screen.getByTestId("run-traceparent").textContent).toMatch(/^00-a{32}-b{16}-01$/);
+    await u.click(screen.getByTestId("evtab-tokens"));
     const token = screen.getByTestId("token");
     expect(within(token).getByTestId("mock-tag").textContent).toBe("MOCK");
     expect(within(token).getByTestId("token-raw").textContent).toBe(RAW);
-    expect(within(token).getByTestId("token-claims").textContent).toContain('"sub": "alex.morgan"');
+    expect(within(token).getByTestId("token-claims").textContent).toMatch(/sub\s*alex\.morgan/); // Formatted is a form: a label and a value box per claim
+    await u.click(within(token).getByTestId("token-claims-raw"));
+    expect(within(token).getByTestId("token-claims").textContent).toContain('"sub": "alex.morgan"'); // Raw is the exact JSON, coloured
   });
 
-  test("each hop shows its raw request, raw response and its own traceparent", async () => {
+  test("a step shows its request, its response and its own traceparent in the step detail (the one hop view)", async () => {
     await boot();
     const u = await pick("UC1");
     await runIt(u);
-    await u.click(screen.getByTestId("hops-toggle"));
-    const first = screen.getAllByTestId("hop")[0];
-    expect(first.hasAttribute("open")).toBe(true);
-    expect(first.textContent).toContain("https://idp.mock.example/as");
-    expect(first.textContent).toMatch(/traceparent: 00-a{32}-0{15}1-01/);
-    expect(screen.getByTestId("hops-toggle").textContent).toBe("Collapse all hops");
+    await u.click(screen.getByTestId("row-1"));
+    const detail = screen.getByTestId("step-detail");
+    expect(detail.textContent).toContain("https://idp.mock.example/as");
+    expect(detail.textContent).toMatch(/traceparent\s*00-a{32}-0{15}1-01/);
   });
 
   test("a guided run says guided, not computed, and never shows matchesExpected as verified", async () => {
@@ -164,6 +166,7 @@ describe("run view", () => {
     expect(text).not.toMatch(/matches the catalog/i);
     expect(text).not.toMatch(/verified(?! that)/i);
     expect(screen.getByTestId("guided-explain").textContent).toMatch(/did not run or verify/);
+    await u.click(screen.getByTestId("evtab-tokens"));
     expect(screen.getByTestId("no-tokens")).toBeTruthy();
   });
 
@@ -267,7 +270,7 @@ describe("extra pages (opens)", () => {
     expect(screen.getByTestId("nav-more").value).toBe("page-consent");
     expect(page.textContent).toMatch(/Opened by UC1/);
     expect(page.textContent).toMatch(/chat chip: "show my balance"/);
-    expect(within(page).getAllByTestId("hop").map((h) => h.textContent)).toEqual([expect.stringContaining("Hop 1 sign-in"), expect.stringContaining("Hop 2 consent")]);
+    expect(within(page).getAllByTestId(/^row-\d+$/)).toHaveLength(2); // the same Sequence as the Agent page, drawn from this page's two hops
     expect(window.location.hash).toBe("#page-consent");
     await u.click(screen.getByTestId("reset"));
     await waitFor(() => expect(screen.queryByTestId("nav-page-consent")).toBeNull());
@@ -376,13 +379,13 @@ describe("mode toggle", () => {
     expect(screen.getByTestId("outcome").textContent).toBe("LIVE_OK");
     expect(screen.getByTestId("live-note-tag").textContent).toBe("live, identity provider only");
     expect(screen.queryByTestId("matches")).toBeNull(); expect(screen.queryByTestId("guided-note")).toBeNull();
-    expect(screen.getAllByTestId("hop")).toHaveLength(2);
-    expect(within(screen.getByTestId("hops")).getAllByTestId("live-tag")).toHaveLength(2);
-    expect(within(screen.getByTestId("hops")).queryByTestId("mock-tag")).toBeNull();
+    expect(screen.getAllByTestId(/^row-\d+$/)).toHaveLength(2);
+    expect(within(screen.getByTestId("hop-sources")).getAllByTestId("hop-source").map((x) => x.getAttribute("data-source"))).toEqual(["real", "real"]);
     const not = screen.getByTestId("not-run");
     expect(not.textContent).toMatch(/Not run in live mode \(3 steps/); expect(not.textContent).toMatch(/identity provider only/); expect(within(not).getAllByRole("listitem").map((x) => x.textContent)).toEqual(["user-token", "token-exchange", "tool-dispatched"]);
+    await u.click(screen.getByTestId("evtab-tokens"));
     expect(within(screen.getByTestId("token")).getByTestId("live-tag")).toBeTruthy(); expect(within(screen.getByTestId("token")).queryByTestId("mock-tag")).toBeNull();
-    expect(screen.getByTestId("tokens").textContent).toMatch(/Token \(masked\)/); expect(screen.getByTestId("token-raw").textContent).toBe("eyJhbG...ab12");
+    expect(screen.getByTestId("tokens").textContent).toMatch(/Raw token/); expect(screen.getByTestId("token-raw").textContent).toBe("eyJhbG...ab12");
     expect(screen.getByTestId("run-announce").textContent).toBe("UC1 finished: LIVE_OK, live, identity provider only.");
     await u.click(screen.getByTestId("nav-runs"));
     expect(screen.getByTestId("history-row").textContent).toMatch(/n\/a \(live\).*LIVE_OK.*live, identity provider only/);

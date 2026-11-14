@@ -133,17 +133,23 @@ try {
 
       await pick('UC1'); await t('run').click(); await t('result').waitFor();
       check((await t('outcome').innerText()) === 'PERMIT' && (await t('matches').innerText()).includes('matches the catalog label'), `${tag}: UC1 runs, PERMIT, engine matches the catalog label`);
-      check((await t('hop').count()) === 21 && (await t('hop-verdict').filter({ hasText: /^skip$/ }).count()) === 5 && (await t('hops-count').innerText()) === 'Hops (16, +5 not in this run)', `${tag}: 16 hops that ran, then 5 not in this path (AI-DEMO2's reel order); the count says so`);
+      const evCount = await t('evidence-count').innerText();
+      check((await page.getByTestId(/^row-\d+$/).count()) === 16 && evCount.includes('16 hops') && evCount.includes('+5 not in this run'), `${tag}: the Sequence draws the 16 hops that ran; 5 more are not in this path (AI-DEMO2's reel order) and the count says so (${evCount})`);
+      check((await t('hop').count()) === 0 && (await t('hops-toggle').count()) === 0 && !(await page.locator('.sq-actors').first().isVisible()) && !(await page.locator('.sq-prog').first().isVisible()), `${tag}: one hop view only: no second list of collapsed hops, no actor tiles or progress bar above the Sequence`);
+      check((await t('sequence-view').innerText()).includes('Mock IdP'), `${tag}: a mock run names its identity provider Mock IdP`);
       check(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/.test(await t('run-traceparent').innerText()), `${tag}: the run has a W3C traceparent`);
       if (name === 'phone') {
-        await t('actor-gateway').scrollIntoViewIfNeeded(); await t('actor-gateway').click();
+        const gwLane = page.getByRole('button', { name: 'Gateway actor details (top)' });
+        await gwLane.scrollIntoViewIfNeeded(); await gwLane.click();
         const sheet = page.getByRole('dialog', { name: 'Gateway actor details' });
         const sb = await sheet.boundingBox();
         check((await sheet.getAttribute('data-narrow')) === 'true' && Math.round(sb.width) === width && Math.round(sb.y + sb.height) === height, `${tag}: on a phone the actor card is a full-width bottom sheet (${Math.round(sb.width)} px)`);
         await sheet.getByRole('button', { name: 'Close Gateway details' }).click();
       }
+      await t('evtab-tokens').click();
       const token = t('token').first();
-      check((await token.getByTestId('mock-tag').innerText()) === 'MOCK' && /^eyJ/.test(await token.getByTestId('token-raw').innerText()) && (await token.getByTestId('token-claims').innerText()).includes('"sub"'), `${tag}: the token is labelled MOCK, shown raw and decoded`);
+      check((await token.getByTestId('mock-tag').innerText()) === 'MOCK' && /^eyJ/.test(await token.getByTestId('token-raw').innerText()) && (await token.getByTestId('token-claims').innerText()).includes('sub'), `${tag}: the token is labelled MOCK, shown raw and decoded`);
+      await t('evtab-sequence').click();
       check((await t('nav-page-consent').count()) === 1, `${tag}: UC1 brought in the Consent and step-up page`);
       await pick('UC7'); await t('run').click(); await t('result').waitFor();
       check((await t('outcome').innerText()) === 'STEP_UP' && (await t('nav-page-approval').count()) === 1, `${tag}: UC7 is STEP_UP and brings in Human approval`);
@@ -295,7 +301,7 @@ try {
       check(await oneRow(), `${tag}: the shell bar is still one row with the More menu (${await t('nav-more').count()})`);
 
       // the actor card is a FloatingDialog (owner 2026-11-09): drag it by the title bar, it has Pop out, and the pop-out is a live same-origin window
-      await t('actor-gateway').click();
+      await page.getByRole('button', { name: 'Gateway actor details (top)' }).click();
       const card = page.getByRole('dialog', { name: 'Gateway actor details' });
       await card.waitFor();
       check(await card.getByRole('button', { name: 'Pop out to a new window' }).isVisible(), `${tag}: the actor card has a Pop out button`);
@@ -323,7 +329,7 @@ try {
         const closed = pop2.waitForEvent('close', { timeout: 5000 }).catch(() => {});
         await pop2.keyboard.press('Escape').catch(() => {}); await closed; // the window closes mid-press
         check(pop2.isClosed() && (await page.getByRole('dialog').count()) === 0 && (await t('fd-placeholder').count()) === 0, `${tag}: Escape in the popup, with nothing clicked there, closes it and the card`);
-        await t('actor-gateway').click(); await card.waitFor();
+        await page.getByRole('button', { name: 'Gateway actor details (top)' }).click(); await card.waitFor();
       }
       await page.keyboard.press('Escape');
       check((await page.getByRole('dialog').count()) === 0, `${tag}: Escape closes the actor card`);
@@ -391,9 +397,8 @@ try {
     await t('nav-more').selectOption('page-a2a');
     const a2a = t('extra-a2a');
     await a2a.waitFor();
-    const text = async () => a2a.textContent(); // textContent: the hop kinds sit inside closed <details>, and headings are styled
-    const kinds = ['a2a-exchange-1', 'a2a-exchange-2', 'a2a-agent-card', 'a2a-protocol-message'];
-    const pageOk = async () => { const x = await text(); return x.includes('Agent to agent') && x.includes('Opened by UC2: A2A delegation') && x.includes('agent-card, delegation and trust hops') && x.includes('PERMIT') && x.includes('Hops for this page (4)') && kinds.every((k) => x.includes(`(${k})`)) && !x.includes('(gateway-check)') && !x.includes('(tool-dispatched)'); };
+    const text = async () => a2a.textContent(); // textContent: headings are styled
+    const pageOk = async () => { const x = await text(); return x.includes('Agent to agent') && x.includes('Opened by UC2: A2A delegation') && x.includes('agent-card, delegation and trust hops') && x.includes('PERMIT') && x.includes('Hops for this page') && (await a2a.getByTestId(/^row-\d+$/).count()) === 4; }; // the same Sequence as the Agent page, drawn from the page's four hops only
     check((await page.evaluate(() => window.location.hash)) === '#page-a2a' && (await pageOk()), `${tag}: the page shows its label, what it is, the outcome and only UC2's four delegation hops`);
     // the More menu shows the selected page's whole label (it was cut to "Agent to a"), and the shell bar still fits at 1280 and 375 px
     const moreLabel = () => page.evaluate(() => {
@@ -442,20 +447,23 @@ try {
       check(await t('live-persona-note').isVisible() && (await t('persona').count()) === 0 && (await t('lab-inputs').count()) === 0, `${tag}: the persona and the lab inputs are hidden in live and the note says why`);
       await t('run').click(); await t('result').waitFor();
       check((await t('outcome').innerText()) === 'LIVE_OK' && (await t('live-note-tag').innerText()) === 'live, identity provider only' && (await t('matches').count()) === 0, `${tag}: UC7 live is LIVE_OK, labelled identity provider only, with no engine-match claim`);
-      check((await t('hop').count()) === 2 && (await t('hops').getByTestId('real-tag').count()) === 2 && (await t('hops').getByTestId('mock-tag').count()) === 0 && (await t('hops').innerText()).includes('identity provider only [REAL]'), `${tag}: two hops, both REAL (identity provider only), none MOCK`);
-      check((await t('token-raw').innerText()) === `${FAKE_TOKEN.slice(0, 6)}...${FAKE_TOKEN.slice(-4)}` && (await t('token-claims').innerText()).includes(CLIENT_ID), `${tag}: the token is masked (first 6, last 4) and its claims are decoded`);
+      check((await page.getByTestId(/^row-\d+$/).count()) === 2 && (await t('hop-source').evaluateAll((els) => els.map((e) => e.getAttribute('data-source')))).join() === 'real,real' && (await t('hop-sources').innerText()).includes('identity provider only'), `${tag}: two hops, both REAL (identity provider only), none MOCK`);
+      await t('evtab-tokens').click();
+      check((await t('token-raw').innerText()) === FAKE_TOKEN && (await t('token-claims').innerText()).includes(CLIENT_ID), `${tag}: the token is shown raw (owner 2026-11-14: not redacted) and its claims are decoded`);
       const not = await t('not-run').innerText();
       check(not.includes('Not run in live mode') && not.includes('authorize-decision') && not.includes('identity provider only') && (await t('not-run').getByRole("listitem").count()) >= 1, `${tag}: the steps that were not run are listed`);
       check((await t('nav-page-approval').count()) === 0, `${tag}: a live run of UC7 opens no extra page`);
-      await t('hops-toggle').click();
       const text = await page.locator('body').innerText();
-      check(![CLIENT_SECRET, FAKE_TOKEN, FAKE_TOKEN.split('.')[2], Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')].some((x) => text.includes(x)), `${tag}: the page (all hops open) holds no secret and no raw token`);
+      check(![CLIENT_SECRET, Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')].some((x) => text.includes(x)), `${tag}: the page holds no client secret (the token is shown, the secret never is)`);
       check(fake.seen.length === 2 && fake.seen[0].method === 'GET' && fake.seen[1].method === 'POST', `${tag}: the fake PingOne saw exactly two calls (GET discovery, POST token)`);
       check((await overflow()) <= 0, `${tag}: the live result does not scroll sideways (${await overflow()} px)`);
       if (tag === 'live-desktop-light' || tag === 'live-phone-dark') await page.screenshot({ path: path.join(shots, `${tag}.png`), fullPage: true });
       fake.state.behaviour = 'bad-secret';
       await t('run').click(); await page.waitForFunction(() => document.querySelector('[data-testid="outcome"]').textContent === 'LIVE_REFUSED');
-      check((await t('hop').nth(1).getByTestId('hop-verdict').innerText()) === 'deny' && (await t('tokens').count()) === 0, `${tag}: a refused client secret shows a deny hop and no token`);
+      await t('evtab-sequence').click();
+      const denied = (await t('row-2').getAttribute('data-verdict')) === 'deny';
+      await t('evtab-tokens').click();
+      check(denied && (await t('tokens').count()) === 0 && (await t('no-tokens').count()) === 1, `${tag}: a refused client secret shows a deny hop and no token`);
       await t('nav-runs').click(); await t('history').waitFor();
       check((await t('history-row').count()) === 2 && (await t('history-row').first().innerText()).includes('n/a (live)'), `${tag}: run history lists both live runs`);
       await t('nav-diagram').click(); await page.locator('.react-flow__node').first().waitFor();
@@ -498,6 +506,13 @@ try {
     await t('signin-dialog').waitFor();
     check((await t('signin-username').inputValue()) === DEMO_USERNAME && (await t('signin-username').getAttribute('readonly')) !== null, `${tag}: a Real run before sign-in opens the Sign in modal with the username filled in, read-only`);
     check((await t('signin-password').getAttribute('type')) === 'password' && (await t('signin-dialog').getAttribute('role')) === 'dialog', `${tag}: the modal is a dialog with a password field`);
+    const geo = await page.evaluate(() => {
+      const box = (el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; };
+      const dlg = document.querySelector('[data-testid="signin-dialog"]');
+      return { body: box(dlg.querySelector('.fd-body')), panel: box(dlg), pw: box(dlg.querySelector('[data-testid="signin-password"]')), submit: box(dlg.querySelector('[data-testid="signin-submit"]')), vh: window.innerHeight };
+    });
+    check(geo.pw.top >= geo.body.top && geo.pw.bottom <= geo.body.bottom, `${tag}: the Password field is fully inside the modal body, not clipped (${Math.round(geo.pw.top)}-${Math.round(geo.pw.bottom)} in ${Math.round(geo.body.top)}-${Math.round(geo.body.bottom)})`);
+    check(geo.pw.bottom <= geo.submit.top && geo.submit.top >= geo.body.bottom && geo.submit.bottom <= geo.panel.bottom && geo.panel.bottom <= geo.vh, `${tag}: the Sign in button sits below the Password field and the body (nothing covers a field) and the whole modal is in the window`);
     if (tag === 'full-desktop-light' || tag === 'full-phone-dark') await page.screenshot({ path: path.join(shots, `${tag}-signin.png`), fullPage: false });
     await t('signin-password').fill(DEMO_PASSWORD);
     await t('signin-submit').click();
@@ -508,17 +523,21 @@ try {
     check(navs.length === 1 && navs[0].startsWith(fullBase), `${tag}: the page never navigated (no redirect login): ${navs.join(' | ')}`);
     const srcs = await t('hop-source').evaluateAll((els) => els.map((e) => e.getAttribute('data-source')));
     check(srcs.length === 9 && srcs.every((x) => x === 'real'), `${tag}: Where each hop ran lists nine hops (two token exchanges), every one REAL (${srcs.join(',')})`);
-    check((await t('hops').getByTestId('real-tag').count()) === 9 && (await t('hops').getByTestId('mock-tag').count()) === 0, `${tag}: the hop list tags all nine REAL, none MOCK`);
+    const seqText = await t('sequence-view').innerText();
+    check((await page.getByTestId(/^row-\d+$/).count()) === 9 && seqText.includes('PingOne') && !seqText.includes('Mock IdP'), `${tag}: the Sequence draws all nine hops and names the identity provider PingOne, not Mock IdP`);
+    await t('row-3').click();
+    const exDetail = await t('step-detail').innerText();
+    check(/eyJ[\w-]+\.[\w-]+\.[\w-]+/.test(exDetail) && !exDetail.includes('[redacted') && exDetail.includes('act.sub'), `${tag}: the exchange step shows the real tokens whole (nothing redacted) and its key facts name the act`);
     const titles = await t('hop-source').evaluateAll((els) => els.map((e) => e.textContent));
     check(titles[2].includes('Exchange 1: act = agent') && titles[3].includes('Exchange 2: for the gateway'), `${tag}: the two exchanges are named in Where each hop ran (${titles.slice(2, 4).join(' | ')})`);
     const tx = fullP1.seen.filter((x) => x.method === 'POST' && x.url.endsWith('/as/token')).map((x) => Object.fromEntries(new URLSearchParams(x.body))).filter((f) => f.grant_type === 'urn:ietf:params:oauth:grant-type:token-exchange');
     check(tx.length === 2 && tx[0].actor_token && !tx[1].actor_token && tx.every((f) => f.audience === undefined) && tx[0].scope === 'agent:invoke' && tx[1].scope === 'fake:mcp:invoke', `${tag}: PingOne saw exchange 1 (user + agent actor, agent:invoke) and exchange 2 (no actor, no audience, the gateway scope)`);
     check(fullGw.seen.every((c) => fullP1.issued.delegated.has(c.headers.authorization.slice(7))), `${tag}: every gateway call carried the exchange-2 token, which has act`);
+    await t('evtab-tokens').click();
     check((await t('token').count()) === 4 && (await t('token-act').count()) === 2 && (await t('token-no-act').count()) === 0, `${tag}: the Tokens tab lists the user, agent, exchange-1 and delegated tokens; both exchange tokens show their act`);
     check((await t('turn-answer-text').last().innerText()).includes('balance 1200.5') && (await t('turn-who').last().textContent()) === 'Agent', `${tag}: the reply is the real tool result, in the Agent's voice`);
     check(fullGw.seen.map((c) => c.rpc.method).join(',') === 'initialize,notifications/initialized,tools/list,tools/call,tools/call', `${tag}: the gateway saw initialize, tools/list and tools/call`);
     check(fullGw.seen.every((c) => TRUSTED_HEADERS.every((h) => c.headers[h] === undefined) && c.headers['x-token-validation'] === 'jwks'), `${tag}: no trusted-caller header reached the gateway`);
-    await t('hops-toggle').click();
     const body = await page.locator('body').innerText();
     check(![DEMO_PASSWORD, USER_CLIENT_SECRET, AGENT_CLIENT_SECRET, CLIENT_SECRET].some((x) => body.includes(x)) && !(await page.content()).includes(DEMO_PASSWORD), `${tag}: the page holds no password and no client secret`);
     check((await overflow()) <= 0, `${tag}: the Real result does not scroll sideways (${await overflow()} px)`);
