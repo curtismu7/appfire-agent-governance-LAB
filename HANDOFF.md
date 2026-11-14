@@ -1,11 +1,11 @@
 # Handoff — Appfire Agent Governance LAB
 
 Date: 2026-11-14 · Repo: `curtismu7/appfire-agent-governance-LAB` · Local: `~/Development/AI-DEMO-Standalone/standalone/appfire-agent-governance-LAB`
-URL: `https://local.ping-devops.com:8443/appfire-agent-governance/` (direct: `http://127.0.0.1:7814/`) · Port 7814 · Tier: Demo
-Sign-in (Real): `demouser` / `Baseball123!` · All work merged to `main`, CI + Image green at `d91a777`.
+URL: the lab-proxy domain's `/appfire-agent-governance/` path, opened from the shelf card (direct: `http://127.0.0.1:7814/`) · Port 7814 · Tier: Demo
+Sign-in (Real): the demo user is named by `AAG_DEMO_USERNAME` in the app `.env`; its password is held by the owner and is deliberately not recorded here · All work merged to `main`, CI + Image green at `d91a777`.
 
 ## What this lab is
-Standalone Ping demo for Appfire's Agentic AI evaluation (Doug Kersten's brief): Ping governs the agent **front end** (identity, delegated privilege, per-call authorization, audit); Appfire's HIVE stays the backend brain — never called, represented only. 87 use cases in 8 tracks. **Real mode is the default** and is real-only.
+Standalone Ping demo for Appfire's Agentic AI evaluation (the customer's brief): Ping governs the agent **front end** (identity, delegated privilege, per-call authorization, audit); Appfire's HIVE stays the backend brain — never called, represented only. 87 use cases in 8 tracks. **Real mode is the default** and is real-only.
 
 ## Current behavior (owner-approved)
 - **Real mode runs real only**: a mock-only use case is refused with `403 mock_in_real_refused` + the fixed reason. No silent mock fallback. 11 use cases run Real (UC1, UC3, UC4, UC6, UC7, UC8, UC17, UC19, UC20, UC24, UC28); 76 blocked, each with its reason.
@@ -16,10 +16,10 @@ Standalone Ping demo for Appfire's Agentic AI evaluation (Doug Kersten's brief):
 - Talk track has per-step Run links (12 use cases wired); running one switches to the Agent column.
 
 ## Real wiring facts (hard-won, don't relearn)
-- Agent actor app: reused "AI Agent - demoUser" app `f65664b2-e515-45ee-b99b-4f04ad136e74` (CLIENT_SECRET_POST). The lab's own agent id `06f907b0` is NOT in P1AZ's 42-id actor list.
+- Agent actor app: reused the "AI Agent - demoUser" app (CLIENT_SECRET_POST; its client id is `AAG_AGENT_CLIENT_ID` in the app `.env`). The lab's own agent id is NOT in P1AZ's 42-id actor list.
 - Sign-in asks **agent scope only** (PingOne refuses two custom resources in one authorize). `act` may arrive as a JSON string (`actOf` parses it).
 - SE gateway ingress needed `proxy-buffer-size: 64k` (huge `x-gw-audit-trail` header caused 502 on the second tools/call).
-- SE `hitl-service` scaled 0→1; ingress `hitl.ai-demo.ping-devops.com` applied; lab `.env` has `AAG_HITL_SERVICE_URL` / `AAG_HITL_INTERNAL_SECRET` (write-only; the server records approvals, fail-closed).
+- SE `hitl-service` scaled 0→1; its ingress applied (host name in `.env.example`); lab `.env` has `AAG_HITL_SERVICE_URL` / `AAG_HITL_INTERNAL_SECRET` (write-only; the server records approvals, fail-closed).
 - **Open blocker (P1AZ console, owner)**: the tenant's P1AZ policy denies `create_transfer` with "No User Consent" instead of minting an INDETERMINATE/HITL challenge (the consent rule keys on a trusted-caller attribute). Until that policy flip, Real HITL challenge→phone→receipt can't fire end-to-end; Mock mode demos the full loop and the Real plumbing is live and waiting.
 
 ## Key files
