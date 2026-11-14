@@ -89,6 +89,9 @@ export default function App() {
   const [signin, setSignin] = useState(null);
   const [signOpen, setSignOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  // The talk track floats over every tab (owner 2026-11-13): opening the talk tab opens it; it stays open while you
+  // demo on other tabs, until you close the dialog itself. select() opens it; the dialog's own close unopens.
+  const [talkOpen, setTalkOpen] = useState(false);
   const [guideRunning, setGuideRunning] = useState(null); // the use case a guide step's Run button started
   // The mock phone (owner 2026-11-13): opens when a run holds for approval — a REAL_HOLD with the gateway's challenge,
   // or a mock HITL/step-up hold. kind real = the approval is recorded with the SE HITL service and the run is retried
@@ -170,6 +173,9 @@ export default function App() {
   const page = FULL_PAGES.includes(view) ? view : null;
   const current = page ? "agent" : nav.some((n) => n.id === view) ? view : "agent"; // a hash for a page that is not open falls back to the agent
   const select = (id) => { setView_(id); try { window.history.replaceState(null, "", `#${id}`); } catch { /* ignore */ } };
+  // The talk track floats over every tab (owner 2026-11-13): selecting the talk tab opens it; it stays open across
+  // tabs while you demo, until the dialog itself is closed.
+  useEffect(() => { if (current === "talk") setTalkOpen(true); }, [current]);
 
   const allUc = catalog?.tracks.flatMap((t) => t.usecases) || [];
   // A restored turn holds a use case id only; it gets the use case back from this vertical's catalog (another vertical's turn stays text only).
@@ -476,7 +482,8 @@ export default function App() {
           )}
           {current === "runs" && <RunHistory refresh={runCount} />}
           {current === "diagram" && <DiagramView vertical={vertical} resetSignal={resetSignal} lastRun={last} />}
-          {current === "talk" && (story ? <TalkTrack talk={story.talkTrack} onRun={talkRun} activeUc={guideRunning} /> : <p className="muted">{error ? "The talk track could not be loaded." : "Loading..."}</p>)}
+          {talkOpen && story && <TalkTrack talk={story.talkTrack} onRun={talkRun} activeUc={guideRunning} onClose={() => { setTalkOpen(false); if (current === "talk") select("agent"); }} />}
+          {current === "talk" && !story && <p className="muted">{error ? "The talk track could not be loaded." : "Loading..."}</p>}
           {extraKey && opened[extraKey] && <ExtraPage opens={extraKey} entry={opened[extraKey]} />}
         </div>
       </main>

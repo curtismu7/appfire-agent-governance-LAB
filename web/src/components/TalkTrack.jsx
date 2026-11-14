@@ -2,10 +2,10 @@ import FloatingDialog from "../floating-dialog/FloatingDialog";
 
 // The talk track as a draggable dialog with a Pop out (owner 2026-11-13): put it on the second monitor while demoing.
 // The pop-out is a live same-origin window (FloatingDialog's); the tab keeps the dialog open.
-export default function TalkTrack({ talk, onRun, activeUc }) {
+export default function TalkTrack({ talk, onRun, activeUc, onClose }) {
   const run = (uc) => { const step = talk.find((t) => (t.run || []).some((r) => r.uc === uc)); onRun?.(step, uc); };
   return (
-    <FloatingDialog isOpen onClose={() => { window.location.hash = "#agent"; }} title="Talk track" ariaLabel="Talk track"
+    <FloatingDialog isOpen noBackdrop onClose={onClose} title="Talk track" ariaLabel="Talk track"
       defaultWidth={560} defaultHeight={720} placement="right" storageKey="aag.talktrack" testId="talk-track-dialog">
       <ol className="talk" data-testid="talk-track">
         {talk.map((t) => (
