@@ -432,7 +432,8 @@ try {
       const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       await page.goto(`${liveBase}/`);
       await t('uc-UC1').waitFor();
-      check((await page.evaluate(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '')).includes('identity provider only'), `${tag}: Live is allowed (the title says what a live run does: identity provider only)`);
+      const liveTitle = await page.evaluate(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '');
+      check(liveTitle.includes('identity provider only'), `${tag}: Live is allowed (the title says what a live run does: identity provider only) (got: ${liveTitle || '(empty)'})`);
       await t('mode-select').selectOption('real'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: live'));
       await page.waitForFunction(() => document.querySelector('[data-testid="banner"]').textContent.startsWith('REAL mode'));
       check((await t('banner').getAttribute('data-state')) === 'live' && (await t('mode').innerText()).includes('identity provider only'), `${tag}: the banner and the chip say LIVE, identity provider only`);
@@ -488,6 +489,7 @@ try {
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     await page.goto(`${fullBase}/`);
     await t('uc-UC1').waitFor();
+    await page.waitForFunction(() => (document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '').includes('sign-in (pi.flow)'), null, { timeout: 10000 });
     check((await page.evaluate(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '')).includes('sign-in (pi.flow)'), `${tag}: Real is available and its title says what a run does`);
     await t('mode-select').selectOption('real'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('real: sign-in, token exchange, Agent Gateway'));
     check(await t('sign-in').isVisible(), `${tag}: Real shows the Sign in button`);
