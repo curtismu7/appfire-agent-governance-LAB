@@ -409,7 +409,7 @@ export default function App() {
         )}
         <div className="shell-right">
           <TopMenu
-            mode={{ value: mode === "live" ? "real" : "mock", onChange: (m) => chooseMode(m === "real" ? "live" : "mock"), realAvailable: hostedOnly ? false : Boolean(liveReason) && mode !== "live" ? false : null, realHint: liveReason || (hostedOnly ? HOSTED_REAL_NOTE : realTitle) }}
+            mode={{ value: mode === "live" ? "real" : "mock", onChange: (m) => chooseMode(m === "real" ? "live" : "mock"), realAvailable: hostedOnly ? false : Boolean(liveReason) && mode !== "live" ? false : null, realHintAlways: true, realHint: liveReason || (hostedOnly ? HOSTED_REAL_NOTE : realTitle) }}
             theme={{ value: theme, onChange: setTheme }}
             fontSize={{ value: fontStep, onChange: setFontStep }}
             present={{ active: presenter, onToggle: () => setPresenter((v) => !v), label: "Presenter (P)" }}

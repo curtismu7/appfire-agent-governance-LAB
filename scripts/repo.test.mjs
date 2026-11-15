@@ -151,7 +151,7 @@ test('step 2: the web source has no outbound URL, no eval/Function, no raw HTML 
     assert.ok(!/https?:\/\//.test(t.replace(/\/\/ .*$/gm, '')), `${path.basename(f)} names a URL`);
     assert.ok(!/dangerouslySetInnerHTML|\beval\(|new Function|\binnerHTML\b/.test(t), `${path.basename(f)} injects HTML or evaluates text`);
     assert.ok(!/['"]#[0-9a-fA-F]{3,8}['"]/.test(t), `${path.basename(f)} has a colour literal`);
-    assert.ok(!/<a[ >]/.test(t.replace(/<a className="top-menu__shelf[^"]*" href=\{shelfUrl\}[\s\S]*?<\/a>/g, '')), `${path.basename(f)} renders a link: link-outs are plain labels (the Shelf button is the one family-standard exception)`);
+    assert.ok(!/<a[ >]/.test(t.replace(/<a className="top-menu__shelf[^"]*" href=\{(?:shelfUrl|help\.href)\}[\s\S]*?<\/a>/g, '')), `${path.basename(f)} renders a link: link-outs are plain labels (the Shelf button, and the vendored TopMenu's help link that this lab never renders, are the only exceptions)`);
   }
 });
 
