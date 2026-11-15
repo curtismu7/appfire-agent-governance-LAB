@@ -318,7 +318,7 @@ describe("the screens show what the server sent", () => {
     const hop = UC1_DENY_RUN.find((h) => h.n === 6);
     const raw = hop.response.body.leaked;
     render(<StepDetailPanel hops={UC1_DENY_RUN} selected={6} onSelect={() => {}} />);
-    expect(screen.getByLabelText("Step 6 response").textContent).toContain(`"leaked": "${raw}"`);
+    expect(screen.getByLabelText("Step 6 response").textContent).toContain(raw); // whole, as sent, in the Formatted form
   });
 });
 

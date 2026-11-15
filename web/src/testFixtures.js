@@ -52,7 +52,7 @@ export const liveBody = (ucId = "UC1", over = {}) => ({
   run: {
     schema: "appfire-agent-governance-run/1", mode: "live", useCase: { id: ucId, track: "foundations", title: "t", maturity: "works", flag: null }, vertical: "banking", expectedOutcome: "PERMIT",
     live: { status: "idp-only", message: "Live mode runs the identity-provider hops only." }, labSimulated: false, kind: "live", computed: false, persona: null, outcome: "LIVE_OK", matchesExpected: null,
-    hops: [{ ...hop(1, "live-discovery", { from: "lab", to: "idp" }), mock: false, live: true }, { ...hop(2, "live-actor-token", { from: "lab", to: "idp" }), mock: false, live: true }],
+    hops: [{ ...hop(1, "live-discovery", { from: "lab", to: "pingone" }), mock: false, live: true }, { ...hop(2, "live-actor-token", { from: "lab", to: "pingone" }), mock: false, live: true }],
     tokens: [{ label: "agent client-credentials token (LIVE, masked)", mock: false, live: true, notice: "LIVE token, masked", raw: "eyJhbG...ab12", header: { alg: "RS256" }, claims: { client_id: "c" } }],
     notRun: { reason: "Live mode in this lab reaches the identity provider only.", steps: ["user-token", "token-exchange", "tool-dispatched"] },
     traceId: "a".repeat(32), traceparent: `00-${"a".repeat(32)}-${"b".repeat(16)}-01`, narration: "Live, identity provider only: the discovery document and the token came from your PingOne environment.", ...over,
@@ -60,7 +60,7 @@ export const liveBody = (ucId = "UC1", over = {}) => ({
 });
 // Full Real (owner, 2026-11-10): the nine hops (two token exchanges: act = agent, then for the gateway), each REAL or NOT RUN, real tokens shown raw, and
 // the reply the server wrote.
-const REAL_KINDS = [["sign-in", "Sign-in", "browser", "idp"], ["actor-token", "Agent token", "agent", "idp"], ["token-exchange", "Exchange 1: act = agent", "bff", "idp"], ["token-exchange", "Exchange 2: for the gateway", "bff", "idp"], ["gateway-check", "Agent Gateway", "agent", "gateway"], ["authorize-decision", "Authorize decision", "gateway", "authorize"], ["tool-dispatched", "MCP tool", "gateway", "mcp"], ["api-call", "API", "mcp", "api"], ["agent-reply", "Agent reply", "agent", "page"]];
+const REAL_KINDS = [["sign-in", "Sign-in", "browser", "pingone"], ["actor-token", "Agent token", "agent", "pingone"], ["token-exchange", "Exchange 1: act = agent", "bff", "pingone"], ["token-exchange", "Exchange 2: for the gateway", "bff", "pingone"], ["gateway-check", "Agent Gateway", "agent", "gateway"], ["authorize-decision", "Authorize decision", "gateway", "authorize"], ["tool-dispatched", "MCP tool", "gateway", "mcp"], ["api-call", "API", "mcp", "api"], ["agent-reply", "Agent reply", "agent", "page"]];
 // JWT-shaped strings assembled at run time (no credential-shaped literal in the source; the signature segment is filler).
 const jwtOf = (claims) => ["eyJhbGciOiJSUzI1NiJ9", btoa(JSON.stringify(claims)).replace(/=+$/, ""), "c2ln"].join(".");
 export const REAL_USER_RAW = jwtOf({ sub: "u-1" });

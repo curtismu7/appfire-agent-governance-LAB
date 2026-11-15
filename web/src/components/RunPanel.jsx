@@ -1,7 +1,5 @@
-import { NEEDS_LABELS, TRACK_LABELS, outcomeState, triggerText } from "../lib";
+import { NEEDS_LABELS, TRACK_LABELS, notRunText, outcomeState, ranCount, triggerText } from "../lib";
 import { InventedTag, LiveTag, RealTag, Tag } from "./Bits";
-import HopList from "./HopList";
-import TokenView from "./TokenView";
 
 // The honest refusal text for each answer the API can give instead of a run. The server's own detail is shown as it is.
 const REFUSAL = {
@@ -75,9 +73,9 @@ export function RunResult({ run }) {
       {guided && <p className="muted" data-testid="guided-explain">Guided, not computed: the lab opened the page the product would open and shows the catalog's label ({run.expectedOutcome}). It did not run or verify that outcome.</p>}
       {run.live?.status === "needs-flag" && <p className="muted" data-testid="live-note">{run.live.message}</p>}
       {isLive && <NotRun notRun={run.notRun} />}
-      <HopList hops={run.hops} traceparent={run.traceparent} />
-      <h3 className="panel__sub">Tokens</h3>
-      <TokenView tokens={run.tokens} />
+      {/* The steps and the tokens are not repeated here: every run, whatever the use case, is read in the evidence column (Sequence, step detail, Tokens). */}
+      <p className="muted" data-testid="run-evidence-note">{run.hops?.length ? `${ranCount(run.hops)} hops${notRunText(run.hops)}: read them in the Sequence above (click a step for its detail) and the tokens on the Tokens tab.` : "This run drew no hops."}</p>
+      {run.traceparent && <p className="muted">Run traceparent: <code data-testid="run-traceparent">{run.traceparent}</code></p>}
     </section>
   );
 }

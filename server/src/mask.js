@@ -10,7 +10,8 @@ const SPECIFIC = DETECTORS.filter((d) => !d.generic);
 // Static catalog text (the committed use-case list and the story) is not visitor input and is plain product prose. The prose-style detectors ("bearer
 // requirement", "authorization: x") would corrupt it, so for those answers only the credential SHAPES are applied. The doctor scans the same text with the same set.
 export const SHAPE_IDS = new Set(['private-key', 'url-userinfo', 'github-token', 'gitlab-token', 'slack-token', 'aws-key', 'google-token', 'api-key', 'jwt']);
-const SHAPES = SPECIFIC.filter((d) => SHAPE_IDS.has(d.id));
+// Tokens are shown raw in this demo (owner 2026-11-14), so a JWT is never masked on the way out; every other credential shape still is. What a visitor types is masked on the way IN (credentials.js).
+const SHAPES = SPECIFIC.filter((d) => SHAPE_IDS.has(d.id) && d.id !== 'jwt');
 const OPAQUE = new Set(['hash', 'prevHash', 'traceparent', 'traceId', 'parentId', 'spanId']);
 
 export function maskResponseText(text, allowed = [], shapesOnly = false) {

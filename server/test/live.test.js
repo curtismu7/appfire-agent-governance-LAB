@@ -44,7 +44,7 @@ test('assertAllowed: the configured origin and the two fixed paths only; https o
   assert.throws(() => assertAllowed('http://example.com/x/as/token', 'http://example.com/x'), LiveRefused, 'http is refused off loopback');
 });
 
-test('a live run makes exactly two calls to the fake, with the right method, path, Basic credentials and a traceparent that matches the hop; the secret and the raw token never appear in the run', async () => {
+test('a live run makes exactly two calls to the fake, with the right method, path, Basic credentials and a traceparent that matches the hop; the secret never appears and the token is shown raw (owner 2026-11-14)', async () => {
   await withFake({}, async (fake, live) => {
     const run = await live.run(uc, { vertical: 'banking', traceparent: TP });
     assert.deepEqual(fake.seen.map((s) => `${s.method} ${s.url}`), [`GET /${ENV_ID}/as/.well-known/openid-configuration`, `POST /${ENV_ID}/as/token`]);
@@ -58,10 +58,11 @@ test('a live run makes exactly two calls to the fake, with the right method, pat
     assert.match(run.hops[0].note, /advertises the RFC 8693/);
     assert.deepEqual(Object.keys(run.hops[0].response.body).sort(), ['grant_types_supported', 'issuer', 'token_endpoint', 'token_endpoint_auth_methods_supported'], 'only the listed discovery fields are shown');
     assert.equal(run.tokens.length, 1); assert.equal(run.tokens[0].mock, false);
-    assert.equal(run.tokens[0].raw, `${FAKE_TOKEN.slice(0, 6)}...${FAKE_TOKEN.slice(-4)}`); assert.equal(run.tokens[0].claims.client_id, CLIENT_ID); assert.equal(run.tokens[0].header.alg, 'RS256');
+    assert.equal(run.tokens[0].raw, FAKE_TOKEN); assert.equal(run.tokens[0].claims.client_id, CLIENT_ID); assert.equal(run.tokens[0].header.alg, 'RS256');
     assert.deepEqual(run.notRun.steps, uc.evidence.tokenChain); assert.match(run.notRun.reason, /identity provider only/);
     const text = JSON.stringify(run);
-    for (const secret of [CLIENT_SECRET, FAKE_TOKEN, FAKE_TOKEN.split('.')[2], Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64'), 'dropped']) assert.ok(!text.includes(secret), 'nothing secret or unlisted in the run');
+    for (const secret of [CLIENT_SECRET, Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64'), 'dropped']) assert.ok(!text.includes(secret), 'nothing secret or unlisted in the run');
+    assert.ok(JSON.stringify(run.hops).includes(FAKE_TOKEN), 'the hop details carry the raw token too');
     assert.match(run.hops[1].request.headers.authorization, /write-only/);
   });
 });
@@ -94,10 +95,10 @@ test('failures are hops with a verdict, not exceptions: a wrong secret, a 500, a
   assert.equal((await dead.run(uc, { vertical: 'banking', traceparent: TP })).outcome, 'LIVE_UNREACHABLE');
 });
 
-test('an opaque (non-JWT) token is masked and says there is nothing to decode', async () => {
+test('an opaque (non-JWT) token is shown raw and says there is nothing to decode', async () => {
   await withFake({ behaviour: 'opaque' }, async (_f, live) => {
     const r = await live.run(uc, { vertical: 'banking', traceparent: TP });
-    assert.equal(r.outcome, 'LIVE_OK'); assert.equal(r.tokens[0].raw, 'opaque...cdef'); assert.equal(r.tokens[0].header, null); assert.match(r.tokens[0].claims.note, /opaque/);
+    assert.equal(r.outcome, 'LIVE_OK'); assert.equal(r.tokens[0].raw, 'opaque-token-value-0123456789abcdef'); assert.equal(r.tokens[0].header, null); assert.match(r.tokens[0].claims.note, /opaque/);
   });
 });
 
@@ -130,13 +131,13 @@ test('hostToAllow: the netguard is told the PingOne host only when live is confi
   assert.equal(hostToAllow(createLive({ config: liveConfig({ ...settingsFor(), PINGONE_REGION: 'eu' }, {}) }), null), 'auth.pingone.eu');
 });
 
-test('review fix: live hops are demo-hop/1 with tokens hidden (Real mode), the Basic credential stays write-only', async () => {
+test('review fix: live hops are demo-hop/1 with tokens raw (owner 2026-11-14), the Basic credential stays write-only', async () => {
   const { validateHop } = await import('../src/vendor/hopDetail.mjs');
   const { default: CATALOG } = await import('../src/vendor/hop-catalog.json', { with: { type: 'json' } });
   await withFake({}, async (fake, live) => {
     const run = await live.run(uc, { vertical: 'banking', traceparent: TP });
-    for (const h of run.hops) assert.deepEqual(validateHop(h, CATALOG), [], h.kind);
+    for (const h of run.hops) assert.deepEqual(validateHop(h, CATALOG, { tokens: 'raw' }), [], h.kind);
     assert.equal(run.hops[1].request.headers.authorization, 'Basic [write-only]');
-    assert.equal(run.hops[1].response.body.access_token, '[redacted]');
+    assert.equal(run.hops[1].response.body.access_token, FAKE_TOKEN);
   });
 });

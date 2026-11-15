@@ -1,32 +1,20 @@
 import { useState } from "react";
 import { Tag } from "./Tag";
 import { actorOf, readPref, STAGE_STATE, txt, verdictState, verdictWord, withSkipped, writePref } from "./lanes";
+import { HttpMessage, KeyFacts } from "../components/HttpMessage";
 import "./evidence.css";
 
 // One hop's full detail, ported from AI-DEMO2's StepDetailPanel and ordered claim before evidence: what happened, the
-// gateway filter chain, the decision, what changed, then the raw (already redacted) request and response. The RFC
+// gateway filter chain, the decision, what changed, then the request and response. The RFC
 // column (why, what the specification requires, the common failure) is behind the "RFC info" toggle, remembered.
+// LAB-LOCAL (owner, 2026-11-14), differs from shared/evidence: a coloured "key facts" row under the title, and the request and response are shown in
+// parts (start line, headers, body) through the lab's Formatted-form / coloured-Raw JSON pane instead of one plain text block. Tokens are shown whole.
 const RFC_KEY = "cal.ev.rfcInfo";
 const ZOOM_KEY = "cal.ev.sdp.zoom";
 const Z_MIN = 80, Z_MAX = 160, Z_STEP = 10, Z_DEFAULT = 120;
 const NOISE = new Set(["iat", "nbf", "exp", "jti"]);
 
-function requestText(r) {
-  if (!r || typeof r !== "object") return r ? String(r) : "";
-  const lines = [];
-  if (r.method || r.url) lines.push(`${r.method || ""} ${r.url || ""}`.trim());
-  for (const [k, v] of Object.entries(r.headers || {})) lines.push(`${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`);
-  if (r.body !== undefined) lines.push("", typeof r.body === "string" ? r.body : JSON.stringify(r.body, null, 2));
-  return lines.join("\n");
-}
-function responseText(r) {
-  if (!r || typeof r !== "object") return r ? String(r) : "";
-  const lines = [];
-  if (r.status != null) lines.push(`HTTP ${r.status}`);
-  for (const [k, v] of Object.entries(r.headers || {})) lines.push(`${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`);
-  if (r.body !== undefined) lines.push("", typeof r.body === "string" ? r.body : JSON.stringify(r.body, null, 2));
-  return lines.join("\n");
-}
+const hasMsg = (m) => m !== undefined && m !== null && m !== "" && !(typeof m === "object" && Object.keys(m).length === 0);
 const cell = (v) => (v === undefined ? null : typeof v === "object" ? JSON.stringify(v) : String(v));
 const decisionState = (o) => (/^permit/i.test(o) ? "ok" : /^deny/i.test(o) ? "bad" : "warn");
 
@@ -97,7 +85,6 @@ export default function StepDetailPanel({ hops = [], selected = null, onSelect, 
   const kv = Array.isArray(h.kv) ? h.kv : [];
   const diff = h.claimDiff && (h.claimDiff.before || h.claimDiff.after) ? h.claimDiff : null;
   const changed = Boolean(diff) || kv.length > 0;
-  const req = requestText(h.request), res = responseText(h.response);
   const d = h.decision;
 
   return (
@@ -122,6 +109,8 @@ export default function StepDetailPanel({ hops = [], selected = null, onSelect, 
         <button type="button" aria-label="Next step" disabled={!next} onClick={() => next && onSelect?.(next.n)}>Next ›</button>
         {onClose && <button type="button" aria-label="Close step detail" onClick={onClose}>×</button>}
       </div>
+
+      <KeyFacts hop={h} />
 
       <div className="sdp__cols" data-rfc={rfc ? "on" : "off"}>
         <div className="sdp__col">
@@ -163,9 +152,9 @@ export default function StepDetailPanel({ hops = [], selected = null, onSelect, 
 
         <div className="sdp__col">
           <h4>Request</h4>
-          {req ? <pre className="ev-pre" tabIndex={0} aria-label={`Step ${h.n} request`}>{txt(req)}</pre> : <p className="ev-muted">No request recorded.</p>}
+          {hasMsg(h.request) ? <HttpMessage msg={h.request} label={`Step ${h.n} request`} /> : <p className="ev-muted">No request recorded.</p>}
           <h4>Response</h4>
-          {res ? <pre className="ev-pre" tabIndex={0} aria-label={`Step ${h.n} response`}>{txt(res)}</pre> : <p className="ev-muted">No response recorded.</p>}
+          {hasMsg(h.response) ? <HttpMessage msg={h.response} label={`Step ${h.n} response`} /> : <p className="ev-muted">No response recorded.</p>}
           {h.traceparent && <p className="ev-muted">traceparent <span className="ev-mono">{txt(h.traceparent)}</span></p>}
         </div>
 

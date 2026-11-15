@@ -78,16 +78,16 @@ export function createApp({
   };
   const api = express.Router();
   api.use(express.json({ limit: '8kb' }));
-  // Defence in depth: every JSON answer is masked for credential-shaped values, whatever path produced it. The MOCK tokens the lab minted for THIS
-  // answer are the only exception (rule 4: tokens are shown raw); a response carries them in `run.tokens`.
+  // Defence in depth: every JSON answer is masked for credential SHAPES (keys, cloud and chat tokens), whatever path produced it. JWTs are not masked (rule 4, and owner 2026-11-14: tokens are
+  // shown raw in this demo). The prose-style detectors are not used on answers: they turned hop titles into "[masked:assignment]" and what a visitor types is masked on the way in.
   api.use((_req, res, next) => {
     const send = res.json.bind(res);
-    res.json = (b) => send(maskDeep(b, (b?.run?.tokens || []).map((t) => t.raw), res.locals.staticCatalog === true));
+    res.json = (b) => send(maskDeep(b, (b?.run?.tokens || []).map((t) => t.raw), true));
     next();
   });
   api.use('/health', health.router);
   const noStore = (res) => res.set('Cache-Control', 'no-store');
-  const staticCatalog = (res) => { res.locals.staticCatalog = true; noStore(res); };
+  const staticCatalog = (res) => noStore(res);
   const ws = (req, res) => { const id = workspaceFrom(req); if (!id) res.status(400).json({ error: 'bad_workspace' }); return id; };
   const bodyOf = (req) => (isObj(req.body) ? req.body : {});
   // A body may carry only the keys the endpoint takes. A refusal never names the key.

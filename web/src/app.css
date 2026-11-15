@@ -164,14 +164,70 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 .jsonbox__toggle button:first-child { border-radius: 6px 0 0 6px; }
 .jsonbox__toggle button:last-child { border-radius: 0 6px 6px 0; }
 .jsonbox__toggle button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-.json--fmt { color: var(--text); }
-.jtok--key { color: var(--status-info); font-weight: 600; }
-.jtok--string { color: var(--status-ok); }
-.jtok--number { color: var(--accent); }
-.jtok--bool { color: var(--status-warn); font-weight: 600; }
-.jtok--null { color: var(--muted); font-style: normal; font-weight: 600; }
-.jtok--punct { color: var(--muted); }
+/* ===== JSON pane (owner 2026-11-14): Formatted = a form, Raw = coloured by what each part is. Colours come from the theme tokens only. ===== */
+.json, .facts, .http { --j-key: var(--status-info); --j-string: var(--status-ok); --j-number: color-mix(in srgb, var(--status-warn) 50%, var(--danger-text)); --j-bool: var(--status-warn); --j-null: var(--muted); --j-punct: var(--muted); --j-url: color-mix(in srgb, var(--status-info) 55%, var(--status-ok)); --j-id: color-mix(in srgb, var(--status-ok) 60%, var(--text)); --j-time: color-mix(in srgb, var(--status-warn) 55%, var(--text)); --j-hot-bg: var(--accent-soft); }
+.json--raw { color: var(--text-body); }
+.jtok--key { color: var(--j-key); font-weight: 600; }
+.jtok--string { color: var(--j-string); }
+.jtok--number { color: var(--j-number); }
+.jtok--bool { color: var(--j-bool); font-weight: 600; }
+.jtok--null { color: var(--j-null); font-weight: 600; }
+.jtok--punct { color: var(--j-punct); }
+.jtok--url { color: var(--j-url); text-decoration: underline; text-decoration-style: dotted; }
+.jtok--id { color: var(--j-id); }
+.jtok--time { color: var(--j-time); font-weight: 600; }
+.jtok--hot { color: var(--text); background: var(--j-hot-bg); font-weight: 700; border-radius: 3px; }
+.jtok--alert { color: var(--danger-text); font-weight: 700; }
 .jtok--plain { color: var(--text-body); }
+.jtok--jwt1 { color: var(--danger-text); }
+.jtok--jwt2 { color: var(--status-warn); }
+.jtok--jwt3 { color: var(--status-info); }
+.json--form { white-space: normal; font-family: inherit; font-size: 13px; padding: 8px; }
+.jform { margin: 0; display: grid; gap: 6px; }
+.jform[data-depth="1"], .jform[data-depth="2"], .jform[data-depth="3"] { padding-left: 10px; border-left: 2px solid var(--border); }
+.jform__row { display: grid; grid-template-columns: minmax(84px, 28%) minmax(0, 1fr); gap: 4px 10px; align-items: start; }
+.jform__k { margin: 0; padding-top: 3px; font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: var(--j-key); overflow-wrap: anywhere; }
+.jform__d { margin: 0; min-width: 0; }
+.jform__v { display: block; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.jform__v--string { color: var(--j-string); }
+.jform__v--number { color: var(--j-number); }
+.jform__v--url { color: var(--j-url); }
+.jform__v--id { color: var(--j-id); }
+.jform__v--time { color: var(--j-time); }
+.jform__v--null { color: var(--j-null); }
+.jform__sub { color: var(--muted); }
+.jform__chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.jform__chip { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); font-family: var(--font-mono); font-size: 12px; color: var(--j-string); }
+.jform__chip[data-on="true"] { border-color: var(--status-ok); color: var(--status-ok); font-weight: 700; }
+.jform__chip[data-on="false"] { border-color: var(--status-warn); color: var(--status-warn); font-weight: 700; }
+.jform__chips[data-hot="true"] .jform__chip { border-color: var(--accent); background: var(--j-hot-bg); color: var(--text); font-weight: 700; }
+.jform__list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.jform__idx { display: inline-block; margin-bottom: 4px; padding: 0 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--muted); }
+.jform__row[data-hot="true"] .jform__k { color: var(--accent); }
+.jform__row[data-hot="true"] .jform__v { border-color: var(--accent); background: var(--j-hot-bg); }
+.jform__row[data-hot="true"] .jform__v--token { background: var(--surface); }
+.jform__row[data-alert="true"] .jform__k { color: var(--danger-text); }
+.jform__row[data-alert="true"] .jform__v { border-color: var(--danger-text); color: var(--danger-text); font-weight: 700; }
+.jform__v--token { color: var(--text-body); }
+.http__line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
+.http__url { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--j-url); overflow-wrap: anywhere; }
+.http__h { margin: 8px 0 2px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.facts { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.fact { display: inline-flex; gap: 6px; align-items: baseline; max-width: 100%; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); font-size: 12px; }
+.fact__k { font-weight: 700; color: var(--muted); }
+.fact__v { font-family: var(--font-mono); font-weight: 700; overflow-wrap: anywhere; }
+.fact[data-kind="ok"], .fact[data-kind="act"] { border-color: var(--status-ok); }
+.fact[data-kind="ok"] .fact__v, .fact[data-kind="act"] .fact__v { color: var(--status-ok); }
+.fact[data-kind="bad"] { border-color: var(--danger-text); }
+.fact[data-kind="bad"] .fact__v { color: var(--danger-text); }
+.fact[data-kind="warn"], .fact[data-kind="aud"] { border-color: var(--status-warn); }
+.fact[data-kind="warn"] .fact__v, .fact[data-kind="aud"] .fact__v { color: var(--status-warn); }
+.fact[data-kind="info"], .fact[data-kind="sub"] { border-color: var(--status-info); }
+.fact[data-kind="info"] .fact__v, .fact[data-kind="sub"] .fact__v { color: var(--status-info); }
+.fact[data-kind="scope"] { border-color: var(--accent); background: var(--accent-soft); }
+.fact[data-kind="scope"] .fact__v { color: var(--text); }
+/* One diagram, not two (owner 2026-11-14): the actor tiles and the progress bar above the sequence repeat the lane headers, so only the sequence shows. */
+.sq .sq-actors, .sq .sq-prog { display: none; }
 
 /* ===== Demo guide: Real-help lists ===== */
 .guide__subhead { margin: 10px 0 4px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -180,8 +236,8 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 .guide__runlink { font: inherit; font-size: 13px; text-align: left; padding: 2px 6px; border-radius: 6px; min-height: 0; background: transparent; color: var(--accent); border-color: transparent; }
 .guide__runlink[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
-/* ===== Sign-in dialog: the action row is always visible (owner 2026-11-13) ===== */
-.signin-actions { position: sticky; bottom: -12px; margin: auto -14px -12px; padding: 10px 14px; background: var(--surface); border-top: 1px solid var(--line); z-index: 1; }
-
 /* ===== Talk track: per-step run links ===== */
 .talk__runs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.jsonbox[data-view="form"] .json, .jsonbox[data-view="raw"] .json { padding-top: 28px; }
+/* The step detail in the evidence column is narrow: its parts stack instead of sharing three squeezed columns (the full page keeps its columns). */
+.evcol .sdp__cols[data-rfc] { grid-template-columns: minmax(0, 1fr); }

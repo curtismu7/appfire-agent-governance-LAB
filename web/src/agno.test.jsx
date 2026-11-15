@@ -484,7 +484,7 @@ describe("Agent to agent page (owner, 2026-11-09: keep it)", () => {
     window.history.replaceState(null, "", "/appfire-agent-governance/");
     const kinds = ["sign-in", "actor-token", "consent", "a2a-exchange-1", "actor-token", "a2a-exchange-2", "a2a-agent-card", "a2a-protocol-message", "gateway-check", "authorize-decision", "tool-dispatched"];
     const json = (status, body) => Promise.resolve({ ok: status < 300, status, json: () => Promise.resolve(body) });
-    await boot({ runAnswer: (id) => { const b = runBody(decodeURIComponent(id)); b.run.hops = kinds.map((kind, i) => ({ ...b.run.hops[0], n: i + 1, kind, label: kind })); return json(200, b); } });
+    await boot({ runAnswer: (id) => { const b = runBody(decodeURIComponent(id)); b.run.hops = kinds.map((kind, i) => ({ ...b.run.hops[0], n: i + 1, kind, label: kind, title: kind })); return json(200, b); } });
     expect(screen.queryByTestId("nav-page-a2a")).toBeNull();
     const u = userEvent.setup();
     await u.type(screen.getByTestId("composer-input"), "hand off to a specialist");
@@ -506,14 +506,14 @@ describe("Agent to agent page (owner, 2026-11-09: keep it)", () => {
     expect(page.textContent).toMatch(/Opened by UC2: A2A delegation/);
     expect(page.textContent).toMatch(/agent-card, delegation and trust hops/);
     expect(page.textContent).toMatch(/PERMIT/);
-    expect(page.textContent).toMatch(/Hops for this page \(4\)/);
+    expect(page.textContent).toMatch(/Hops for this page/); expect(within(page).getAllByTestId(/^row-\d+$/)).toHaveLength(4);
     for (const k of ["a2a-exchange-1", "a2a-exchange-2", "a2a-agent-card", "a2a-protocol-message"]) expect(page.textContent).toMatch(k);
     for (const k of ["gateway-check", "tool-dispatched", "consent"]) expect(page.textContent).not.toMatch(k);
   });
 
   test("#page-a2a shows the label, what it is, the outcome and only the delegation hops of the run", () => {
     const hops = ["sign-in", "actor-token", "consent", "a2a-exchange-1", "actor-token", "a2a-exchange-2", "gateway-check", "authorize-decision", "tool-dispatched"]
-      .map((kind, i) => ({ ...runBody().run.hops[0], n: i + 1, kind, label: kind }));
+      .map((kind, i) => ({ ...runBody().run.hops[0], n: i + 1, kind, label: kind, title: kind }));
     const uc = { id: "UC2", title: "A2A delegation", trigger: { type: "chip", text: "hand off to a specialist" }, linkOut: null };
     render(<ExtraPage opens="a2a" entry={{ uc, run: { ...runBody("UC2").run, hops } }} />);
     const page = screen.getByTestId("extra-a2a");
@@ -521,7 +521,7 @@ describe("Agent to agent page (owner, 2026-11-09: keep it)", () => {
     expect(page.textContent).toMatch(/Opened by UC2: A2A delegation/);
     expect(page.textContent).toMatch(/agent-card, delegation and trust hops/);
     expect(page.textContent).toMatch(/PERMIT/);
-    expect(page.textContent).toMatch(/Hops for this page \(2\)/);
+    expect(page.textContent).toMatch(/Hops for this page/); expect(within(page).getAllByTestId(/^row-\d+$/)).toHaveLength(2);
     expect(page.textContent).toMatch(/a2a-exchange-1/);
     expect(page.textContent).toMatch(/a2a-exchange-2/);
     expect(page.textContent).not.toMatch(/gateway-check/);
