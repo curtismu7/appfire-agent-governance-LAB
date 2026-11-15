@@ -1,6 +1,6 @@
 import { useRef } from "react";
 
-// The JSON pane (Formatted form | coloured Raw) lives in JsonPane.jsx; it is re-exported here so every caller keeps one import.
+// The JSON pane (Form | JSON, Rule 24) lives in the vendored JsonPane.jsx; it is re-exported here so every caller keeps one import.
 export { Json } from "./JsonPane";
 
 // A small word-tag. The state only colours the border; the words carry the meaning.

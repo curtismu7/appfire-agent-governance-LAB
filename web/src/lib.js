@@ -82,5 +82,11 @@ export function newTraceparent() {
   return `00-${h(bytes.slice(0, 16))}-${h(bytes.slice(16))}-01`;
 }
 
+// Rule 24: keys that matter in THIS lab's payloads, marked on the JSON panes (`hot`) beside the defaults (sub, act, aud, scope, ...):
+// what the gateway was asked to run and what it did with it (decision, reason and error already show in the alert colour).
+export const HOT_CALL = ["tool", "action", "name", "method", "obligation", "granted", "approved", "dispatched", "refused_by", "routing", "matched", "www-authenticate", "x-gw-audit-trail", "X-Gw-Audit-Trail"];
+// ...and in the decoded tokens: the intent and authentication-methods claims the staged events add.
+export const HOT_CLAIMS = ["intent", "amr"];
+
 // The hosted build (mock only): the note beside its disabled Real button.
 export const HOSTED_REAL_NOTE = "Mock only on the hosted copy. Run the lab locally for Real.";

@@ -10,7 +10,7 @@ Standalone Ping demo for Appfire's Agentic AI evaluation (the customer's brief):
 ## Current behavior (owner-approved)
 - **Real mode runs real only**: a mock-only use case is refused with `403 mock_in_real_refused` + the fixed reason. No silent mock fallback. 11 use cases run Real (UC1, UC3, UC4, UC6, UC7, UC8, UC17, UC19, UC20, UC24, UC28); 76 blocked, each with its reason.
 - New workspaces default to Real (`AAG_LAB_MODE=live` in the app `.env`; documented in `.env.example`).
-- UI: names only (no UC# labels) in the Demo guide, help lists and talk track. Colored JSON viewer with **Formatted | Raw** toggle. Sign-in modal has sticky always-visible buttons. Composer stands out (accent border) and a prompt chip fills it, flashes, then sends (260 ms).
+- UI: names only (no UC# labels) in the Demo guide, help lists and talk track. Colored JSON viewer with **Form | JSON** toggle (the shared JsonPane, Rule 24). Sign-in modal has sticky always-visible buttons. Composer stands out (accent border) and a prompt chip fills it, flashes, then sends (260 ms).
 - **Talk track floats over every tab, non-modal** (no backdrop), with Pop out for a second monitor; persists until closed.
 - **Demo guide** (help button): 8 steps mapped to the brief + "Real mode: what runs, what is blocked" (11 real with Run links, 76 blocked with reasons), built from the same catalog as the gate.
 - Talk track has per-step Run links (12 use cases wired); running one switches to the Agent column.

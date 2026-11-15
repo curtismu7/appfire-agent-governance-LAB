@@ -1,5 +1,5 @@
 import { NEEDS_LABELS, TRACK_LABELS, notRunText, outcomeState, ranCount, triggerText } from "../lib";
-import { InventedTag, LiveTag, RealTag, Tag } from "./Bits";
+import { InventedTag, Json, LiveTag, RealTag, Tag } from "./Bits";
 
 // The honest refusal text for each answer the API can give instead of a run. The server's own detail is shown as it is.
 const REFUSAL = {
@@ -33,7 +33,7 @@ function Inputs({ uc }) {
       <p className="field-label">What the lab feeds the engine {entries.length ? <InventedTag /> : null}</p>
       {entries.length === 0
         ? <p className="muted">Nothing special: the lab runs the catalog's evidence chain for the everyday read tool and the persona you pick below.</p>
-        : <ul className="plain">{entries.map(([k, v]) => <li key={k}><code>{k}</code>: <code>{JSON.stringify(v)}</code> <InventedTag /></li>)}</ul>}
+        : <ul className="plain">{entries.map(([k, v]) => <li key={k}><code>{k}</code>: {v !== null && typeof v === "object" ? <Json value={v} label={`Lab input ${k}`} /> : <code>{JSON.stringify(v)}</code>} <InventedTag /></li>)}</ul>}
     </div>
   );
 }

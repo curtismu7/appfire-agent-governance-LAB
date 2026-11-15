@@ -1,5 +1,6 @@
 import { Json, LiveTag, MockTag, RealTag, Tag } from "./Bits";
 import { visible } from "../safeText";
+import { HOT_CLAIMS } from "../lib";
 
 // Mock tokens are shown raw (rule 4: education), labelled MOCK, with the decoded header and claims. They are signed with a public mock key.
 // A LIVE or REAL token (owner 2026-11-10, widened 2026-11-14) is shown raw too, with its decoded claims (education: they expire in minutes). Only client secrets and the password
@@ -25,7 +26,7 @@ export default function TokenView({ tokens }) {
           <p className="field-label">Decoded header</p>
           <Json value={t.header} label={`${t.label} header`} />
           <p className="field-label">Decoded claims</p>
-          <Json value={t.claims} label={`${t.label} claims`} testId="token-claims" />
+          <Json value={t.claims} label={`${t.label} claims`} testId="token-claims" hot={HOT_CLAIMS} />
         </article>
       ))}
     </div>

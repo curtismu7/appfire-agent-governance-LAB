@@ -164,6 +164,15 @@ describe("movie reel", () => {
     expect(diff.textContent).not.toMatch(/\biat\b|\bexp\b/);
   });
 
+  test("a claim that is an object (act) is shown in a JSON pane in the claim diff, not as stringified text (Rule 24)", () => {
+    render(<Harness hops={UC1_RUN} view="reel" />);
+    fireEvent.click(screen.getByTestId("frame-4"));
+    const after = within(screen.getByTestId("claim-diff")).getByLabelText("act after");
+    expect(after.textContent).toMatch(/sub\s*triage-agent/);
+    expect(after.textContent).not.toContain("{");
+    expect(within(screen.getByTestId("claim-diff")).getAllByText("none").length).toBeGreaterThan(0); // the "before" side has no act
+  });
+
   test("arrow keys move between frames; Compact hides the fact", () => {
     render(<Harness hops={UC1_RUN} view="reel" start={1} />);
     screen.getByTestId("frame-1").focus();
