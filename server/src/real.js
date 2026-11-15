@@ -21,6 +21,7 @@ import { formatTraceparent, newTrace } from './trace.js';
 import { enrichHop } from './vendor/hopDetail.mjs';
 import HOP_CATALOG from './vendor/hop-catalog.json' with { type: 'json' };
 import { createGatewaySession, gatewayUrlProblem, parseAuditTrail } from './mcpClient.js';
+import { realExchange } from './gatewayExchanges.js';
 import { NEEDS_ACCOUNTS, toolArgs } from './realGate.js';
 import { situationOf } from './situations.js';
 import { cleanFree } from './credentials.js';
@@ -278,6 +279,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       const rootSpan = trace.span();
       const tp = () => formatTraceparent(trace.traceId, trace.span());
       const hops = []; const tokens = [];
+      const gw = []; // "What Privilege did" (rule 25): one record per call the lab's MCP client made to the gateway, returned as `gatewayTrace`
       const push = (h) => hops.push({ n: hops.length + 1, mock: false, live: false, source: 'real', ...h });
       // shortTitle: the name "Where each hop ran" shows (the two exchanges share one catalog kind, so the catalog title cannot tell them apart).
       const notRun = (kind, label, from, to, why, shortTitle) => hops.push({ n: hops.length + 1, mock: false, live: false, source: 'not-run', kind, label: `${label} [NOT RUN]`, from, to, verdict: 'skip', note: why, request: {}, response: {}, ...(shortTitle ? { shortTitle } : {}) });
@@ -350,16 +352,16 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
             finishNotRun(0, 'Not run: the delegated token carries no act claim, so the gateway was not called.');
           } else {
             addToken('delegated token (REAL, exchange 2: for the gateway)', delegated, `REAL delegated token: your subject, the agent in the act claim, the gateway audience and scope. Shown raw for teaching.${audNote}`, true);
-            const gw = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun, receipt });
-            outcome = gw.outcome; reply = gw.reply;
-            if (gw.challengeId) challenge = gw.challengeId; // a REAL_HOLD with a minted challenge: the mock phone can approve it
+            const leg = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun, receipt, gw });
+            outcome = leg.outcome; reply = leg.reply;
+            if (leg.challengeId) challenge = leg.challengeId; // a REAL_HOLD with a minted challenge: the mock phone can approve it
           }
         }
       }
       return {
         schema: 'appfire-agent-governance-run/1', mode: 'live', kind: 'real', useCase: { id: uc.id, track: uc.track, title: uc.title, maturity: uc.maturity, flag: uc.flag }, vertical,
         expectedOutcome: uc.expectedOutcome, real: { level: 'full', tool }, labSimulated: false, computed: false, persona: null, outcome, matchesExpected: null, reply,
-        hops: hops.map(({ shortTitle, ...h }) => { const e = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'raw' }); return shortTitle ? { ...e, title: shortTitle } : e; }), tokens, traceId: trace.traceId, traceparent: formatTraceparent(trace.traceId, rootSpan),
+        hops: hops.map(({ shortTitle, ...h }) => { const e = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'raw' }); return shortTitle ? { ...e, title: shortTitle } : e; }), gatewayTrace: gw, tokens, traceId: trace.traceId, traceparent: formatTraceparent(trace.traceId, rootSpan),
         narration: reply?.text ?? '',
         ...(outcome === 'REAL_HOLD' && challenge ? { challenge } : {}),
       };
@@ -367,7 +369,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
   }
 
   // 4-8: the Agent Gateway as an MCP client, the decision read from its answer, the tool, the API behind it and the reply.
-  async function gatewayLeg({ token, vertical, tool, uc, tp, push, notRun, receipt = null }) {
+  async function gatewayLeg({ token, vertical, tool, uc, tp, push, notRun, receipt = null, gw = [] }) {
     const gs = createGatewaySession({ url: config.gatewayUrl, token, vertical, nextTraceparent: tp, fetchImpl: gatewayFetch ?? fetchImpl });
     const shownReq = (c, body) => ({ method: 'POST', url: config.gatewayUrl, headers: Object.fromEntries(c.sentHeaders.map((k) => [k, k === 'authorization' ? `Bearer ${token}` : k === 'traceparent' ? c.traceparent : k === 'x-active-vertical' ? vertical : k === 'x-token-validation' ? 'jwks' : k === 'mcp-session-id' ? gs.sessionId() : k === 'mcp-protocol-version' ? '(from initialize)' : k === 'accept' ? 'application/json, text/event-stream' : 'application/json'])), body });
     const shownRes = (c, body) => ({ status: c.status, headers: Object.fromEntries(Object.entries(c.headers).map(([k, v]) => [k, v])), body });
@@ -376,9 +378,15 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       for (const [kind, label, f, t] of all.slice(from)) notRun(kind, label, f, t, why);
     };
     const mapped = (c) => mapAnswer(c);
+    // One trace record per call the gateway answered (or failed to): the request and answer as they were, the decisions read from the status.
+    const traced = (c, title, setup) => gw.push(realExchange(c, { step: gw.length + 1, title, url: config.gatewayUrl, token, vertical, setup, receipt }));
     const init = await gs.initialize();
     let list = null;
-    if (init.kind === 'ok') { await gs.initialized(); list = await gs.listTools(); }
+    if (init.kind === 'ok') {
+      const inited = await gs.initialized();
+      list = await gs.listTools();
+      traced(list, 'tools/list', [{ label: 'initialize', status: init.status || null }, { label: 'notifications/initialized', status: inited.status || null }]);
+    } else traced(init, 'initialize');
     const listed = Array.isArray(list?.rpc?.result?.tools) ? list.rpc.result.tools.filter((t) => t && typeof t.name === 'string').map((t) => t.name.slice(0, 80)).slice(0, 300) : [];
     const firstBad = init.kind !== 'ok' ? init : list && list.kind !== 'ok' ? list : null;
     push({
@@ -398,6 +406,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     if (NEEDS_ACCOUNTS.has(tool)) {
       const acc = await gs.callTool('get_my_accounts', {});
       calls.push(acc);
+      traced(acc, 'tools/call get_my_accounts');
       if (acc.kind === 'ok') accounts = accountIds(toolPayload(acc.rpc?.result));
     }
     const pre = calls.find((c) => c.kind !== 'ok');
@@ -413,7 +422,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     // (the gateway strips it before dispatch; a verified receipt discharges the consent obligation).
     if (receipt) args._hitl_challenge_id = receipt;
     const call = pre ? null : await gs.callTool(tool, args);
-    if (call) calls.push(call);
+    if (call) { calls.push(call); traced(call, `tools/call ${tool}`); }
     const last = call ?? pre;
     const m = mapped(last);
     const audit = parseAuditTrail(last.headers['x-gw-audit-trail']);

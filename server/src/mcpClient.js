@@ -118,12 +118,16 @@ export function createGatewaySession({ url, token, vertical, nextTraceparent, fe
     const traceparent = nextTraceparent();
     const id = notification ? undefined : ++seq;
     const headers = gatewayHeaders({ token, traceparent, vertical, sessionId, protocol });
-    const body = JSON.stringify(notification ? { jsonrpc: '2.0', method, ...(params ? { params } : {}) } : { jsonrpc: '2.0', id, method, ...(params ? { params } : {}) });
+    const sentBody = notification ? { jsonrpc: '2.0', method, ...(params ? { params } : {}) } : { jsonrpc: '2.0', id, method, ...(params ? { params } : {}) };
+    const body = JSON.stringify(sentBody);
+    const at = new Date().toISOString();
+    // sentBody: the JSON-RPC message exactly as sent; sessionId and protocol: the values in force for this call (the trace panel shows them, shortened).
+    const sent = { at, sentBody, sessionId, protocol };
     let response; let read = { text: '', truncated: false };
     try {
       response = await fetchImpl(target, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
       read = await readCapped(response, maxBytes);
-    } catch { return { method, traceparent, status: 0, kind: 'unreachable', headers: {}, rpc: null, sentHeaders: Object.keys(headers) }; }
+    } catch { return { method, traceparent, status: 0, kind: 'unreachable', headers: {}, rpc: null, sentHeaders: Object.keys(headers), ...sent }; }
     const sid = response.headers.get('mcp-session-id');
     if (method === 'initialize' && sid && /^[\x21-\x7e]{1,200}$/.test(sid)) sessionId = sid;
     const shown = {};
@@ -131,7 +135,8 @@ export function createGatewaySession({ url, token, vertical, nextTraceparent, fe
     const rpc = read.truncated ? null : parseRpc(read.text, response.headers.get('content-type'), id);
     if (method === 'initialize' && rpc?.result && typeof rpc.result.protocolVersion === 'string' && /^[0-9-]{4,20}$/.test(rpc.result.protocolVersion)) protocol = rpc.result.protocolVersion;
     // A redirect is never followed: it is shown as an answer of its own ("other").
-    return { method, traceparent, status: response.status, kind: response.status >= 300 && response.status < 400 ? 'other' : classify(response.status), headers: shown, rpc, truncated: read.truncated, sentHeaders: Object.keys(headers) };
+    // rawText: the answer's text when it was not a JSON object (an error page, say), short; the trace panel shows it as it came.
+    return { method, traceparent, status: response.status, kind: response.status >= 300 && response.status < 400 ? 'other' : classify(response.status), headers: shown, rpc, truncated: read.truncated, rawText: rpc || read.truncated ? null : read.text.slice(0, 2000), sentHeaders: Object.keys(headers), ...sent };
   }
 
   return {

@@ -1,5 +1,6 @@
 import { NEEDS_LABELS, TRACK_LABELS, notRunText, outcomeState, ranCount, triggerText } from "../lib";
 import { InventedTag, Json, LiveTag, RealTag, Tag } from "./Bits";
+import GatewayTrace from "../gateway-trace/GatewayTrace";
 
 // The honest refusal text for each answer the API can give instead of a run. The server's own detail is shown as it is.
 const REFUSAL = {
@@ -119,6 +120,8 @@ export default function RunPanel({ uc, vertical, verticals, persona, setPersona,
       <p className="sr-only" role="status" aria-live="polite" data-testid="run-announce">{result?.ok ? announce(result.body.run) : ""}</p>
       {result && !result.ok && <Refusal result={result} />}
       {result?.ok && <RunResult run={result.body.run} />}
+      {/* "What Privilege did" (rule 25): the gateway calls of THIS run, under its result. A run that never reached a gateway (a guided page, a refusal before it) has none, so nothing is drawn. */}
+      {result?.ok && result.body.run.gatewayTrace?.length > 0 && <GatewayTrace exchanges={result.body.run.gatewayTrace} source={result.body.run.kind === "real" ? "real" : "mock"} />}
     </section>
   );
 }

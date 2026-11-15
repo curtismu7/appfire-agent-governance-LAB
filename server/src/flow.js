@@ -14,6 +14,7 @@ import { PROBE_DENIED, proposalFor, replyFor } from './replies.js';
 import { situationOf } from './situations.js';
 import { formatTraceparent, newTrace } from './trace.js';
 import { enrichHop } from './vendor/hopDetail.mjs';
+import { mockExchange } from './gatewayExchanges.js';
 import HOP_CATALOG from './vendor/hop-catalog.json' with { type: 'json' };
 
 export const ENGINE_OUTCOMES = new Set(['PERMIT', 'DENY', 'DENY_401', 'DENY_403', 'DENY_429', 'DENY_503', 'STEP_UP', 'HITL_REQUIRED', 'PERMIT_THEN_DENY', 'DELEGATE_AND_EXECUTE']);
@@ -38,7 +39,7 @@ function makeCtx(uc, { cast, vertical, persona, traceparent, seed, brain, said }
   const trace = newTrace(traceparent, `${seed}:${uc.id}:${vertical}:${person.key}`);
   const host = cast.castHost;
   const ctx = {
-    uc, cast, vertical, sit, person, role, tool, trace, hops: [], tokens: [], clock: T0, halted: null, pending: null, probeDenied: false,
+    uc, cast, vertical, sit, person, role, tool, trace, hops: [], gwTrace: [], tokens: [], clock: T0, halted: null, pending: null, probeDenied: false,
     amount: typeof sit.amount === 'number' ? sit.amount : undefined, event: sit.event || null, gwDone: false, seenProofs: new Set(),
     urls: { idp: 'https://idp.mock.example/as', bff: `https://bff.${host}.example`, agent: `https://agent.${host}.example`, llm: 'https://llm.mock.example', gw: `https://gateway.${host}.example`, mcp: `https://mcp.${host}.example`, api: `https://api.${host}.example`, registry: `https://registry.${host}.example`, a2a: `https://a2a.${host}.example` },
     scope: SCOPE_FOR_ROLE[role] || `tools:${tool || 'none'}`,
@@ -57,14 +58,20 @@ function hop(ctx, key, { from, to, method = 'POST', url, headers = {}, body, sta
   if (detail) (ctx.details ??= {})[ctx.hops.length + 1] = detail;
   const span = ctx.trace.span();
   const tp = formatTraceparent(ctx.trace.traceId, span);
-  ctx.hops.push({
+  const pushed = {
     n: ctx.hops.length + 1, kind: key, label: label(ctx, key, extraLabel), from, to, mock: true, verdict, note: note ? fill(note, ctx.cast) : undefined,
     traceparent: tp,
     request: { method, url, headers: { traceparent: tp, ...headers }, ...(body !== undefined ? { body } : {}) },
     response: { status, headers: resHeaders, body: resBody },
-  });
+  };
+  ctx.hops.push(pushed);
   ctx.clock += 1;
+  return pushed;
 }
+
+// "What Privilege did" (rule 25): the engine's gateway hops, as the trace panel's records. ctx.gwTrace is returned on the run as `gatewayTrace`.
+function traceGateway(ctx, h, title, decisions) { ctx.gwTrace.push(mockExchange(h, { title, decisions })); }
+const note = (id, label, outcome, evidence) => ({ id, label, outcome, basis: 'observed', evidence });
 
 function mint(ctx, name, claims, typ) {
   const iat = ctx.clock;
@@ -171,7 +178,7 @@ function gatewayCheck(ctx, { again = false, key = 'gateway-check' } = {}) {
   if (!verdict && ctx.sit.args) { const why = edgePolicy(ctx.uc.primaryTool, ctx.sit.args); if (why) fail('DENY', 403, 'policy_denied', `edge policy: ${why}`); else pass('edge-policy'); }
 
   const denied = verdict;
-  hop(ctx, key, {
+  const h = hop(ctx, key, {
     from: 'bff', to: 'gateway', url: `${ctx.urls.gw}/mcp`, headers: { authorization: `Bearer ${tok.raw}`, ...(claims.cnf ? { dpop: `proof.${sha(`${ctx.trace.traceId}:dpop-proof`, 12)}` } : {}) },
     body: { jsonrpc: '2.0', method: 'tools/call', params: { name: ctx.tool, ...(ctx.sit.args ? { arguments: ctx.sit.args } : {}) } },
     status: denied ? denied.status : 200, verdict: denied ? 'deny' : 'ok',
@@ -180,6 +187,7 @@ function gatewayCheck(ctx, { again = false, key = 'gateway-check' } = {}) {
     extraLabel: { again: again ? ' (second use)' : '' },
     detail: { stages: gatewayStages(checks, claims, ctx) },
   });
+  traceGateway(ctx, h, `Gateway check: tools/call ${ctx.tool}${again ? ' (second use)' : ''}`, gatewayDecisions(checks, claims, ctx));
   if (denied) halt(ctx, denied.outcome, 'gateway', denied.status, denied.error);
   return !denied;
 }
@@ -188,6 +196,22 @@ const STAGE_NAMES = { signature: 'Signature', invalid_signature: 'Signature', va
 function gatewayStages(checks, claims, ctx) {
   const note = { aud: claims.aud, act: claims.act?.sub, scope: ctx.scope, signature: 'mock key' };
   return checks.map((c) => ({ name: STAGE_NAMES[c.check] ?? c.check, result: c.ok ? 'pass' : 'fail', note: c.ok ? (note[c.check] ? String(note[c.check]) : '') : `${c.why} (stopped here)` }));
+}
+
+// The same checks as decisions for the trace panel. Every row is `checked`: the engine evaluated it, in this order, and stopped at the first refusal
+// (a check after it never ran, so it is not listed; a check that did not apply to this run, such as DPoP on a call with no proof, is not listed either).
+const CHECK_ID = { signature: 'signature', invalid_signature: 'signature', validation_unavailable: 'validation', aud: 'aud', invalid_audience: 'aud', act: 'act', missing_act: 'act', 'dpop-proof-fresh': 'dpop', invalid_dpop_proof: 'dpop', rate: 'rate', rate_limited: 'rate', scope: 'scope', insufficient_scope: 'scope', 'edge-policy': 'edge-policy', policy_denied: 'edge-policy' };
+function gatewayDecisions(checks, claims, ctx) {
+  const passed = {
+    signature: 'the token signature verifies (mock key)',
+    aud: claims.aud ? `aud ${claims.aud} is one this gateway accepts` : 'the token carries no aud claim, so there was nothing to compare',
+    act: `the token carries act (sub ${claims.act?.sub})`,
+    'dpop-proof-fresh': 'the DPoP proof had not been used before',
+    rate: `under the limit of ${GATEWAY.rateLimit} calls per 60 s`,
+    scope: `the token carries ${ctx.scope}`,
+    'edge-policy': 'the edge policy allows these arguments',
+  };
+  return checks.map((c) => ({ id: CHECK_ID[c.check] ?? c.check, label: STAGE_NAMES[c.check] ?? c.check, outcome: c.ok ? 'pass' : 'fail', evidence: c.ok ? passed[c.check] ?? 'passed' : c.why }));
 }
 
 // demo-hop/1: add the teaching fields from the shared hop catalog. Mock runs keep MOCK tokens raw (rulebook); secrets stay write-only.
@@ -202,13 +226,15 @@ const RESOURCE_METADATA = (ctx) => [['resource', `${ctx.urls.gw}/mcp`], ['author
 
 // RFC 6750 §3 / RFC 9728 §5.1: the same request with no Authorization header gets 401 and a challenge naming the resource metadata. Nothing runs.
 function challenge(ctx, key, method) {
-  hop(ctx, key, {
+  const h = hop(ctx, key, {
     from: 'agent', to: 'gateway', url: `${ctx.urls.gw}/mcp`, headers: { 'content-type': 'application/json' },
     body: { jsonrpc: '2.0', id: 1, method, ...(method === 'tools/call' ? { params: { name: ctx.tool } } : {}) },
     status: 401, resHeaders: { 'www-authenticate': WWW_AUTH(ctx) }, resBody: { error: 'invalid_token', error_description: 'no bearer token' },
     note: 'a 401 is the expected answer: the caller sent no token, and the challenge says where the resource metadata is',
     detail: { kv: RESOURCE_METADATA(ctx) },
   });
+  // The challenge is fixed by the engine (it sends no token and always gets 401): nothing is computed, so the decision is read from the request.
+  traceGateway(ctx, h, `Gateway challenge: ${method} with no token`, [note('authenticated', 'Authentication', 'fail', 'the request carries no Authorization header, so the gateway answers 401 with a WWW-Authenticate challenge naming where its resource metadata is (expected: this is how a client learns where to get a token)')]);
 }
 
 // Per use case facts from AI-DEMO2's reel (source: buildTraceSteps.js @ 370725e51, per-use-case paths extracted 2026-11-09 into the owner's
@@ -384,13 +410,15 @@ function frameAfterSignIn(ctx) {
   if (!PLANS.has(ctx.uc.id)) return;
   const content = ctx.said !== undefined ? '[the message on the prompt hop]' : chip;
   if (!pub) challenge(ctx, 'tools-list-challenge', 'tools/list');
-  hop(ctx, 'tools-list', {
+  const listHop = hop(ctx, 'tools-list', {
     from: 'agent', to: 'gateway', url: `${ctx.urls.gw}/mcp`, headers: pub ? {} : { authorization: `Bearer ${ctx.user.raw}` },
     body: { jsonrpc: '2.0', id: 2, method: 'tools/list' },
     resBody: { jsonrpc: '2.0', id: 2, result: { tools: [{ name: ctx.tool, inputSchema: { type: 'object' } }] } },
     note: pub ? 'public catalog: tools/list needs no token' : 'the BFF attaches the user token of the session it holds; the catalog is filtered to what this caller may use',
     detail: { kv: [['MCP session', 'initialize -> 2025-11-25 -> notifications/initialized'], ['tools permitted', ctx.tool]] },
   });
+  // The simulated gateway checks nothing on tools/list: it answers with the one tool this run plans to call. Observed from that answer, never `checked`.
+  traceGateway(ctx, listHop, 'Gateway: tools/list', [note('catalog', 'Tool catalog', 'info', pub ? `public catalog: no token needed; the simulation listed ${ctx.tool}` : `the simulation answered with ${ctx.tool}, the one tool this run plans to call; it computes no per-caller filter in this lab`)]);
   hop(ctx, 'llm-plan', {
     from: 'agent', to: 'llm', url: `${ctx.urls.llm}/v1/chat/completions`,
     body: { model: ctx.brain === 'llama' ? 'llama.cpp (local model; the run itself is mock)' : 'scripted-intent-match (mock)', messages: [{ role: 'user', content }], tools: [ctx.tool] },
@@ -464,7 +492,7 @@ const STEPS = {
   'intent-binding-verified': (ctx) => { const dec = decide({ role: null, amount: ctx.amount, rar: ctx.sit.rar, actor: { registered: true } }); hop(ctx, 'intent-binding-verified', { from: 'gateway', to: 'authorize', url: 'https://authorize.mock.example/decision', body: { amount: ctx.amount, authorization_details: [{ type: 'payment', maxAmount: ctx.sit.rar.maxAmount }] }, resBody: { decision: dec.decision, reason: dec.reason }, verdict: dec.decision === 'PERMIT' ? 'ok' : 'deny' }); if (dec.decision !== 'PERMIT') halt(ctx, dec.decision, 'authorize', 403, dec.reason); },
   'exchange-skipped': (ctx) => { hop(ctx, 'exchange-skipped', { from: 'bff', to: 'gateway', url: `${ctx.urls.bff}/api/tool`, status: 403, verdict: 'deny', headers: {}, resBody: { error: 'user_token_forwarding_disabled', note: 'the BFF refuses to hand the raw user token to a tool; it must exchange first (fail closed)' } }); halt(ctx, 'DENY_403', 'bff', 403, 'user_token_forwarding_disabled'); },
   'gateway-permit': (ctx) => { if (!ctx.halted) { ctx.exchanged = ctx.exchanged || ctx.user; gatewayCheck(ctx, { key: 'gateway-check' }); } },
-  'privilege-gateway-leg': (ctx) => hop(ctx, 'privilege-gateway-leg', { from: 'bff', to: 'privilege', url: 'https://privilege.mock.example/gateway', headers: { authorization: `Bearer ${(ctx.exchanged || ctx.user).raw}` }, resBody: { accepted: true } }),
+  'privilege-gateway-leg': (ctx) => traceGateway(ctx, hop(ctx, 'privilege-gateway-leg', { from: 'bff', to: 'privilege', url: 'https://privilege.mock.example/gateway', headers: { authorization: `Bearer ${(ctx.exchanged || ctx.user).raw}` }, resBody: { accepted: true } }), 'Privilege gateway leg', [note('accepted', 'Gateway answer', 'info', 'the simulation answered accepted; it computes no checks on this hop')]),
   'credential-swap': (ctx) => { const t = mint(ctx, 'operator credential (MOCK)', { sub: 'operator-service-mock', aud: ctx.urls.mcp, scope: ctx.scope }, 'at+jwt'); hop(ctx, 'credential-swap', { from: 'privilege', to: 'mcp', url: `${ctx.urls.mcp}/mcp`, headers: { authorization: `Bearer ${t.raw}` }, resBody: { swapped: true, note: 'the caller bearer is swapped for the operator credential before the call leaves' } }); },
   'enterprise-managed-mode': (ctx) => hop(ctx, 'enterprise-managed-mode', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/group-policy`, body: { sub: ctx.person.sub, group: ctx.cast.castGroup }, resBody: { allowed: true, note: 'group policy decides issuance; no per-server consent screen' } }),
   'id-jag-issued': (ctx) => { if (!ctx.agents.length) actorToken(ctx, ctx.agent.id, 'agent'); /* AI-DEMO2: the agent token comes before the ID-JAG */ const t = mint(ctx, 'ID-JAG (MOCK)', { sub: ctx.person.sub, aud: ctx.urls.mcp, scope: ctx.scope, jti: sha(`${ctx.trace.traceId}:idjag`, 16) }, 'oauth-id-jag+jwt'); ctx.idjag = t; hop(ctx, 'id-jag-issued', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/token`, body: { grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange', requested_token_type: 'urn:ietf:params:oauth:token-type:id-jag', subject_token: ctx.user.raw }, resBody: { access_token: t.raw, issued_token_type: 'urn:ietf:params:oauth:token-type:id-jag' } }); },
@@ -499,7 +527,7 @@ export function runUseCase(uc, input) {
     const ctx = makeCtx(uc, input);
     const target = uc.trigger.type === 'link' ? uc.trigger.path : uc.trigger.type === 'edu' ? `panel:${uc.trigger.panel}` : uc.trigger.type;
     hop(ctx, 'guided', { from: 'browser', to: 'page', method: 'GET', url: String(target), resBody: { opens: uc.opens, linkOut: uc.linkOut, note: 'a guided page: the lab does not recompute this outcome; the label is the catalog\'s' } });
-    return { ...base, kind: 'guided', computed: false, persona: ctx.person.key, outcome: uc.expectedOutcome, matchesExpected: null, hops: enrichAll(ctx), tokens: ctx.tokens, traceId: ctx.trace.traceId, traceparent: formatTraceparent(ctx.trace.traceId, ctx.rootSpan), narration: narrate(ctx, uc.expectedOutcome) };
+    return { ...base, kind: 'guided', computed: false, persona: ctx.person.key, outcome: uc.expectedOutcome, matchesExpected: null, hops: enrichAll(ctx), gatewayTrace: ctx.gwTrace, tokens: ctx.tokens, traceId: ctx.trace.traceId, traceparent: formatTraceparent(ctx.trace.traceId, ctx.rootSpan), narration: narrate(ctx, uc.expectedOutcome) };
   }
   const ctx = makeCtx(uc, input);
   frameBefore(ctx);
@@ -520,5 +548,5 @@ export function runUseCase(uc, input) {
   else if (!ctx.pending) reply(ctx); // AI-DEMO2 cuts at the first error and a held run stops at the hold: only a finished run replies
   skipped(ctx);
   const outcome = finalOutcome(ctx);
-  return { ...base, kind: 'flow', computed: true, persona: ctx.person.key, outcome, matchesExpected: outcome === uc.expectedOutcome, hops: enrichAll(ctx), tokens: ctx.tokens, traceId: ctx.trace.traceId, traceparent: formatTraceparent(ctx.trace.traceId, ctx.rootSpan), narration: narrate(ctx, outcome) };
+  return { ...base, kind: 'flow', computed: true, persona: ctx.person.key, outcome, matchesExpected: outcome === uc.expectedOutcome, hops: enrichAll(ctx), gatewayTrace: ctx.gwTrace, tokens: ctx.tokens, traceId: ctx.trace.traceId, traceparent: formatTraceparent(ctx.trace.traceId, ctx.rootSpan), narration: narrate(ctx, outcome) };
 }
