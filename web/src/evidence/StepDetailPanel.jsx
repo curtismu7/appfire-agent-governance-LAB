@@ -2,20 +2,24 @@ import { useState } from "react";
 import { Tag } from "./Tag";
 import { actorOf, readPref, STAGE_STATE, txt, verdictState, verdictWord, withSkipped, writePref } from "./lanes";
 import { HttpMessage, KeyFacts } from "../components/HttpMessage";
+import { Json } from "../components/JsonPane";
 import "./evidence.css";
 
 // One hop's full detail, ported from AI-DEMO2's StepDetailPanel and ordered claim before evidence: what happened, the
 // gateway filter chain, the decision, what changed, then the request and response. The RFC
 // column (why, what the specification requires, the common failure) is behind the "RFC info" toggle, remembered.
 // LAB-LOCAL (owner, 2026-11-14), differs from shared/evidence: a coloured "key facts" row under the title, and the request and response are shown in
-// parts (start line, headers, body) through the lab's Formatted-form / coloured-Raw JSON pane instead of one plain text block. Tokens are shown whole.
+// parts (start line, headers, body) through the shared Form | JSON pane (JsonPane, Rule 24) instead of one plain text block. Tokens are shown whole.
 const RFC_KEY = "cal.ev.rfcInfo";
 const ZOOM_KEY = "cal.ev.sdp.zoom";
 const Z_MIN = 80, Z_MAX = 160, Z_STEP = 10, Z_DEFAULT = 120;
 const NOISE = new Set(["iat", "nbf", "exp", "jti"]);
 
 const hasMsg = (m) => m !== undefined && m !== null && m !== "" && !(typeof m === "object" && Object.keys(m).length === 0);
-const cell = (v) => (v === undefined ? null : typeof v === "object" ? JSON.stringify(v) : String(v));
+const isObj = (v) => v !== null && typeof v === "object";
+const cell = (v) => (v === undefined ? null : isObj(v) ? v : String(v));
+// A claim that is an object (act, cnf) goes through the JSON pane; anything else is text.
+const showCell = (v, label) => (v == null ? <span className="ev-muted">none</span> : isObj(v) ? <Json value={v} label={label} /> : txt(v));
 const decisionState = (o) => (/^permit/i.test(o) ? "ok" : /^deny/i.test(o) ? "bad" : "warn");
 
 function ClaimDiff({ diff }) {
@@ -34,8 +38,8 @@ function ClaimDiff({ diff }) {
             return (
               <tr key={k} data-changed={c ? "true" : undefined}>
                 <td className="ev-mono">{txt(k)}{c && <span className="sdp__chg"> changed</span>}</td>
-                <td className="ev-mono">{b == null ? <span className="ev-muted">none</span> : txt(b)}</td>
-                <td className="ev-mono">{a == null ? <span className="ev-muted">none</span> : txt(a)}</td>
+                <td className="ev-mono">{showCell(b, `${k} before`)}</td>
+                <td className="ev-mono">{showCell(a, `${k} after`)}</td>
               </tr>
             );
           })}

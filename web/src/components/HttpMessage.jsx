@@ -1,9 +1,10 @@
 import { Tag } from "./Bits";
 import { Json } from "./JsonPane";
 import { visible } from "../safeText";
+import { HOT_CALL } from "../lib";
 
 // One request or response of a hop, shown in parts (owner, 2026-11-14): the start line (method and address, or HTTP status) in a colour that
-// says what it is, then the headers, query and body as the same Formatted form / coloured Raw panes as everywhere else. A message that is not
+// says what it is, then the headers, query and body as the same Form | JSON panes as everywhere else. A message that is not
 // shaped like HTTP (a list of sign-in steps, a list of gateway calls) is shown whole in one pane.
 const METHOD_STATE = { GET: "info", HEAD: "info", POST: "ok", PUT: "warn", PATCH: "warn", DELETE: "bad" };
 export const statusState = (n) => (n >= 500 ? "bad" : n === 401 || n === 403 ? "bad" : n >= 400 ? "warn" : n >= 300 ? "info" : "ok");
@@ -12,8 +13,8 @@ const present = (v) => v !== undefined && v !== null && !(typeof v === "object" 
 
 export function HttpMessage({ msg, label }) {
   if (!present(msg)) return null;
-  if (typeof msg !== "object") return <Json value={String(msg)} label={label} />;
-  if (!HTTP_KEYS.some((k) => k in msg)) return <Json value={msg} label={label} />;
+  if (typeof msg !== "object") return <Json value={String(msg)} label={label} hot={HOT_CALL} />;
+  if (!HTTP_KEYS.some((k) => k in msg)) return <Json value={msg} label={label} hot={HOT_CALL} />;
   const { method, url, status, headers, body, query, ...rest } = msg;
   return (
     <div className="http" role="group" aria-label={label}>
@@ -24,10 +25,10 @@ export function HttpMessage({ msg, label }) {
           {status != null && <Tag state={statusState(Number(status))}>HTTP {visible(String(status))}</Tag>}
         </p>
       )}
-      {present(query) && <><p className="http__h">Query</p><Json value={query} label={`${label} query`} toggle={false} /></>}
-      {present(headers) && <><p className="http__h">Headers</p><Json value={headers} label={`${label} headers`} toggle={false} /></>}
-      {present(body) && <><p className="http__h">Body</p><Json value={body} label={`${label} body`} /></>}
-      {present(rest) && <Json value={rest} label={`${label} more`} toggle={false} />}
+      {present(query) && <><p className="http__h">Query</p><Json value={query} label={`${label} query`} hot={HOT_CALL} /></>}
+      {present(headers) && <><p className="http__h">Headers</p><Json value={headers} label={`${label} headers`} hot={HOT_CALL} /></>}
+      {present(body) && <><p className="http__h">Body</p><Json value={body} label={`${label} body`} hot={HOT_CALL} /></>}
+      {present(rest) && <Json value={rest} label={`${label} more`} hot={HOT_CALL} />}
     </div>
   );
 }
