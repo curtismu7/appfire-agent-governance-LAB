@@ -165,6 +165,10 @@ try {
       check((await t('persona').inputValue()) === 'standard', `${tag}: picking UC9 selects the standard persona`);
       await t('run').click(); await t('result').waitFor();
       check((await t('outcome').innerText()) === 'DENY_403' && (await t('matches').innerText()).includes('matches the catalog label'), `${tag}: UC9 with its default persona is DENY_403 and matches the catalog label`);
+      // What Privilege did (rule 25): UC9 reached the simulated gateway, so its trace sits under the Run result; the refusal is the first FAIL decision, checked by the engine.
+      const gwPanel = t('gateway-trace');
+      check((await gwPanel.count()) === 1 && (await gwPanel.getByRole('heading', { name: 'What Privilege did' }).count()) === 1 && /^Simulated/.test(await t('gateway-trace-basis').innerText()), `${tag}: UC9's Run shows the What Privilege did panel, simulated`);
+      check((await page.evaluate(() => { const r = document.querySelector('[data-testid="result"]'); const g = document.querySelector('[data-testid="gateway-trace"]'); return Boolean(r && g && (r.compareDocumentPosition(g) & Node.DOCUMENT_POSITION_FOLLOWING)); })) === true, `${tag}: the panel is under the Run result`);
       // keyboard and landmarks: focus stays on Run, one main landmark holding the tabpanel, no dangling aria-controls, Cmd/Ctrl+P is not presenter mode
       await t('run').focus(); await page.keyboard.press('Enter');
       check((await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))) === 'run', `${tag}: focus stays on the Run button after Enter`);
@@ -177,6 +181,7 @@ try {
       check((await t('run-announce').innerText()).startsWith('UC9 finished: DENY_403'), `${tag}: the live region holds the outcome line only`);
       await pick('UC-LEARN2'); await t('run').click(); await t('guided-note').waitFor();
       check((await t('guided-note').innerText()) === 'guided, not computed' && (await t('matches').count()) === 0, `${tag}: a guided run says guided, not computed`);
+      check((await t('gateway-trace').count()) === 0, `${tag}: a guided run reaches no gateway, so no trace panel is drawn`);
       // the one link allowed is the shared Shelf button in the header (a.shelf-link, the family's launcher); link-outs are plain labels
       check((await page.locator('a[href]:not(.shelf-link)').count()) === 0 && (await page.locator('a.shelf-link').count()) <= 1 && (await page.locator('.shell-bar a.shelf-link').count()) === (await page.locator('a.shelf-link').count()), `${tag}: no link anywhere but the header Shelf button (link-outs are plain labels)`);
       await t('nav-more').selectOption('page-approval'); await t('extra-approval').waitFor();
