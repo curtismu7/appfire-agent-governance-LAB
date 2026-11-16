@@ -4,7 +4,7 @@
 //   'ok' | 'sse' (answers as an event stream) | 'deny' (403 + X-Gw-Audit-Trail on tools/call) | 'token' (401 + WWW-Authenticate on initialize)
 //   | 'hold' (428 on tools/call) | 'down' (503 on initialize) | 'tool-error' (isError result) | 'no-tool' (tools/list without get_account_balance) | 'no-weather' (tools/list without get_weather) | 'no-sensitive' (tools/list without get_sensitive_account_details: a standard tier)
 //   | 'redirect' (307 on initialize to /elsewhere, counted in state.elsewhere) | 'one-account' (get_my_accounts lists one account)
-//   | 'audit-ctl' (403 with control characters in the audit trail's decision)
+//   | 'audit-ctl' (403 with control characters in the audit trail's decision) | 'authz-502' (502 with the gateway's own error text on tools/call: its call to Authorize failed)
 import http from 'node:http';
 
 export const SESSION_ID = 'fake-mcp-session-0001';
@@ -51,6 +51,7 @@ export async function startFakeGateway({ behaviour = 'ok', isDelegated = () => t
           if (b === 'deny') return reply(403, { error: 'forbidden' }, { 'x-gw-audit-trail': AUDIT_TRAIL });
           if (b === 'audit-ctl') return reply(403, { error: 'forbidden' }, { 'x-gw-audit-trail': JSON.stringify({ decision: 'DENY\u0007\u001b[31m' }) });
           if (b === 'hold') return reply(428, { error: 'approval_required' });
+          if (b === 'authz-502') return reply(502, { error: 'authorization service error', detail: 'fake: the decision request was malformed' });
           if (b === 'tool-error') return reply(200, { jsonrpc: '2.0', id: rpc.id, result: { isError: true, content: [{ type: 'text', text: 'fake: the account was not found' }] } });
         }
         const out = b === 'one-account' && name === 'get_my_accounts' ? { accounts: RESULTS.get_my_accounts.accounts.slice(0, 1) } : Object.hasOwn(RESULTS, name) ? RESULTS[name] : { ok: true, tool: name };

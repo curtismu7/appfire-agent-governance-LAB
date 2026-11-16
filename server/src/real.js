@@ -424,7 +424,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       return {
         schema: 'appfire-agent-governance-run/1', mode: 'live', kind: 'real', useCase: { id: uc.id, track: uc.track, title: uc.title, maturity: uc.maturity, flag: uc.flag }, vertical,
         expectedOutcome: uc.expectedOutcome, real: { level: 'full', tool, ...(A2A ? { a2a: true } : {}) }, labSimulated: false, computed: false, persona: null, outcome, matchesExpected: null, reply,
-        hops: hops.map(({ shortTitle, ...h }) => { const e = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'raw' }); return shortTitle ? { ...e, title: shortTitle } : e; }), gatewayTrace: gw, tokens, traceId: trace.traceId, traceparent: formatTraceparent(trace.traceId, rootSpan),
+        hops: hops.map(({ shortTitle, ...h }) => { const e0 = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'raw' }); const e = e0.verdict === 'error' ? { ...e0, fact: 'no decision' } : e0; return shortTitle ? { ...e, title: shortTitle } : e; }), gatewayTrace: gw, tokens, traceId: trace.traceId, traceparent: formatTraceparent(trace.traceId, rootSpan),
         narration: reply?.text ?? '',
         ...(outcome === 'REAL_HOLD' && challenge ? { challenge } : {}),
       };
@@ -494,21 +494,21 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     const last = call ?? pre;
     const m = mapped(last);
     const audit = parseAuditTrail(last.headers['x-gw-audit-trail']);
-    const decisionOutcome = last.kind === 'deny' ? 'DENY' : last.kind === 'hold' ? 'HOLD' : last.kind === 'ok' ? 'PERMIT' : last.kind === 'token' ? 'TOKEN REFUSED' : 'NO ANSWER';
+    const decisionOutcome = last.kind === 'deny' ? 'DENY' : last.kind === 'hold' ? 'HOLD' : last.kind === 'ok' ? 'PERMIT' : last.kind === 'token' ? 'TOKEN REFUSED' : 'NO DECISION';
     push({
-      kind: 'authorize-decision', label: `Authorize decision [REAL]: ${decisionOutcome}, read from the gateway's answer to tools/call`, from: 'gateway', to: 'authorize', verdict: last.kind === 'ok' ? 'ok' : last.kind === 'hold' ? 'held' : 'deny', traceparent: last.traceparent,
+      kind: 'authorize-decision', label: `Authorize decision [REAL]: ${decisionOutcome}, read from the gateway's answer to tools/call`, from: 'gateway', to: 'authorize', verdict: last.kind === 'ok' ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny', traceparent: last.traceparent,
       decision: { outcome: audit?.decision ?? decisionOutcome, by: 'the Agent Gateway (REAL)' },
-      note: last.kind === 'ok' ? 'The gateway let tools/call through, so its policy permitted it.' : m.note, request: { tool, arguments: argsShown(args) }, response: { status: last.status, ...(audit ? { 'x-gw-audit-trail': audit.parsed ?? audit.raw, decision: audit.decision } : {}), ...(last.headers['www-authenticate'] ? { 'www-authenticate': last.headers['www-authenticate'] } : {}) },
+      note: last.kind === 'ok' ? 'The gateway let tools/call through, so its policy permitted it.' : m.note, request: { tool, arguments: argsShown(args) }, response: { status: last.status, ...(audit ? { 'x-gw-audit-trail': audit.parsed ?? audit.raw, decision: audit.decision } : {}), ...(last.headers['www-authenticate'] ? { 'www-authenticate': last.headers['www-authenticate'] } : {}), ...(last.rawText ? { body: last.rawText } : {}), ...(last.status === 0 ? { no_response: last.timedOut ? `no HTTP response within ${Math.round((last.waitedMs ?? 0) / 1000)} s: the lab stopped waiting` : 'the connection failed before any response' } : {}) },
     });
     const result = last.kind === 'ok' ? last.rpc?.result ?? null : null;
     const rpcError = last.kind === 'ok' ? last.rpc?.error ?? null : null;
     const toolFailed = last.kind === 'ok' && (!result || result.isError === true || rpcError);
     const cut = last.kind === 'ok' && !result && last.truncated;
     push({
-      kind: last.kind === 'ok' ? 'tool-dispatched' : last.kind === 'hold' ? 'tool-held' : 'tool-refused', label: `MCP tool [REAL]: tools/call ${tool}${calls.length > 1 ? ' (after get_my_accounts for your account ids)' : ''}`, from: 'gateway', to: 'mcp', verdict: last.kind === 'ok' && !toolFailed ? 'ok' : last.kind === 'hold' ? 'held' : 'deny', traceparent: last.traceparent,
+      kind: last.kind === 'ok' ? 'tool-dispatched' : last.kind === 'hold' ? 'tool-held' : 'tool-refused', label: `MCP tool [REAL]: tools/call ${tool}${calls.length > 1 ? ' (after get_my_accounts for your account ids)' : ''}`, from: 'gateway', to: 'mcp', verdict: last.kind === 'ok' && !toolFailed ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny', traceparent: last.traceparent,
       note: last.kind === 'ok' ? (toolFailed ? 'The tool answered with an error.' : 'The SE MCP server ran the tool.') : m.note,
       request: { calls: calls.map((c) => shownReq(c, { method: 'tools/call', name: c === call ? tool : 'get_my_accounts', arguments: c === call ? argsShown(args) : {} })) },
-      response: { calls: calls.map((c) => shownRes(c, c.rpc ? (c.rpc.error ? { error: { code: c.rpc.error.code ?? null, message: str(c.rpc.error.message) } } : { isError: c.rpc.result?.isError === true, content: contentShown(c.rpc.result) }) : null)) },
+      response: { calls: calls.map((c) => shownRes(c, c.kind !== 'ok' ? (c.rawText ? { raw: c.rawText } : null) : c.rpc ? (c.rpc.error ? { error: { code: c.rpc.error.code ?? null, message: str(c.rpc.error.message) } } : { isError: c.rpc.result?.isError === true, content: contentShown(c.rpc.result) }) : null)) },
     });
     if (last.kind !== 'ok') { rest(2, `Not run: ${m.note}`); return { outcome: m.outcome, reply: m.reply }; }
     if (toolFailed) {
@@ -563,7 +563,12 @@ export function mapAnswer(c) {
         },
       };
     }
-    case 'unreachable': return { outcome: 'REAL_UNREACHABLE', note: `SE is down or scaled down (${c.status ? `HTTP ${c.status}` : 'no connection'}); the lab does not retry. Switch to Mock.`, reply: { who: 'Gateway', text: `SE is down or scaled down: the Agent Gateway ${c.status ? `answered HTTP ${c.status}` : 'did not answer'}. Switch to Mock to keep going.` } };
+    case 'unreachable': {
+      // Three different things, said apart (owner 2026-11-16: "no response" is not a malformed request, which would get a 4xx): the gateway answered 5xx, it sent nothing in time, or the connection failed.
+      const what = c.status ? `answered HTTP ${c.status} and did not complete the call` : c.timedOut ? `sent no HTTP response within ${Math.round((c.waitedMs ?? 0) / 1000)} s, so the lab stopped waiting` : 'could not be reached: the connection failed before any response';
+      const why = c.status ? 'It may be down or scaled down, or unable to get a decision from Authorize; its own answer is shown in the hop.' : c.timedOut ? 'A timeout is not an error answer: the gateway may be down, or still waiting on Authorize.' : 'Check the gateway URL and the network.';
+      return { outcome: 'REAL_UNREACHABLE', note: `The Agent Gateway ${what}. ${why} The lab does not retry. Switch to Mock to keep going.`, reply: { who: 'Gateway', text: `No decision: the Agent Gateway ${what}. ${why} Switch to Mock to keep going.` } };
+    }
     default: return { outcome: 'REAL_REFUSED', note: `The gateway answered HTTP ${c.status}${c.status >= 300 && c.status < 400 ? ' (a redirect, never followed)' : ''}.`, reply: { who: 'Gateway', text: `The Agent Gateway answered HTTP ${c.status}; the agent stopped there.` } };
   }
 }
