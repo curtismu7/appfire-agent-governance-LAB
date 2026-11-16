@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { EXTRAS, NEEDS_LABELS, TRACK_LABELS, extraHops, haystack, newTraceparent, outcomeState, triggerText, verdictState } from "./lib";
+import { EXTRAS, NEEDS_LABELS, TRACK_LABELS, extraHops, haystack, newTraceparent, outcomeState, triggerText, verdictState , holdWords } from "./lib";
 import { visible } from "./safeText";
 import { USECASES } from "./testFixtures";
 
@@ -49,3 +49,13 @@ describe("lib", () => {
     expect(visible(null)).toBe("null");
   });
 });
+
+describe("the mock phone's words", () => {
+  test("say the control that held the call, in the agenda's words, and never a use-case id", () => {
+    expect(holdWords("STEP_UP")).toBe("A higher-risk write needs a second factor");
+    expect(holdWords("HITL_REQUIRED")).toBe("A higher-risk write needs a person to approve it");
+    expect(holdWords("REAL_HOLD")).toBe("The gateway holds this call for approval");
+    for (const o of ["STEP_UP", "HITL_REQUIRED", "REAL_HOLD", undefined, "x"]) expect(holdWords(o)).not.toMatch(/\bUC\d/);
+  });
+});
+

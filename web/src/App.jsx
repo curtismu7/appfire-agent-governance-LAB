@@ -12,7 +12,7 @@ import QuickConfig from "./components/QuickConfig";
 import SetupSidebar, { VerticalSelect } from "./components/SetupSidebar";
 import Rail from "./rail/Rail";
 import { getJson, postJson, resetWorkspace } from "./api";
-import { EXTRAS, HOSTED_REAL_NOTE, focusHop, newTraceparent } from "./lib";
+import { EXTRAS, HOSTED_REAL_NOTE, focusHop, holdWords, newTraceparent } from "./lib";
 import { matchPrompt, reasoningOf } from "./chat";
 import { isHandoff } from "./handoff";
 import { chooseTab, cleanConfig, loadConfig, saveConfig, setView } from "./quickConfig";
@@ -257,7 +257,7 @@ export default function App() {
         postJson("/api/approval/start", {
           kind: hold, tool: run.real?.tool || u.primaryTool || null,
           amount: run.real?.tool === "create_transfer" ? 300 : null,
-          description: `${u.id} ${u.title}${run.real?.tool ? ` (tool ${run.real.tool})` : ""}`,
+          description: holdWords(run.outcome),
           ...(hold === "real" ? { challengeId: run.challenge } : {}),
         }).then((r) => { if (r.ok) setPhoneApproval(r.body.approval); }).catch(() => {});
       } else setPhoneApproval(null);

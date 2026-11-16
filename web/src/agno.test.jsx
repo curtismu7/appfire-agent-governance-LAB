@@ -182,6 +182,17 @@ describe("What to type and the Scripted brain", () => {
     expect((await screen.findByTestId("step-detail")).getAttribute("aria-label")).toBe("Step 4 detail");
   });
 
+  test("the mock phone is asked about the control that held the call in plain words: no use-case id or catalog title goes to it", async () => {
+    await boot({ runAnswer: (id) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(runBody(id, { outcome: "STEP_UP" })) }) });
+    const u = userEvent.setup();
+    await u.click(screen.getByTestId("wtt-UC7"));
+    await screen.findByTestId("turn-approval");
+    await waitFor(() => expect(A.calls.some((c) => c.path === "/api/approval/start")).toBe(true));
+    const start = A.calls.find((c) => c.path === "/api/approval/start");
+    expect(start.body.description).toBe("A higher-risk write needs a second factor");
+    expect(JSON.stringify(start.body)).not.toMatch(/\bUC\d/);
+  });
+
   test("a stub vertical says it has no demo pack yet and shows no chips", async () => {
     await boot();
     fireEvent.change(screen.getByTestId("vertical"), { target: { value: "government" } });
