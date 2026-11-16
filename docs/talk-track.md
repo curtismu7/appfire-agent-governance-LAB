@@ -4,31 +4,35 @@
 
 > SIMULATED. SIMULATED, MOCK mode: a mock engine produces every token, hop and decision offline. Tokens are labelled MOCK and signed with a public mock key. Thresholds, personas and event staging are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog. No tenant, gateway or identity provider is touched.
 
-## Start with the split
+## Appfire today: the split between HIVE and Ping
 
 HIVE manages Appfire's backend authorization rules and MCP-server eligibility. This lab shows the front end Ping governs: the agent triage-agent gets an identity, receives delegated privileges from the principal it acts for (alex.morgan), and every tool call gets a policy decision — enforced and recorded. The two layers complement each other; neither replaces the other.
 
-## Ask 1 — Agent Privilege: how agent permissions are defined and constrained
-
-Run “Overscoped agent”: the agent holds a scope its task never needed and the extra privilege is stripped before dispatch. Then “third-party MCP server, out-of-scope call”: the gateway refuses a call outside the agent's grant — DENY, nothing reaches the tool. “JIT / ephemeral credentials” shows privilege issued just in time, narrowed to the task, instead of standing access. The point: privilege is defined per agent per task and enforced at the gateway — never trusted to the model's judgement.
-
-## Ask 2 — Agent IAM Core: how agents receive identity and authenticate
+## Step 2 · The agent gets its own identity
 
 Run “Delegated access (consent only)”: alex.morgan signs in, consents once, and RFC 8693 token exchange mints a delegated token whose sub is the USER and whose act names triage-agent — open the Tokens tab to read both claims raw. “Non-human (agent) identity lifecycle” shows the agent's own credential enrolled, rotated and retired as a first-class identity. The point: delegation, not impersonation — the agent never pretends to be the user, and every action traces back to a real human's consent.
 
-## Ask 3 — Agent Authorize: how decisions are made for every action
+## Step 3 · The agent tries a tool call: privilege is scoped per task
+
+Run “Overscoped agent”: the agent holds a scope its task never needed and the extra privilege is stripped before dispatch. Then “third-party MCP server, out-of-scope call”: the gateway refuses a call outside the agent's grant — DENY, nothing reaches the tool. “JIT / ephemeral credentials” shows privilege issued just in time, narrowed to the task, instead of standing access. The point: privilege is defined per agent per task and enforced at the gateway — never trusted to the model's judgement.
+
+## Step 4 · Ping evaluates the call
 
 Run “Entitlement-tiered capability” (permits) and then “Group / entitlement check” (denied): same sensitive tool, different person — the decision changes with who asks and what they are entitled to. “Authz denied” and the third-party MCP-server cases show the same evaluation for MCP-server calls. Each hop shows the raw authorize request and response. The point: a policy evaluation you can audit on every call — never a prompt the model might follow.
 
-## Theme — Risk-based approval, not per-action approval
+## Step 5 · A low-risk read is allowed automatically
 
-Three runs tell it: “show my balance” (a read) auto-permits — nobody was asked. “MFA step-up” (a $600 write) stops for a second factor. “MFA + HITL consent” stops for an actual human: approve it on the mock phone and, in Real mode, the approval is recorded with the HITL service and the call is retried with the verified receipt. The thresholds are the lab's own — the point is the model: controlled autonomy, not a person approving every step.
+Run “show my balance”: the decision card says ALLOWED, the tool ran and nobody was asked. The risk strip shows it landed on the first control. The record is still written.
 
-## Theme — Prompt injection and the compromised agent
+## Step 6 · A higher-risk request is denied, constrained or approved
+
+The read you just saw needed nobody. Now the writes: “MFA step-up” (a $600 write) stops for a second factor. “MFA + HITL consent” stops for an actual human: approve it on the mock phone and, in Real mode, the approval is recorded with the HITL service and the call is retried with the verified receipt. The thresholds are the lab's own — the point is the model: controlled autonomy, not a person approving every step.
+
+## Step 6 · Limiting damage from a manipulated agent
 
 Run “confused-deputy actor injection” (a forged actor claim is refused), “intent exceeded” (the agent tries more than the pushed authorization allows), “raw user-token forwarding” (zero-trust refusal), “token theft / replay”. Eleven attacks run in mock and every one ends in DENY with nothing dispatched. A manipulated agent cannot talk its way past the tool, data and action layers: permissions are enforced there, not left to the model to follow instructions.
 
-## Theme — Visibility and auditability
+## Step 7 · The decision history is there for audit
 
 Run “Agent observability and traceability”, then open Run history: every run is a record — which agent acted, on whose behalf, which tool or MCP server it tried, what policy decision applied, and whether access was allowed, denied or escalated. Every hop carries its raw request, response and a W3C traceparent. When Doug's CISO org asks what an agent did and who allowed it, the answer is a query, not an investigation.
 

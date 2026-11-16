@@ -1,12 +1,22 @@
-import { DEMO_GUIDE } from "../demoGuide";
+import { DEMO_GUIDE, TOPICS, topicOfStep } from "../demoGuide";
 
 // The session's seven steps as a bar of pills, shown in presenter mode: where you are in the walkthrough, what to say, and the Run buttons for this step.
 // It only selects a step and starts runs through the same handler as the demo guide; it holds no state of its own.
 export default function AgendaSteps({ step, onStep, onRun, activeUc }) {
   const now = DEMO_GUIDE[step] || DEMO_GUIDE[0];
   const at = DEMO_GUIDE.indexOf(now);
+  const topic = topicOfStep(now.id);
   return (
     <nav className="agenda" aria-label="Demo walkthrough" data-testid="agenda-steps">
+      <p className="agenda__topicshead">Where we are in the 60 minutes</p>
+      <ol className="agenda__topics" data-testid="agenda-topics">
+        {TOPICS.map((t) => (
+          <li key={t.time} className="agenda__topic" data-current={t === topic ? "true" : undefined} data-testid={`agenda-topic-${t.time.replace(":", "-")}`}>
+            {t === topic && <span className="sr-only">Current topic: </span>}
+            <span className="agenda__time">{t.time}</span> {t.title}{!t.inLab && <span className="agenda__deck"> (in the deck)</span>}
+          </li>
+        ))}
+      </ol>
       <ol className="agenda__pills">
         {DEMO_GUIDE.map((g, i) => (
           <li key={g.id}>
@@ -23,7 +33,7 @@ export default function AgendaSteps({ step, onStep, onRun, activeUc }) {
           <button type="button" onClick={() => onStep(at - 1)} disabled={at <= 0} data-testid="agenda-prev">‹ Previous</button>
           {now.ucs.map((b) => (
             <button key={b.uc} type="button" className="primary" onClick={() => onRun?.({ uc: b.uc, stepId: now.id })} aria-pressed={activeUc === b.uc} data-testid={`agenda-run-${b.uc}`}>
-              {activeUc === b.uc ? `Running ${b.uc}…` : b.label}
+              {activeUc === b.uc ? "Running…" : b.label}
             </button>
           ))}
           <button type="button" onClick={() => onStep(at + 1)} disabled={at >= DEMO_GUIDE.length - 1} data-testid="agenda-next">Next ›</button>

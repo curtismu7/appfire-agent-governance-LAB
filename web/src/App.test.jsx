@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import userEvent from "@testing-library/user-event";
 import App, { BANNER_UNKNOWN, BASE_NAV } from "./App";
 import { forgetWorkspace } from "./workspace";
-import { catalog, INSTR, mockApi, RAW, runBody } from "./testFixtures";
+import { DEMO_GUIDE } from "./demoGuide";
+import { catalog, INSTR, mockApi, RAW, runBody, STORY } from "./testFixtures";
 import AgentInstructions from "./components/AgentInstructions";
 
 let api;
@@ -454,7 +455,7 @@ describe("theme, presenter, reset", () => {
     expect(screen.getByTestId("banner").textContent).toMatch(/^SIMULATED, MOCK mode/);
     expect(screen.getByTestId("banner")).toBeVisible();
     expect(screen.getByTestId("presenter").getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("presenter-say").textContent).toMatch(/Start with the question/);
+    expect(screen.getByTestId("presenter-say").textContent).toMatch(/Appfire today: the split between HIVE and Ping/);
     await u.keyboard("{Escape}");
     expect(screen.getByTestId("nav")).toBeTruthy();
     await u.click(screen.getByTestId("search"));
@@ -518,7 +519,7 @@ describe("run history and talk track", () => {
     await boot();
     const u = userEvent.setup();
     await u.click(screen.getByTestId("nav-talk"));
-    expect(within(screen.getByTestId("talk-track")).getAllByRole("listitem")).toHaveLength(6);
+    expect(within(screen.getByTestId("talk-track")).getAllByRole("listitem")).toHaveLength(STORY.talkTrack.length);
   });
 });
 
@@ -752,6 +753,44 @@ describe("decision card and the session walkthrough (agenda)", () => {
     expect(screen.getByTestId("agenda-next").disabled).toBe(true);
     await u.keyboard("{Escape}");
     expect(screen.queryByTestId("agenda-steps")).toBeNull();
+  });
+
+  test("Presenter mode lists the seven timed topics, marks the current one, and says which are in the deck", async () => {
+    await boot();
+    const u = userEvent.setup();
+    await u.keyboard("p");
+    const topics = screen.getByTestId("agenda-topics");
+    expect(topics.querySelectorAll(".agenda__topic")).toHaveLength(7);
+    expect(topics.textContent).toMatch(/0:00.*Welcome and objectives.*0:55.*Next steps/);
+    expect(topics.querySelectorAll("[data-current='true']")).toHaveLength(1);
+    expect(screen.getByTestId("agenda-topic-0-25").getAttribute("data-current")).toBe("true");
+    expect(screen.getByTestId("agenda-topic-0-25").textContent).not.toMatch(/in the deck/);
+    expect(screen.getByTestId("agenda-topic-0-05").textContent).toMatch(/in the deck/);
+    await u.click(screen.getByTestId("agenda-pill-escalate"));
+    expect(screen.getByTestId("agenda-topic-0-40").getAttribute("data-current")).toBe("true");
+    expect(screen.getByTestId("agenda-topic-0-25").getAttribute("data-current")).toBeNull();
+    // the step pills keep the only aria-current="step"
+    expect(topics.querySelector("[aria-current]")).toBeNull();
+  });
+
+  test("Presenter notes follow the walkthrough step: each step shows its own talk-track entries, and Next changes the note", async () => {
+    await boot();
+    const u = userEvent.setup();
+    await u.keyboard("p");
+    const seen = [];
+    for (const g of DEMO_GUIDE) {
+      const want = STORY.talkTrack.filter((t) => t.step === g.id);
+      expect(want.length).toBeGreaterThan(0);
+      const say = screen.getByTestId("presenter-say").textContent;
+      for (const t of want) expect(say).toContain(t.title);
+      for (const t of STORY.talkTrack.filter((x) => x.step && x.step !== g.id)) expect(say).not.toContain(t.title);
+      expect(screen.getByTestId("agenda-steps").textContent).not.toMatch(/UC\d/);
+      expect(say).not.toMatch(/UC\d/);
+      seen.push(say);
+      if (g.id === "escalate") expect(screen.getByTestId("agenda-run-UC7").textContent).toBe("Higher risk: needs a second factor");
+      if (g.id !== "audit") await u.click(screen.getByTestId("agenda-next"));
+    }
+    expect(new Set(seen).size).toBe(7);
   });
 
   test("Presenter mode puts a caption over the Sequence: what to say for the selected step, Next walks the run; outside presenter mode there is none", async () => {
