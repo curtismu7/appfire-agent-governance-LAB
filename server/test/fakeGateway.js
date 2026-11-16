@@ -9,7 +9,7 @@ import http from 'node:http';
 
 export const SESSION_ID = 'fake-mcp-session-0001';
 export const AUDIT_TRAIL = JSON.stringify([{ stage: 'jwt', result: 'pass' }, { stage: 'authorize', decision: 'DENY', reason: 'fake policy' }]);
-const TOOLS = ['get_my_accounts', 'get_account_balance', 'create_transfer', 'get_branch_hours', 'request_fee_waiver', 'view_coverage', 'pay_bill', 'list_orders', 'checkout', 'show_mortgage', 'get_weather', 'brave_news_search', 'code_search', 'get_sensitive_account_details'];
+const TOOLS = ['get_portfolio_summary', 'get_my_accounts', 'get_account_balance', 'create_transfer', 'get_branch_hours', 'request_fee_waiver', 'view_coverage', 'pay_bill', 'list_orders', 'checkout', 'show_mortgage', 'get_weather', 'brave_news_search', 'code_search', 'get_sensitive_account_details'];
 const RESULTS = {
   get_my_accounts: { accounts: [{ id: 'acct-fake-1', accountType: 'CHECKING', balance: 1200.5 }, { id: 'acct-fake-2', accountType: 'SAVINGS', balance: 80 }] },
   get_account_balance: { account_id: 'acct-fake-1', balance: 1200.5, currency: 'USD' },
@@ -17,6 +17,7 @@ const RESULTS = {
   list_orders: { orders: [{ id: 'o-1' }, { id: 'o-2' }] },
   show_mortgage: { loan_id: 'm-fake-1', balance: 250000, rate: 6.1 },
   get_weather: { forecast: 'fake: sunny' },
+  get_portfolio_summary: { portfolio: 'PF-01', total_value: 12345.67 },
   get_sensitive_account_details: { account_number: '****1234', routing_number: '****5678' },
 };
 

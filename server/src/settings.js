@@ -41,7 +41,12 @@ export const FULL_REQUIRED = ['PINGONE_ENVIRONMENT_ID', ...FULL_KEYS];
 // Optional (never required, never makes full Real "wanted"): the scope the agent token and exchange 1 ask for (the scope of the resource whose `act`
 // attribute stamps the agent into the token). Empty or absent means the default; the owner's setup script writes it only when it is not the default.
 export const DEFAULT_AGENT_SCOPE = 'agent:invoke';
-export const OPTIONAL_KEYS = ['AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET'];
+// Real A2A (owner, 2026-11-16): the specialist agent's own PingOne app and the two audiences and scopes of the chained exchange (AI-DEMO2's
+// a2aDelegationService). All six of A2A_REQUIRED together turn it on (banking's Investment Advisor); AAG_A2A_AGENT_TOKEN_AUTH is CLIENT_SECRET_POST or
+// empty (Basic). Any other combination leaves A2A use cases on the labelled mock engine and says which name is missing.
+export const A2A_REQUIRED = ['AAG_A2A_AGENT_CLIENT_ID', 'AAG_A2A_AGENT_CLIENT_SECRET', 'AAG_A2A_INTERMEDIATE_AUDIENCE', 'AAG_A2A_INTERMEDIATE_SCOPE', 'AAG_A2A_GATEWAY_AUDIENCE', 'AAG_A2A_SCOPE'];
+export const A2A_KEYS = [...A2A_REQUIRED, 'AAG_A2A_AGENT_TOKEN_AUTH'];
+export const OPTIONAL_KEYS = ['AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET', ...A2A_KEYS];
 export const REAL_KEYS = [...LIVE_KEYS, ...FULL_KEYS, ...OPTIONAL_KEYS];
 export function readLiveSettings(file) {
   try {
