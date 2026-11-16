@@ -84,7 +84,8 @@ describe("REAL / MOCK labels and the replies", () => {
     expect(screen.getByTestId("sequence-view").textContent).not.toContain("Mock IdP");
     const src = screen.getByTestId("hop-sources");
     expect(within(src).getAllByTestId("hop-source").map((x) => x.getAttribute("data-source"))).toEqual(Array(9).fill("real"));
-    expect(within(src).getAllByTestId("hop-source").map((x) => x.textContent)).toEqual(["Sign-in", "Agent token", "Exchange 1: act = agent", "Exchange 2: for the gateway", "Agent Gateway", "Authorize decision", "MCP tool", "API", "Agent reply"].map((t, i) => `${i + 1} ${t} REAL`));
+    expect(within(src).getAllByTestId("hop-source").map((x) => x.textContent.trim())).toEqual(["Sign-in", "Agent token", "Exchange 1: act = agent", "Exchange 2: for the gateway", "Agent Gateway", "Authorize decision", "MCP tool", "API", "Agent reply"].map((t, i) => `${i + 1} ${t}`)); // no REAL chip on any hop: the whole run is real, and the Mode switch and the banner say so (owner 2026-11-16)
+    expect(within(src).queryByTestId("real-tag")).toBeNull();
     expect(screen.getByTestId("real-note-tag").textContent).toMatch(/Real: sign-in, token exchange, Agent Gateway/);
     // The Tokens tab: the user, the agent (actor), exchange 1 and the delegated token, raw, in that order; the two exchange tokens show their act.
     await u.click(screen.getByTestId("evtab-tokens"));

@@ -26,7 +26,7 @@ const rowLabel = (h) => `${h.n} · ${txt(h.title)}${h.verdict && h.verdict !== "
 const labelW = (s) => s.length * CHAR_W + 18;
 const noteW = (s) => Math.max(150, s.length * CHAR_W + 32);
 
-export default function SequenceView({ hops = [], selected = null, onSelect }) {
+export default function SequenceView({ hops = [], selected = null, onSelect, showSources = true }) {
   const uid = useId().replace(/[^A-Za-z0-9]/g, "");
   const [zoom, setZoom] = useState(() => { const v = readPref(K.zoom, (x) => x === "fit" || (Number(x) >= ZOOM_MIN && Number(x) <= ZOOM_MAX), ZOOM_DEFAULT); return v === "fit" ? v : Number(v); });
   const [boxW, setBoxW] = useState(0);
@@ -148,7 +148,7 @@ export default function SequenceView({ hops = [], selected = null, onSelect }) {
   return (
     <section className="ev-root sq" data-font={font} aria-label="Sequence view" data-testid="sequence-view">
       <div className="sq-bar" role="toolbar" aria-label="Sequence controls">
-        {mock && <Tag state="info" title="Every hop here was produced by the lab's mock engine">MOCK engine</Tag>}
+        {mock && showSources && <Tag state="info" title="Every hop here was produced by the lab's mock engine">MOCK engine</Tag>}
         <span className="sq-grp" role="group" aria-label="Zoom">
           <button type="button" aria-label="Zoom out" disabled={pct <= ZOOM_MIN} onClick={() => zoomBy(-ZOOM_STEP)}>−</button>
           <button type="button" aria-label={`Zoom ${pct}%, actual size`} title="Actual size (100%)" onClick={() => setZoom(100)} data-testid="seq-zoom">{pct}%</button>

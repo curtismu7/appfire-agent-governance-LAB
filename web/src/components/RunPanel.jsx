@@ -1,5 +1,5 @@
 import { NEEDS_LABELS, TRACK_LABELS, notRunText, outcomeState, ranCount, triggerText } from "../lib";
-import { InventedTag, Json, LiveTag, RealTag, Tag } from "./Bits";
+import { InventedTag, Json, LiveTag, RealTag, Tag, chipsNeeded } from "./Bits";
 import GatewayTrace from "../gateway-trace/GatewayTrace";
 
 // The honest refusal text for each answer the API can give instead of a run. The server's own detail is shown as it is.
@@ -67,7 +67,7 @@ export function RunResult({ run }) {
           : <Tag state={run.matchesExpected ? "ok" : "bad"} testId="matches">{run.matchesExpected ? "engine result matches the catalog label" : "engine result differs from the catalog label"}</Tag>}
         {run.labSimulated && <Tag state="warn">lab-simulated (source says needs-build)</Tag>}
         <Tag state="info">mode: {run.mode}</Tag>
-        {isReal ? <RealTag /> : isLive ? <LiveTag /> : <Tag state="info">persona: {run.persona}</Tag>}
+        {isReal || isLive ? (chipsNeeded(run) && (isReal ? <RealTag /> : <LiveTag />)) : <Tag state="info">persona: {run.persona}</Tag>}
       </div>
       <p data-testid="narration">{run.narration}</p>
       {run.realGate && run.realGate.real === false && <p className="muted" data-testid="mock-in-real">This use case cannot run Real ({run.realGate.reason}), so the mock engine ran it: every hop is MOCK. The Demo guide lists what runs Real.</p>}

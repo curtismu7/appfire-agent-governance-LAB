@@ -138,7 +138,7 @@ describe("run view", () => {
     expect(screen.getByTestId("run-traceparent").textContent).toMatch(/^00-a{32}-b{16}-01$/);
     await u.click(screen.getByTestId("evtab-tokens"));
     const token = screen.getByTestId("token");
-    expect(within(token).getByTestId("mock-tag").textContent).toBe("MOCK");
+    expect(within(token).getByTestId("mock-tag").textContent).toBe("MOCK"); // a mock TOKEN keeps its chip (rule 4: mock-issued tokens are labelled), unlike the hop chips
     expect(within(token).getByTestId("token-raw").textContent).toBe(RAW);
     expect(within(token).getByTestId("token-claims").textContent).toMatch(/sub\s*alex\.morgan/); // Formatted is a form: a label and a value box per claim
     await u.click(within(token).getByTestId("token-claims-raw"));
@@ -385,7 +385,7 @@ describe("mode toggle", () => {
     const not = screen.getByTestId("not-run");
     expect(not.textContent).toMatch(/Not run in live mode \(3 steps/); expect(not.textContent).toMatch(/identity provider only/); expect(within(not).getAllByRole("listitem").map((x) => x.textContent)).toEqual(["user-token", "token-exchange", "tool-dispatched"]);
     await u.click(screen.getByTestId("evtab-tokens"));
-    expect(within(screen.getByTestId("token")).getByTestId("live-tag")).toBeTruthy(); expect(within(screen.getByTestId("token")).queryByTestId("mock-tag")).toBeNull();
+    expect(within(screen.getByTestId("token")).queryByTestId("live-tag")).toBeNull(); expect(within(screen.getByTestId("token")).queryByTestId("mock-tag")).toBeNull(); // a pure live run: no LIVE chip either
     expect(screen.getByTestId("tokens").textContent).toMatch(/Raw token/); expect(screen.getByTestId("token-raw").textContent).toBe("eyJhbG...ab12");
     expect(screen.getByTestId("run-announce").textContent).toBe("UC1 finished: LIVE_OK, live, identity provider only.");
     await u.click(screen.getByTestId("nav-runs"));
@@ -604,6 +604,12 @@ describe("fix pass 2026-11-01", () => {
     await screen.findByTestId("result");
     await waitFor(() => expect(screen.queryByTestId("evidence-running")).toBeNull());
     expect(screen.getByTestId("agent-status").querySelector(".spin")).toBeNull();
+  });
+
+  test("the header has no REAL / MOCK pill beside the title: the Mode switch and the banner already say it", async () => {
+    await boot({});
+    expect(screen.queryByTestId("mode-badge")).toBeNull();
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appfire Agent Governance LAB");
   });
 
   test("keyboard focus stays on the Run button while the run is in flight and after it, and a second press does nothing", async () => {
