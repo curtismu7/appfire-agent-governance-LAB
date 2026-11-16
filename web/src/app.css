@@ -189,7 +189,9 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 .guide__runlink[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
 /* ===== Talk track: per-step run links ===== */
-.talk__runs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.talk__runs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+/* The Run buttons in the talk track are real buttons (the global button style), a little smaller than a form button; the pressed one fills with the accent. */
+.talk__run { font-size: 13px; padding: 4px 12px; min-height: 32px; text-align: left; }
 /* The step detail in the evidence column is narrow: its parts stack instead of sharing three squeezed columns (the full page keeps its columns). */
 .evcol .sdp__cols[data-rfc] { grid-template-columns: minmax(0, 1fr); }
 /* An object claim (act, cnf) in the claim diff sits in a narrow table cell: its label goes above its value there. */
