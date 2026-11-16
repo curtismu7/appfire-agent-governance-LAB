@@ -500,6 +500,8 @@ try {
   // ---- Full Real against the fakes: sign in through the modal (pi.flow), run a Real use case, see REAL hops and the reply, a DENY, then Mock ----
   for (const [width, height, name, scheme] of [[1280, 900, 'desktop', 'light'], [375, 800, 'phone', 'dark']]) {
     const tag = `full-${name}-${scheme}`;
+    // A clean slate: an explicit Sign out also forgets the lab's PingOne session (owner 2026-11-16), so this case starts signed out whatever ran before.
+    await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     fullGw.seen.length = 0; fullP1.seen.length = 0; fullGw.state.behaviour = 'ok';
     const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: scheme });
     const page = await ctx.newPage();
@@ -533,6 +535,15 @@ try {
     await t('signin-submit').click();
     await page.waitForFunction(() => document.querySelector('[data-testid="outcome"]')?.textContent === 'REAL_PERMIT', null, { timeout: 20000 });
     check((await t('signin-dialog').count()) === 0 && (await t('who').innerText()).includes(DEMO_USERNAME), `${tag}: signed in, the modal closed and the header names the user`);
+    // The PingOne session (owner 2026-11-16): a second tab (a new workspace) is signed in with no password and no dialog.
+    const passwordsBefore = fullP1.seen.filter((c) => c.method === 'POST' && /\/flows\//.test(c.url)).length;
+    const tab2 = await ctx.newPage();
+    await tab2.goto(`${fullBase}/`);
+    await tab2.getByTestId('uc-UC1').waitFor();
+    await tab2.getByTestId('mode-select').selectOption('real');
+    await tab2.getByTestId('who').waitFor({ timeout: 10000 });
+    check((await tab2.getByTestId('who').innerText()).includes(DEMO_USERNAME) && (await tab2.getByTestId('signin-dialog').count()) === 0 && fullP1.seen.filter((c) => c.method === 'POST' && /\/flows\//.test(c.url)).length === passwordsBefore, `${tag}: a second tab is signed in from the PingOne session: the header names the user, no dialog, no password sent again`);
+    await tab2.close();
     const authz = fullP1.seen.filter((x) => x.url.includes('/as/authorize'));
     check(authz.length >= 1 && authz.every((x) => new URL(x.url, 'http://x').searchParams.get('response_mode') === 'pi.flow' && new URL(x.url, 'http://x').searchParams.get('code_challenge_method') === 'S256'), `${tag}: the sign-in was pi.flow with PKCE S256`);
     check(navs.length === 1 && navs[0].startsWith(fullBase), `${tag}: the page never navigated (no redirect login): ${navs.join(' | ')}`);

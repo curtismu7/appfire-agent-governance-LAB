@@ -57,8 +57,11 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
     gateway: { name: 'Fake gateway resource', audience: AUDIENCE, scopes: [SCOPE], act: 'passthrough' },
   };
   // agentGrants: the scopes the agent app may ask for (the owner setup script grants both).
-  const state = { behaviour, delayMs, full: { signin: 'ok', exchange: 'ok' }, a2a: { specialist: 'ok', exchange1: 'ok', exchange2: 'ok' }, resources, agentGrants: [agentScope, SCOPE] };
+  const state = { behaviour, delayMs, sso: { mode: 'ok' }, full: { signin: 'ok', exchange: 'ok' }, a2a: { specialist: 'ok', exchange1: 'ok', exchange2: 'ok' }, resources, agentGrants: [agentScope, SCOPE] };
   const flows = new Map(); // flow id -> { cookie, challenge, state, nonce, done }
+  // The PingOne session (owner, 2026-11-16): a completed password sign-in sets the P1SSO cookie; authorize with a valid one answers COMPLETED with a code and no
+  // password step. state.sso.mode: 'ok' | 'expired' (the cookie is no longer honoured: the password is asked for again).
+  const ssoValid = new Set();
   const codes = new Map(); // code -> { challenge, nonce }
   // exchange1: tokens minted for the agent scope's resource. delegated: tokens for the gateway scope's resource that carry act (what the gateway and
   // Authorize accept). noAct: gateway-resource tokens WITHOUT act (the old single-exchange bug): the fake gateway refuses these.
@@ -118,6 +121,11 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
           const q = Object.fromEntries(u.searchParams);
           if (q.response_mode !== 'pi.flow') return send(400, { error: 'unsupported_response_mode', error_description: 'fake: only pi.flow (no redirect login)' });
           if (q.client_id !== USER_CLIENT_ID || q.response_type !== 'code' || q.code_challenge_method !== 'S256' || !q.code_challenge || !q.redirect_uri || !String(q.scope || '').split(' ').includes('openid') || !String(q.scope || '').split(' ').includes(agentScope)) return send(400, { error: 'invalid_request', error_description: 'fake: authorize needs the user client, code, PKCE S256, a redirect_uri and the openid and agent scopes' });
+          const ssoCookie = /(?:^|;\s*)P1SSO=([^;]+)/.exec(String(req.headers.cookie || ''))?.[1];
+          if (ssoCookie && ssoValid.has(ssoCookie) && state.sso.mode === 'ok') {
+            const code = randomBytes(16).toString('hex'); codes.set(code, { challenge: q.code_challenge, nonce: q.nonce });
+            return send(200, { id: randomBytes(8).toString('hex'), status: 'COMPLETED', authorizeResponse: { code, state: q.state } });
+          }
           const id = randomBytes(8).toString('hex'); const st = randomBytes(12).toString('hex');
           flows.set(id, { cookie: st, challenge: q.code_challenge, state: q.state, nonce: q.nonce, done: false });
           return send(200, { id, status: 'USERNAME_PASSWORD_REQUIRED', _links: { 'usernamePassword.check': { href: `http://fake.invalid/${ENV_ID}/flows/${id}` } } }, { 'set-cookie': [`ST=${st}; Path=/; HttpOnly`, 'interactionId=fake-interaction; Path=/'] });
@@ -136,7 +144,8 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
           if (state.full.signin === 'resume') { f.code = code; return send(200, { id: fm[1], status: 'COMPLETED', _links: { resume: { href: 'x' } } }); }
           if (state.full.signin === 'bad-state') return send(200, { id: fm[1], status: 'COMPLETED', authorizeResponse: { code, state: 'not-the-state' } });
           if (state.full.signin === 'no-state') return send(200, { id: fm[1], status: 'COMPLETED', authorizeResponse: { code } });
-          return send(200, { id: fm[1], status: 'COMPLETED', authorizeResponse: { code, state: f.state } });
+          const sso = randomBytes(12).toString('hex'); ssoValid.add(sso);
+          return send(200, { id: fm[1], status: 'COMPLETED', authorizeResponse: { code, state: f.state } }, { 'set-cookie': [`P1SSO=${sso}; Path=/; HttpOnly`] });
         }
         if (req.method === 'GET' && u.pathname === `/${ENV_ID}/as/resume`) {
           const f = flows.get(u.searchParams.get('flowId'));
