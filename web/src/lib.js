@@ -102,3 +102,12 @@ export function holdWords(outcome) {
   return "The gateway holds this call for approval";
 }
 
+// Use-case ids mean nothing to an audience (owner, 2026-11-16: "use cases are supposed to be removed, just use words for each use case"). The page shows each
+// use case by its title; the id stays in the data, the API and the test ids. The titles are registered when the catalog loads, so a place that only holds an
+// id (a history row, a session, a sentence in the catalog's own text) can still say the words.
+let TITLES = {};
+export const setUseCaseTitles = (list) => { TITLES = Object.fromEntries((list || []).map((u) => [u.id, u.title])); };
+export const titleOfUc = (id) => (Object.hasOwn(TITLES, id) ? TITLES[id] : "a use case");
+// Free text that names a use case by its id (the catalog's own sentences, a server message) says its title instead.
+export const noIds = (text) => String(text ?? "").replace(/\bUC[-\w.]*\d\w*/g, (m) => (Object.hasOwn(TITLES, m) ? `“${TITLES[m]}”` : "another use case"));
+

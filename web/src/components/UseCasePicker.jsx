@@ -16,7 +16,7 @@ export function UseCaseRow({ u, selected, onPick, slim = false }) {
   return (
     <li>
       <button type="button" className="pick__item" aria-pressed={selected} onClick={() => onPick(u.id)} data-testid={`uc-${u.id}`} data-route={routeOf(u).route}>
-        <span className="pick__head"><span className="pick__id">{u.id}</span> <span className="pick__title">{u.title}</span> <RouteTag u={u} /></span>
+        <span className="pick__head"><span className="pick__title">{u.title}</span> <RouteTag u={u} /></span>
         {!slim && <span className="pick__badges">
           {u.guided ? <Tag state="info" title="The lab opens the product's page and does not compute the outcome">guided</Tag> : <Tag state="ok" title="The lab's engine computes the outcome">computed</Tag>}
           {u.needs.map((n) => <Tag key={n} title={`needs: ${NEEDS_LABELS[n] || n}`}>{n}</Tag>)}

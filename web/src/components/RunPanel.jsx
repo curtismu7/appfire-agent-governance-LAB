@@ -1,4 +1,4 @@
-import { NEEDS_LABELS, TRACK_LABELS, notRunText, outcomeState, ranCount, triggerText } from "../lib";
+import { NEEDS_LABELS, TRACK_LABELS, noIds, notRunText, outcomeState, ranCount, triggerText } from "../lib";
 import { InventedTag, Json, LiveTag, RealTag, Tag, chipsNeeded } from "./Bits";
 import GatewayTrace from "../gateway-trace/GatewayTrace";
 
@@ -82,7 +82,7 @@ export function RunResult({ run }) {
 }
 
 // The one line a screen reader hears when a run finishes.
-const announce = (run) => `${run.useCase?.id || "Run"} finished: ${run.outcome}${run.kind === "real" ? ", real" : run.kind === "live" ? ", live, identity provider only" : run.kind === "guided" ? ", guided, not computed" : run.matchesExpected ? ", matches the catalog label" : ", differs from the catalog label"}.`;
+const announce = (run) => `${run.useCase?.title || "Run"} finished: ${run.outcome}${run.kind === "real" ? ", real" : run.kind === "live" ? ", live, identity provider only" : run.kind === "guided" ? ", guided, not computed" : run.matchesExpected ? ", matches the catalog label" : ", differs from the catalog label"}.`;
 
 export default function RunPanel({ uc, vertical, verticals, persona, setPersona, personas, onRun, running, result, mode }) {
   if (!uc) return <section className="panel" data-testid="run-empty"><h2 className="panel__title">Run a use case</h2><p className="muted">Pick a use case on the left. Then choose a vertical pack and a persona, and Run.</p></section>;
@@ -90,18 +90,18 @@ export default function RunPanel({ uc, vertical, verticals, persona, setPersona,
   const stub = v?.pack === "stub";
   return (
     <section className="panel" aria-label="Run a use case" data-testid="run-panel">
-      <p className="muted" data-testid="run-track">{TRACK_LABELS[uc.track] || uc.track} / {uc.id}</p>
+      <p className="muted" data-testid="run-track">{TRACK_LABELS[uc.track] || uc.track}</p>
       <h2 className="panel__title" data-testid="run-title">{uc.title}</h2>
-      <p>{uc.buyerStory}</p>
+      <p>{noIds(uc.buyerStory)}</p>
       <details>
         <summary>What the product does (catalog text, from AI-DEMO2)</summary>
-        <p>{uc.pingOneSolution}</p>
-        <ul className="plain">{Object.entries(uc.productRoles || {}).map(([k, t]) => <li key={k}><strong>{NEEDS_LABELS[k] || k}:</strong> {t}</li>)}</ul>
+        <p>{noIds(uc.pingOneSolution)}</p>
+        <ul className="plain">{Object.entries(uc.productRoles || {}).map(([k, t]) => <li key={k}><strong>{NEEDS_LABELS[k] || k}:</strong> {noIds(t)}</li>)}</ul>
       </details>
-      <p className="muted">Trigger in the product: <code>{triggerText(uc.trigger)}</code></p>
+      <p className="muted">Trigger in the product: <code>{noIds(triggerText(uc.trigger))}</code></p>
       <p className="muted">Expected outcome (the catalog's label): <Tag state={outcomeState(uc.expectedOutcome)}>{uc.expectedOutcome}</Tag> {uc.tool && <>Tool in this vertical: <code>{uc.tool}</code></>}</p>
-      {uc.live?.status === "needs-flag" && <p className="muted" data-testid="flag-note">{uc.live.message}</p>}
-      {uc.live?.status === "needs-build" && <p className="muted">{uc.live.message}</p>}
+      {uc.live?.status === "needs-flag" && <p className="muted" data-testid="flag-note">{noIds(uc.live.message)}</p>}
+      {uc.live?.status === "needs-build" && <p className="muted">{noIds(uc.live.message)}</p>}
       {mode !== "live" && <Inputs uc={uc} />}
       <div className="runbar">
         {mode === "live" && <p className="muted" data-testid="live-persona-note">{uc.realGate?.real ? (uc.id === "UC21" ? "A Real run uses the person who signed in; the persona is not used. Your tier is your PingOne group: add or remove your user from the premium-tier group in PingOne, Sign out, and sign in again, then run this again." : "A Real run uses the person who signed in; the persona is not used.") : "A live run reaches the identity provider only; the persona is not used."}</p>}

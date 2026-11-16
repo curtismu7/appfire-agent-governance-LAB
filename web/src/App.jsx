@@ -12,7 +12,7 @@ import QuickConfig from "./components/QuickConfig";
 import SetupSidebar, { VerticalSelect } from "./components/SetupSidebar";
 import Rail from "./rail/Rail";
 import { getJson, postJson, resetWorkspace } from "./api";
-import { EXTRAS, HOSTED_REAL_NOTE, focusHop, holdWords, newTraceparent } from "./lib";
+import { EXTRAS, HOSTED_REAL_NOTE, focusHop, holdWords, newTraceparent, setUseCaseTitles, titleOfUc } from "./lib";
 import { matchPrompt, reasoningOf } from "./chat";
 import { isHandoff } from "./handoff";
 import { chooseTab, cleanConfig, loadConfig, saveConfig, setView } from "./quickConfig";
@@ -114,7 +114,7 @@ export default function App() {
   useEffect(() => {
     if (!back) return;
     setSelectedId(back.uc);
-    const said = `Back from ${back.app} (${back.uc})`;
+    const said = `Back from ${back.app}`;
     setTurns((ts) => (ts.length && ts[ts.length - 1].status === "note" && ts[ts.length - 1].said === said ? ts : [...ts, { id: ++turnSeq.current, status: "note", said }]));
   }, [back]);
 
@@ -191,6 +191,7 @@ export default function App() {
   useEffect(() => { if (current === "talk") setTalkOpen(true); }, [current]);
 
   const allUc = catalog?.tracks.flatMap((t) => t.usecases) || [];
+  setUseCaseTitles(allUc); // the words for each use case, for the places that only hold an id
   // A restored turn holds a use case id only; it gets the use case back from this vertical's catalog (another vertical's turn stays text only).
   const shownTurns = turns.map((t) => (t.restored && !t.uc && t.ucId && t.vertical === vertical ? { ...t, uc: allUc.find((u) => u.id === t.ucId) } : t));
   const uc = allUc.find((u) => u.id === selectedId) || null;
@@ -214,7 +215,7 @@ export default function App() {
     const needs = personaFor(u);
     if (needs) setPersona(needs);
     // A hand-off picked from the list answers in the conversation, the same way a typed prompt does: the reasoning and the hand-off card.
-    if (u && isHandoff(u)) { const tid = ++turnSeq.current; setTurns((ts) => [...ts, { id: tid, said: `${u.id} ${u.title} (picked from the list)`, uc: u, vertical, how: "picked", status: "handoff" }]); }
+    if (u && isHandoff(u)) { const tid = ++turnSeq.current; setTurns((ts) => [...ts, { id: tid, said: `${u.title} (picked from the list)`, uc: u, vertical, how: "picked", status: "handoff" }]); }
     // One column (phones, tablets): bring the answer into view, the hand-off reply for a hand-off, else the use case panel.
     setTimeout(() => {
       if (!window.matchMedia?.("(max-width: 900px)").matches) return;
@@ -263,7 +264,7 @@ export default function App() {
       } else setPhoneApproval(null);
     }
   };
-  const run = () => startRun(uc, { said: `Run ${uc?.id} (picked from the list)`, how: "picked" });
+  const run = () => startRun(uc, { said: `Run “${uc?.title}” (picked from the list)`, how: "picked" });
 
   // The mock phone decided. On a REAL approval, retry the held use case with the approved session id — the server
   // swaps in the gateway challenge and the verified receipt discharges the consent obligation.
@@ -490,7 +491,7 @@ export default function App() {
                     vertical={vertical} resetSignal={resetSignal} lastRun={last} uc={uc} catalog={catalog} userId={userId} showHandoff={showHandoff} why={why}>
                     {uc && (
                       <details className="ucpanel" open ref={runRef} data-testid="uc-panel">
-                        <summary>Use case {uc.id}: inputs, persona, Run and the raw result</summary>
+                        <summary>{uc.title}: inputs, persona, Run and the raw result</summary>
                         <RunPanel uc={uc} vertical={vertical} verticals={verticals} persona={persona} setPersona={setPersona} personas={personas} onRun={run} running={busy} result={result} mode={mode} />
                       </details>
                     )}

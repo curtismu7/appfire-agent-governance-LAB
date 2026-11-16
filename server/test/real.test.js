@@ -468,7 +468,7 @@ test('in Real mode, a use case that cannot run Real is refused with the reason o
     await toReal(url);
     const r = await run(url, 'UC2', { vertical: 'banking' });
     assert.equal(r.status, 403); assert.equal(r.body.error, 'mock_in_real_refused');
-    assert.match(r.body.detail, /UC2 cannot run Real \(the agent-to-agent/); assert.match(r.body.detail, /mock engine is not available here/);
+    assert.match(r.body.detail, /“A2A delegation” cannot run Real \(the agent-to-agent/); assert.match(r.body.detail, /mock engine is not available here/);
     assert.equal(gw.seen.length, 0);
   }, { env: { ...ENV, ALLOW_MOCK_SIGNIN: '' } });
 });

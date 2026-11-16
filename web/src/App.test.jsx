@@ -270,7 +270,7 @@ describe("extra pages (opens)", () => {
     const page = screen.getByTestId("extra-consent");
     expect(screen.getByRole("tabpanel").getAttribute("aria-labelledby")).toBe("tab-more");
     expect(screen.getByTestId("nav-more").value).toBe("page-consent");
-    expect(page.textContent).toMatch(/Opened by UC1/);
+    expect(page.textContent).toMatch(/Opened by “Delegated access/); expect(page.textContent).not.toMatch(/\bUC\d/);
     expect(page.textContent).toMatch(/chat chip: "show my balance"/);
     expect(within(page).getAllByTestId(/^row-\d+$/)).toHaveLength(2); // the same Sequence as the Agent page, drawn from this page's two hops
     expect(window.location.hash).toBe("#page-consent");
@@ -388,7 +388,7 @@ describe("mode toggle", () => {
     await u.click(screen.getByTestId("evtab-tokens"));
     expect(within(screen.getByTestId("token")).queryByTestId("live-tag")).toBeNull(); expect(within(screen.getByTestId("token")).queryByTestId("mock-tag")).toBeNull(); // a pure live run: no LIVE chip either
     expect(screen.getByTestId("tokens").textContent).toMatch(/Raw token/); expect(screen.getByTestId("token-raw").textContent).toBe("eyJhbG...ab12");
-    expect(screen.getByTestId("run-announce").textContent).toBe("UC1 finished: LIVE_OK, live, identity provider only.");
+    expect(screen.getByTestId("run-announce").textContent).toBe("t finished: LIVE_OK, live, identity provider only.");
     await u.click(screen.getByTestId("nav-runs"));
     expect(screen.getByTestId("history-row").textContent).toMatch(/n\/a \(live\).*LIVE_OK.*live, identity provider only/);
     await u.selectOptions(screen.getByTestId("mode-select"), "mock");
@@ -636,7 +636,7 @@ describe("fix pass 2026-11-01", () => {
     const u = await pick("UC1");
     await runIt(u);
     const live = screen.getByTestId("run-announce");
-    expect(live.textContent).toBe("UC1 finished: PERMIT, matches the catalog label.");
+    expect(live.textContent).toBe("t finished: PERMIT, matches the catalog label.");
     expect(live.getAttribute("aria-live")).toBe("polite");
     expect(screen.getByTestId("result").closest("[aria-live]")).toBeNull();
   });

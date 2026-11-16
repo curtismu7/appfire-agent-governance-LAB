@@ -33,7 +33,7 @@ test('UC1 banking: the exact AI-DEMO2 order of the hops that ran, then the not-i
   const plan = r.hops.find((h) => h.kind === 'llm-plan');
   assert.equal(plan.from, 'agent'); assert.equal(plan.to, 'llm');
   assert.equal(plan.request.body.model, 'scripted-intent-match (mock)'); assert.deepEqual(plan.response.body.tool_calls, [{ name: 'get_account_balance', arguments: {} }]);
-  assert.deepEqual(r.hops.find((h) => h.kind === 'agent-receive').kv, [['routing', 'Scripted intent match'], ['matched use case', 'UC1']]);
+  assert.deepEqual(r.hops.find((h) => h.kind === 'agent-receive').kv, [['routing', 'Scripted intent match'], ['matched use case', 'Delegated access (consent only)']]);
   const az = r.hops.find((h) => h.kind === 'authorize-decision');
   assert.equal(az.from, 'bff'); assert.equal(az.to, 'authorize');
   const api = r.hops.find((h) => h.kind === 'api-call');
@@ -212,7 +212,7 @@ test('brain and said: the prompt hop carries what was typed, the agent names the
     const text = JSON.stringify(r);
     assert.equal(text.split(JSON.stringify(said).slice(1, -1)).length - 1, 1, 'said appears once: on the prompt hop');
     assert.ok(!text.includes('<script>alert(1)') || r.hops.filter((h) => JSON.stringify(h).includes('<script>')).map((h) => h.kind).join() === 'prompt');
-    const routing = brain === 'llama' ? 'llama.cpp picked UC1 (local model, mock run)' : 'Scripted intent match';
+    const routing = brain === 'llama' ? 'llama.cpp picked “Delegated access (consent only)” (local model, mock run)' : 'Scripted intent match';
     assert.equal(r.hops.find((h) => h.kind === 'agent-receive').response.body.routing, routing);
     assert.match(r.hops.find((h) => h.kind === 'llm-plan').note, new RegExp(`^${routing.replace(/[().]/g, '\\$&')}`));
   }

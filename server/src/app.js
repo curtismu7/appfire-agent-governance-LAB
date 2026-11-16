@@ -383,7 +383,7 @@ export function createApp({
         const why = mockSignInRefusal(mockCtx(req));
         if (why) {
           // A use case that cannot run Real is run on the mock engine instead (owner 2026-11-16); if the mock engine is not available here, say so.
-          if (gate) return res.status(403).json({ error: 'mock_in_real_refused', detail: `${uc.id} cannot run Real (${gate.reason}) and the mock engine is not available here to run it instead: ${why}`, live: liveNote(uc) });
+          if (gate) return res.status(403).json({ error: 'mock_in_real_refused', detail: `“${uc.title}” cannot run Real (${gate.reason}) and the mock engine is not available here to run it instead: ${why}`, live: liveNote(uc) });
           return res.status(403).json({ error: 'mock_signin_refused', detail: why });
         }
         const out = await workspaces.write(id, (s) => {

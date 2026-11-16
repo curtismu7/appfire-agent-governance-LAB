@@ -23,7 +23,7 @@ export default function FullPageEvidence({ page, onPage, onBack, catalog, select
       </aside>
       <section className="fullpage__main" aria-label={`${title}, full page`}>
         <header className="fullpage__head">
-          <h2 className="fullpage__title">{run ? `${run.useCase?.id} ${run.useCase?.title}` : title}</h2>
+          <h2 className="fullpage__title">{run ? `${run.useCase?.title}` : title}</h2>
           {run && <Tag state={outcomeState(run.outcome)} testId="full-outcome">{run.outcome}</Tag>}
           {running && <Tag state="info">running</Tag>}
           <span className="spacer" />
