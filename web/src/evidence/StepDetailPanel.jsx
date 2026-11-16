@@ -3,6 +3,8 @@ import { Tag } from "./Tag";
 import { actorOf, readPref, STAGE_STATE, txt, verdictState, verdictWord, withSkipped, writePref } from "./lanes";
 import { HttpMessage, KeyFacts } from "../components/HttpMessage";
 import { Json } from "../components/JsonPane";
+import { ExchangeList } from "../components/ExchangeList";
+import { pairedCalls } from "../exchanges";
 import "./evidence.css";
 
 // One hop's full detail, ported from AI-DEMO2's StepDetailPanel and ordered claim before evidence: what happened, the
@@ -90,6 +92,7 @@ export default function StepDetailPanel({ hops = [], selected = null, onSelect, 
   const diff = h.claimDiff && (h.claimDiff.before || h.claimDiff.after) ? h.claimDiff : null;
   const changed = Boolean(diff) || kv.length > 0;
   const d = h.decision;
+  const calls = pairedCalls(h);
 
   return (
     <section className="ev-root sdp" aria-label={`Step ${h.n} detail`} data-testid="step-detail" style={{ "--ev-scale": zoom / 100 }}
@@ -155,10 +158,19 @@ export default function StepDetailPanel({ hops = [], selected = null, onSelect, 
         </div>
 
         <div className="sdp__col">
-          <h4>Request</h4>
-          {hasMsg(h.request) ? <HttpMessage msg={h.request} label={`Step ${h.n} request`} /> : <p className="ev-muted">No request recorded.</p>}
-          <h4>Response</h4>
-          {hasMsg(h.response) ? <HttpMessage msg={h.response} label={`Step ${h.n} response`} /> : <p className="ev-muted">No response recorded.</p>}
+          {calls ? (
+            <>
+              <h4>Calls ({calls.request.length})</h4>
+              <ExchangeList request={calls.request} response={calls.response} />
+            </>
+          ) : (
+            <>
+              <h4>Request</h4>
+              {hasMsg(h.request) ? <HttpMessage msg={h.request} label={`Step ${h.n} request`} /> : <p className="ev-muted">No request recorded.</p>}
+              <h4>Response</h4>
+              {hasMsg(h.response) ? <HttpMessage msg={h.response} label={`Step ${h.n} response`} /> : <p className="ev-muted">No response recorded.</p>}
+            </>
+          )}
           {h.traceparent && <p className="ev-muted">traceparent <span className="ev-mono">{txt(h.traceparent)}</span></p>}
         </div>
 

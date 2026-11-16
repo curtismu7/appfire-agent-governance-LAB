@@ -194,3 +194,37 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 .evcol .sdp__cols[data-rfc] { grid-template-columns: minmax(0, 1fr); }
 /* An object claim (act, cnf) in the claim diff sits in a narrow table cell: its label goes above its value there. */
 .sdp__diff .jform__row { grid-template-columns: minmax(0, 1fr); }
+
+/* The calls of a gateway step as cards (ExchangeList): one line per call, the detail on a click, the token a collapsed chip. */
+.xch { display: grid; gap: 8px; min-width: 0; font-size: 13px; }
+.xch__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; }
+.xch__link { background: none; border: 0; padding: 2px 4px; color: var(--text); text-decoration: underline; cursor: pointer; font: inherit; }
+.xch__card { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; min-width: 0; }
+.xch__row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border: 0; background: none; color: var(--text); text-align: left; cursor: pointer; font: inherit; min-width: 0; }
+.xch__row:hover { background: var(--surface-2); }
+.xch__n { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--surface-2); border: 1px solid var(--border); }
+.xch__what { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.xch__rpc { font-weight: 700; font-size: 13px; }
+.xch__mono { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.xch__muted { color: var(--muted); font-size: 12px; }
+.xch__caret { flex: none; color: var(--muted); font-size: 11px; transition: transform 0.15s; }
+.xch__card[data-open="true"] .xch__caret { transform: rotate(90deg); }
+.xch__chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); font-size: 12px; font-weight: 600; max-width: 100%; overflow-wrap: anywhere; }
+.xch__chip[data-kind="method"] { border-color: var(--status-ok); color: var(--status-ok); }
+.xch__chip[data-kind="status"][data-state="ok"] { border-color: var(--status-ok); color: var(--status-ok); }
+.xch__chip[data-kind="status"][data-state="info"] { border-color: var(--status-info); color: var(--status-info); }
+.xch__chip[data-kind="status"][data-state="warn"] { border-color: var(--status-warn); color: var(--status-warn); }
+.xch__chip[data-kind="status"][data-state="bad"] { border-color: var(--danger-text); color: var(--danger-text); }
+.xch__detail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 10px 12px 12px; border-top: 1px solid var(--border); }
+.xch__col { min-width: 0; }
+.xch__h { margin: 0 0 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.xch__kv { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: 4px 10px; margin: 0 0 6px; align-items: start; }
+.xch__items { display: flex; flex-wrap: wrap; gap: 4px; }
+.xch__tok { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; max-width: 100%; padding: 2px 8px; border-radius: 8px; border: 1px solid var(--status-warn); background: var(--surface-2); color: var(--text); text-align: left; cursor: pointer; font: inherit; font-size: 12px; }
+.xch__claims { display: grid; gap: 3px; margin: 6px 0 0; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); }
+.xch__claim { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 8px; }
+.xch__whole { word-break: break-all; }
+.xch__more { margin: 4px 0; }
+.xch__more > summary { cursor: pointer; font-size: 12px; }
+@media (min-width: 900px) { .xch__detail { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; } .evcol .xch__detail { grid-template-columns: minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .xch__caret { transition: none; } }

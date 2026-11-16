@@ -35,7 +35,7 @@ export function HttpMessage({ msg, label }) {
 
 // ---- Key facts: the few things a reader looks for in a step, pulled out and coloured ---------------------------------------------------------
 const JWT = /^eyJ[\w-]{4,}\.[\w-]{4,}\.[\w-]*$/;
-function claimsOf(raw) {
+export function claimsOf(raw) {
   try {
     const t = raw.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
     const bin = atob(t + "=".repeat((4 - (t.length % 4)) % 4));
