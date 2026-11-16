@@ -93,3 +93,12 @@ export const HOSTED_REAL_NOTE = "Mock only on the hosted copy. Run the lab local
 
 // The hop the evidence opens on after a run: the one that decided or stopped it, else none (the visitor clicks).
 export const focusHop = (run) => (run?.hops || []).find((h) => h.decision || (h.verdict && h.verdict !== "ok" && h.verdict !== "skip"))?.n ?? null;
+
+// What the mock phone says it is asking about (owner, 2026-11-16: a use-case id means nothing to an audience): the agenda's words for the control that held
+// the call, never the catalog id or title.
+export function holdWords(outcome) {
+  if (outcome === "STEP_UP") return "A higher-risk write needs a second factor";
+  if (outcome === "HITL_REQUIRED") return "A higher-risk write needs a person to approve it";
+  return "The gateway holds this call for approval";
+}
+
