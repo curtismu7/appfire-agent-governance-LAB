@@ -731,6 +731,24 @@ describe("decision card and the session walkthrough (agenda)", () => {
     expect(screen.queryByTestId("agenda-steps")).toBeNull();
   });
 
+  test("Presenter mode puts a caption over the Sequence: what to say for the selected step, Next walks the run; outside presenter mode there is none", async () => {
+    await boot();
+    const u0 = await pick("UC1");
+    await runIt(u0);
+    await screen.findByTestId("decision-card");
+    expect(screen.queryByTestId("hop-caption")).toBeNull();
+    const u = userEvent.setup();
+    await u.keyboard("p");
+    expect(screen.getByTestId("caption-start")).toBeTruthy();
+    await u.click(screen.getByTestId("caption-start"));
+    expect(screen.getByTestId("caption-say").textContent.length).toBeGreaterThan(20);
+    const first = screen.getByTestId("caption-say").textContent;
+    await u.click(screen.getByTestId("caption-next"));
+    expect(screen.getByTestId("caption-say").textContent).not.toBe(first);
+    await u.keyboard("{Escape}");
+    expect(screen.queryByTestId("hop-caption")).toBeNull();
+  });
+
   test("the demo guide follows the agenda: seven steps, one Run button per use case, no mention of the old brief", async () => {
     await boot();
     const u = userEvent.setup();

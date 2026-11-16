@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import SequenceView from "../evidence/SequenceView";
 import MovieReel from "../evidence/MovieReel";
 import StepDetailPanel from "../evidence/StepDetailPanel";
+import HopCaption from "./HopCaption";
 import DiagramView from "./DiagramView";
 import TokenView from "./TokenView";
 import { DIAGRAMS, VIEWS, VIEW_LABEL } from "../quickConfig";
@@ -107,6 +108,7 @@ export default function EvidenceColumn({ run, selHop, onSelect, config, onTab, o
               <button key={v} type="button" aria-pressed={tab === v} aria-controls="evpanel" onClick={() => onTab(v)} data-testid={`evtab-${v}`}>{VIEW_LABEL[v]}</button>
             ))}
           </div>
+          {config.presenter && (tab === "sequence" || tab === "reel") && hops.length > 0 && <HopCaption hops={hops} selected={selHop} onSelect={onSelect} />}
           <div id="evpanel" role="region" aria-label={tab ? `${VIEW_LABEL[tab]} view` : "Evidence view"} className="evcol__panel" data-view={tab || "none"}>
             {!tab && <p className="muted" data-testid="no-view">No evidence view is embedded. Pick a tab, or turn one on in Quick Config.</p>}
             {tab === "sequence" && <SequenceView hops={hops} selected={selHop} onSelect={onSelect} />}
