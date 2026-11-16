@@ -12,7 +12,7 @@ import QuickConfig from "./components/QuickConfig";
 import SetupSidebar, { VerticalSelect } from "./components/SetupSidebar";
 import Rail from "./rail/Rail";
 import { getJson, postJson, resetWorkspace } from "./api";
-import { EXTRAS, HOSTED_REAL_NOTE, newTraceparent } from "./lib";
+import { EXTRAS, HOSTED_REAL_NOTE, focusHop, newTraceparent } from "./lib";
 import { matchPrompt, reasoningOf } from "./chat";
 import { isHandoff } from "./handoff";
 import { chooseTab, cleanConfig, loadConfig, saveConfig, setView } from "./quickConfig";
@@ -22,6 +22,8 @@ import ShelfLink from "./components/ShelfLink.jsx";
 import VerifyMark from "./components/VerifyMark.jsx";
 import DemoGuide from "./components/DemoGuide";
 import AgendaSteps from "./components/AgendaSteps";
+import ComparePage from "./components/ComparePage";
+import AgentInstructions from "./components/AgentInstructions";
 import { DEMO_GUIDE } from "./demoGuide";
 import MockPhone from "./components/MockPhone";
 import SignInDialog from "./components/SignInDialog";
@@ -38,8 +40,8 @@ export const BASE_NAV = [
   { id: "talk", label: "Talk track" },
 ];
 const EXTRA_PREFIX = "page-";
-// Full-page evidence views of the agent area (#sequence, #reel): the nav keeps Agent selected.
-export const FULL_PAGES = ["sequence", "reel"];
+// Full-page evidence views of the agent area (#sequence, #reel, #compare): the nav keeps Agent selected.
+export const FULL_PAGES = ["sequence", "reel", "compare"];
 // The banner is never blank and never claims one mode before it knows: until the story answers it says both, honestly.
 export const BANNER_UNKNOWN = "SIMULATED in MOCK mode, REAL only in REAL mode (loopback only). Mock: an engine produces every token, hop and decision offline. Real: a real sign-in, token exchange and Agent Gateway call to the owner's PingOne and SE, for the use cases SE serves; every hop says REAL or MOCK.";
 const PRESENTER_TALK = { agent: ["say-first", "tracks", "delegation", "live"], runs: ["honesty"], diagram: ["delegation", "obligations", "attacks"], talk: [], extra: ["obligations", "honesty"] };
@@ -51,8 +53,6 @@ const savedTheme = () => { try { const t = window.localStorage.getItem(THEME_KEY
 const applyTheme = (t) => { const root = document.documentElement; if (t === "light" || t === "dark") root.setAttribute("data-theme", t); else root.removeAttribute("data-theme"); };
 const viewFromHash = () => window.location.hash.replace("#", "");
 const resultKey = (id, vertical, persona, mode) => `${id}|${vertical}|${persona}|${mode}`;
-// The hop the evidence opens on after a run: the one that decided or stopped it, else none (the visitor clicks).
-const focusHop = (run) => (run?.hops || []).find((h) => h.decision || (h.verdict && h.verdict !== "ok" && h.verdict !== "skip"))?.n ?? null;
 
 export default function App() {
   // Resume (sessionStorage per workspace, ids and shown text only; see resume.js), read once before the first render, and ONLY when the page
@@ -69,6 +69,8 @@ export default function App() {
   const [persona, setPersona] = useState(resumed?.persona || "standard");
   const [catalog, setCatalog] = useState(null);
   const [prompts, setPrompts] = useState([]);
+  const [instrConfig, setInstrConfig] = useState(null); // the default instructions, the presets and the override phrases (GET /api/instructions)
+  const [instrEdit, setInstrEdit] = useState(null); // the edited instructions, or null while the default is in use
   const [selectedId, setSelectedId] = useState(resumed?.selectedId ?? null);
   const [results, setResults] = useState({});
   const [running, setRunning] = useState(false);
@@ -142,6 +144,12 @@ export default function App() {
   useEffect(() => {
     let live = true; // a late catalog for a vertical the visitor has already left is dropped
     getJson(`/api/usecases?vertical=${encodeURIComponent(vertical)}`).then((j) => { if (live) setCatalog(j); }, (e) => { if (live) setError(e.message); });
+    return () => { live = false; };
+  }, [vertical]);
+  useEffect(() => {
+    let live = true; // the agent's instructions for this vertical; an edit made for another vertical is dropped (it names that vertical's money)
+    setInstrConfig(null); setInstrEdit(null);
+    getJson(`/api/instructions?vertical=${encodeURIComponent(vertical)}`).then((j) => { if (live) setInstrConfig(j); }, () => {});
     return () => { live = false; };
   }, [vertical]);
   useEffect(() => {
@@ -226,7 +234,7 @@ export default function App() {
     // A typed or chip turn tells the server what was said and which brain actually picked the use case ("llama" only when llama.cpp did;
     // a fallback is "scripted"). A picked or previewed run sends neither.
     const typed = turn && turn.how !== "picked" ? { said: String(turn.said).slice(0, 400), brain: turn.how === "llm" ? "llama" : "scripted" } : {};
-    const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(extra ?? {}) }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
+    const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(mode !== "live" && instrEdit !== null ? { instructions: instrEdit } : {}), ...(extra ?? {}) }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
     if (mine !== runSeq.current) return; // a Reset or a newer run took over
     setRunning(false);
     // Real runs as the person: no sign-in yet opens the Sign in dialog, and the run goes again once it succeeds.
@@ -345,6 +353,7 @@ export default function App() {
   // Reset: the server clears this workspace's mode and runs; results, the chat, extra pages and the diagram go back to the start.
   const reset = useCallback(async () => {
     runSeq.current += 1;
+    setInstrEdit(null);
     dropPick();
     setRunning(false);
     const ok = await resetWorkspace().catch(() => false);
@@ -450,7 +459,8 @@ export default function App() {
               {story.talkTrack.filter((t) => sayIds.includes(t.id)).map((t) => <p key={t.id}><strong>{t.title}.</strong> {t.say}</p>)}
             </aside>
           )}
-          {current === "agent" && page && (
+          {current === "agent" && page === "compare" && <ComparePage vertical={vertical} onBack={() => select("agent")} />}
+          {current === "agent" && page && page !== "compare" && (
             <FullPageEvidence page={page} onPage={select} onBack={() => select("agent")} catalog={catalog} selectedId={selectedId} failed={!catalog && !!error}
               onPickRun={(id) => { pick(id); const u = allUc.find((x) => x.id === id); startRun(u, null, personaFor(u) || persona); }}
               run={evRun} running={running} selHop={selHop} onSelect={setSelHop} verticalSelect={verticalSelect} />
@@ -468,7 +478,8 @@ export default function App() {
               )}
               <div className="work">
                 <AgentColumn agent={cast.castAgent} brand={cast.castBrand} userId={userId} vertical={vertical} verticalLabel={verticalLabel} stub={stub} prompts={prompts} turns={shownTurns}
-                  status={busy ? "running" : statusOf(lastTurn)} onSay={say} onHop={onHop} onPreview={preview} running={busy} />
+                  status={busy ? "running" : statusOf(lastTurn)} onSay={say} onHop={onHop} onPreview={preview} running={busy}
+                  instructions={<AgentInstructions config={instrConfig} text={instrEdit} onText={setInstrEdit} mode={mode} />} />
                 {qcOpen ? (
                   <QuickConfig id="quick-config" mode={mode} liveReason={liveReason} realTitle={realTitle} hostedOnly={hostedOnly} onMode={chooseMode} config={cfg}
                     brainInfo={brainInfo} onBrain={(b) => setCfg((c) => ({ ...c, brain: b }))} onRouting={(r) => setCfg((c) => ({ ...c, routing: r }))}

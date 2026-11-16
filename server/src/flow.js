@@ -12,6 +12,7 @@ import { verifyMockJwt, signMockJwt, tokenView } from './mockjwt.js';
 import { GATEWAY, decide, edgePolicy } from './policy.js';
 import { PROBE_DENIED, proposalFor, replyFor } from './replies.js';
 import { situationOf } from './situations.js';
+import { STEER_AMOUNT, instructionsFor } from './instructions.js';
 import { formatTraceparent, newTrace } from './trace.js';
 import { enrichHop } from './vendor/hopDetail.mjs';
 import { mockExchange } from './gatewayExchanges.js';
@@ -30,7 +31,7 @@ export function isFlow(uc) {
 }
 export const chainOf = (uc) => (Array.isArray(situationOf(uc.id).chain) ? situationOf(uc.id).chain : uc.evidence.tokenChain);
 
-function makeCtx(uc, { cast, vertical, persona, traceparent, seed, brain, said }) {
+function makeCtx(uc, { cast, vertical, persona, traceparent, seed, brain, said, instructions }) {
   const sit = situationOf(uc.id);
   const person = personaOf(cast, persona || sit.persona || 'standard');
   // A use case with no primary tool in the catalog is run against the vertical's everyday read tool (lab reading).
@@ -46,6 +47,14 @@ function makeCtx(uc, { cast, vertical, persona, traceparent, seed, brain, said }
     agent: { id: cast.castAgent, label: cast.castAgent }, agents: [],
     user: null, exchanged: null, // the user token and the latest exchanged token (signed views)
   };
+  // The agent's instructions. An instruction the simulated agent obeys (an override phrase) makes it propose the riskiest call it can: the vertical's
+  // write tool at STEER_AMOUNT, instead of what the customer asked. Only a use case whose agent plans a tool call and stages no attack of its own is
+  // steered. The policy that decides afterwards is untouched: it reads the call, never the instructions.
+  ctx.instructions = instructionsFor(cast, instructions);
+  if (ctx.instructions.steered && PLANS.has(uc.id) && !ctx.event && !sit.public && cast.castWriteTool) {
+    ctx.steered = { asked: { tool: ctx.tool, amount: ctx.amount ?? null }, proposed: { tool: cast.castWriteTool, amount: STEER_AMOUNT }, reasons: ctx.instructions.reasons };
+    ctx.tool = cast.castWriteTool; ctx.role = 'write'; ctx.amount = STEER_AMOUNT; ctx.scope = SCOPE_FOR_ROLE.write || ctx.scope;
+  }
   ctx.brain = brain === 'llama' ? 'llama' : 'scripted';
   ctx.said = typeof said === 'string' ? said : undefined;
   ctx.rootSpan = trace.span();
@@ -421,10 +430,12 @@ function frameAfterSignIn(ctx) {
   traceGateway(ctx, listHop, 'Gateway: tools/list', [note('catalog', 'Tool catalog', 'info', pub ? `public catalog: no token needed; the simulation listed ${ctx.tool}` : `the simulation answered with ${ctx.tool}, the one tool this run plans to call; it computes no per-caller filter in this lab`)]);
   hop(ctx, 'llm-plan', {
     from: 'agent', to: 'llm', url: `${ctx.urls.llm}/v1/chat/completions`,
-    body: { model: ctx.brain === 'llama' ? 'llama.cpp (local model; the run itself is mock)' : 'scripted-intent-match (mock)', messages: [{ role: 'user', content }], tools: [ctx.tool] },
-    resBody: { tool_calls: [{ name: ctx.tool, arguments: ctx.sit.args || {} }] },
-    note: `${routingOf(ctx)}. The model proposes, policy decides; it never sees a token`,
-    detail: { kv: [['brain', routingOf(ctx)]] },
+    body: { model: ctx.brain === 'llama' ? 'llama.cpp (local model; the run itself is mock)' : 'scripted-intent-match (mock)', messages: [{ role: 'system', content: ctx.instructions.text }, { role: 'user', content }], tools: [ctx.tool] },
+    resBody: { tool_calls: [{ name: ctx.tool, arguments: ctx.steered ? { amount: ctx.steered.proposed.amount } : (ctx.sit.args || {}) }] },
+    note: ctx.steered
+      ? `The instructions steered the agent (lab-simulated obedience): the customer asked for ${ctx.steered.asked.tool}, the agent proposed ${ctx.steered.proposed.tool} for ${ctx.steered.proposed.amount}. The model proposes, policy decides; it never sees a token`
+      : `${routingOf(ctx)}. The model proposes, policy decides; it never sees a token`,
+    detail: { kv: [['brain', routingOf(ctx)], ['instructions', ctx.instructions.default ? 'default' : 'edited'], ...(ctx.steered ? [['steered by', ctx.steered.reasons.join(', ')], ['asked for', ctx.steered.asked.tool], ['proposed', `${ctx.steered.proposed.tool} ${ctx.steered.proposed.amount}`]] : [])] },
   });
 }
 
@@ -548,5 +559,7 @@ export function runUseCase(uc, input) {
   else if (!ctx.pending) reply(ctx); // AI-DEMO2 cuts at the first error and a held run stops at the hold: only a finished run replies
   skipped(ctx);
   const outcome = finalOutcome(ctx);
-  return { ...base, kind: 'flow', computed: true, persona: ctx.person.key, outcome, matchesExpected: outcome === uc.expectedOutcome, hops: enrichAll(ctx), gatewayTrace: ctx.gwTrace, tokens: ctx.tokens, traceId: ctx.trace.traceId, traceparent: formatTraceparent(ctx.trace.traceId, ctx.rootSpan), narration: narrate(ctx, outcome) };
+  // A steered run is not comparable with the catalog's label (the agent proposed something else), so it carries no match, and it says what steered it.
+  const steeredNote = ctx.steered ? ` The agent's instructions steered it to propose ${ctx.steered.proposed.tool} for ${ctx.steered.proposed.amount} (lab-simulated obedience).` : '';
+  return { ...base, kind: 'flow', computed: true, persona: ctx.person.key, outcome, matchesExpected: ctx.steered ? null : outcome === uc.expectedOutcome, instructions: { text: ctx.instructions.text, default: ctx.instructions.default, steered: ctx.instructions.steered, reasons: ctx.instructions.reasons }, steered: ctx.steered || null, hops: enrichAll(ctx), gatewayTrace: ctx.gwTrace, tokens: ctx.tokens, traceId: ctx.trace.traceId, traceparent: formatTraceparent(ctx.trace.traceId, ctx.rootSpan), narration: narrate(ctx, outcome) + steeredNote };
 }

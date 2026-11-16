@@ -72,7 +72,7 @@ function Starters({ agent, brand, prompts, typeAndSend, stub }) {
   );
 }
 
-export default function AgentColumn({ agent, brand, userId, vertical, verticalLabel, stub, prompts, turns, status, onSay, onHop, onPreview, running }) {
+export default function AgentColumn({ agent, brand, userId, vertical, verticalLabel, stub, prompts, turns, status, onSay, onHop, onPreview, running, instructions }) {
   const [text, setText] = useState("");
   const endRef = useRef(null);
   // Keep the newest reply in view inside the column's own scroller (never scrollIntoView, which would also scroll the page).
@@ -119,6 +119,7 @@ export default function AgentColumn({ agent, brand, userId, vertical, verticalLa
         <div ref={endRef} />
       </div>
       <div className="agentcol__foot">
+        {instructions}
         <WhatToType prompts={prompts} vertical={vertical} verticalLabel={verticalLabel} stub={stub} typeAndSend={typeAndSend} disabled={running} />
         <form className={`composer${sending ? " composer--sending" : ""}`} onSubmit={send}>
           <label className="sr-only" htmlFor="composer-input">Message the agent</label>

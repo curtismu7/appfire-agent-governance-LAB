@@ -12,6 +12,7 @@ import { HANDOFF_WHY } from "../chat";
 import { visible } from "../safeText";
 import { GoDeeper } from "./HandoffCard";
 import DecisionCard from "./DecisionCard";
+import PrivilegePanel from "./PrivilegePanel";
 
 // Why this run went the way it did: how the use case was chosen, then what the run did (chat.js reasoningOf). The chat shows only the reply.
 function Why({ steps, testId }) {
@@ -89,11 +90,13 @@ export default function EvidenceColumn({ run, selHop, onSelect, config, onTab, o
         <h2 className="evcol__title">Evidence</h2>
         <span className="muted" data-testid="evidence-count">{run ? `${run.useCase?.id} · ${ranCount(hops)} hops${notRunText(hops)}${run.kind === "real" ? " · REAL" : run.mode === "mock" ? " · MOCK engine" : run.mode === "live" ? " · LIVE, identity provider only" : ""}` : "nothing run yet"}</span>
         <span className="spacer" />
+        <button type="button" onClick={() => onFull("compare")} data-testid="open-compare" title="Two runs side by side, in Mock: what is decided differently">Compare</button>
         <button type="button" onClick={() => onFull("sequence")} data-testid="full-sequence" title="The sequence view on a page of its own">Full page</button>
       </header>
       {showHandoff ? <HandoffSummary uc={uc} catalog={catalog} vertical={vertical} userId={userId} /> : (
         <>
           {run && <DecisionCard run={run} />}
+          {run && <PrivilegePanel run={run} />}
           {/* A Here + go deeper use case: the lab that covers this run in depth (moved out of the chat, owner 2026-11-09). */}
           {run && uc && run.useCase?.id === uc.id && <GoDeeper uc={uc} vertical={vertical} userId={userId} />}
           {run && <Why steps={why} testId="evidence-why" />}
