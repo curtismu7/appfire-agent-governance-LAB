@@ -211,6 +211,13 @@ try {
         check((await overflow()) <= 0, `${tag}: the diagram page does not scroll sideways`);
       }
       check(requests.slice(before).some((u) => u.includes('/api/diagram?') && u.includes('name=gateway-refusals')), `${tag}: the diagram was loaded by name from the server`);
+      // The Compare page: two runs side by side in Mock, with a risk strip in each decision card, and no sideways scroll at any viewport.
+      await page.evaluate(() => { window.location.hash = '#compare'; });
+      await t('page-compare').waitFor();
+      for (let i = 0; i < 60 && !((await t('decision-card').count()) === 2 && (await t('compare-running').count()) === 0); i++) await sleep(200);
+      check((await t('decision-card').count()) === 2 && (await t('risk-strip').count()) === 2, `${tag}: Compare shows two decision cards, each with a risk strip`);
+      check((await overflow()) <= 0, `${tag}: the Compare page does not scroll sideways`);
+      await t('back-to-chat').click(); await t('nav-diagram').click(); await t('dg-delegation-chain').waitFor(); // back where the flow continues
       await t('dg-delegation-chain').click(); await page.locator('.react-flow__node').first().waitFor(); await sleep(600);
       if (width < 600) {
         check(await t('diagram-hint').isVisible(), `${tag}: the diagram says it is wider than the screen and how to pan`);

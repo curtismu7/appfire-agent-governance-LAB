@@ -48,6 +48,26 @@ function verdictOf(outcome) {
   return null;
 }
 
+// The four controls a call can end in, from "nobody is asked" to "refused". The strip names the CONTROL, not the kind of request: a run
+// carries no read/write class, so none is invented here. Thresholds that pick a control are the lab's own (policy.js).
+export const RISK_RUNGS = [
+  { level: 1, control: "Proceeds automatically", word: "PERMIT" },
+  { level: 2, control: "Second factor first", word: "STEP_UP" },
+  { level: 3, control: "A person approves", word: "HITL_REQUIRED" },
+  { level: 4, control: "Refused", word: "DENY" },
+];
+
+// Which rung of the strip a run landed on; null when the run made no decision (guided, identity-provider-only, not completed).
+export function riskLevelOf(run) {
+  const o = String(run?.outcome || "");
+  if (run?.kind === "guided" || run?.computed === false || run?.kind === "live") return null;
+  const v = verdictOf(o);
+  if (v === "allowed") return 1;
+  if (v === "denied") return 4;
+  if (v === "escalated") return o === "STEP_UP" ? 2 : 3;
+  return null;
+}
+
 const WORD = { allowed: "ALLOWED", denied: "DENIED", escalated: "ESCALATED" };
 const TONE = { allowed: "ok", denied: "bad", escalated: "warn" };
 
@@ -56,10 +76,10 @@ export function decisionOf(run) {
   if (!run || typeof run !== "object") return null;
   const outcome = String(run.outcome || "");
   if (run.kind === "guided" || run.computed === false) {
-    return { verdict: "guided", word: "GUIDED", tone: "info", reason: "A guided page: the lab shows the catalog's label and does not decide anything here.", fields: [] };
+    return { verdict: "guided", word: "GUIDED", tone: "info", level: null, reason: "A guided page: the lab shows the catalog's label and does not decide anything here.", fields: [] };
   }
   if (run.kind === "live") {
-    return { verdict: "idp", word: "IDENTITY PROVIDER ONLY", tone: "info", reason: "Real, identity provider only: two calls, nothing past the identity provider, so no tool call was decided.", fields: [] };
+    return { verdict: "idp", word: "IDENTITY PROVIDER ONLY", tone: "info", level: null, reason: "Real, identity provider only: two calls, nothing past the identity provider, so no tool call was decided.", fields: [] };
   }
   const verdict = verdictOf(outcome);
   const { person, agent } = actors(run);
@@ -86,7 +106,7 @@ export function decisionOf(run) {
   }
   const decided = outcome ? (policy?.decision && policy.decision !== outcome ? `${outcome} (${policy.decision})` : outcome) : NOT_REACHED;
   return {
-    verdict: verdict || "other", word, tone, reason,
+    verdict: verdict || "other", word, tone, level: riskLevelOf(run), reason,
     fields: [
       { key: "agent", label: "Which agent acted", value: agent || NOT_REACHED },
       { key: "principal", label: "On whose behalf", value: person || NOT_REACHED },
@@ -95,4 +115,14 @@ export function decisionOf(run) {
       { key: "decision", label: "Decision", value: decided },
     ],
   };
+}
+
+// The rows of a side-by-side comparison of two runs: the verdict, then the five audit facts. A row is `differs` when the two sides say
+// different things, so the eye lands on what changed. Returns [] unless both runs exist.
+export function compareRows(a, b) {
+  const da = decisionOf(a), db = decisionOf(b);
+  if (!da || !db) return [];
+  const rows = [{ key: "verdict", label: "Verdict", left: da.word, right: db.word }];
+  for (const f of da.fields) rows.push({ key: f.key, label: f.label, left: f.value, right: db.fields.find((x) => x.key === f.key)?.value ?? NOT_REACHED });
+  return rows.map((r) => ({ ...r, differs: r.left !== r.right }));
 }

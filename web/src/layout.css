@@ -71,6 +71,33 @@
 .agenda__say { margin: 0 0 8px; line-height: 1.5; }
 .agenda__run { display: flex; flex-wrap: wrap; gap: 8px; }
 
+/* ===== risk strip (inside the decision card): which of the four controls this run landed on ===== */
+.risk { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; }
+.risk__rung { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 13px; }
+.risk__rung[aria-current="step"] { border-width: 3px; background: var(--surface-2); font-weight: 700; }
+.decision[data-tone="ok"] .risk__rung[aria-current="step"] { border-color: var(--status-ok); }
+.decision[data-tone="warn"] .risk__rung[aria-current="step"] { border-color: var(--status-warn); }
+.decision[data-tone="bad"] .risk__rung[aria-current="step"] { border-color: var(--danger-text); }
+.risk__n { font-weight: 700; }
+.risk__word { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+.risk__rung[aria-current="step"] .risk__word { color: var(--text); font-weight: 700; }
+@media (max-width: 600px) { .risk { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ===== compare page (#compare): two runs side by side ===== */
+.compare { display: grid; gap: 12px; min-width: 0; }
+.compare__head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.compare__title { margin: 0; }
+.compare__why { margin: 0; }
+.compare__scroll { overflow-x: auto; max-width: 100%; }
+.compare__tbl th { text-align: left; }
+.compare__tbl tr[data-diff="true"] td { font-weight: 700; }
+.compare__tbl tr[data-diff="true"] th { color: var(--accent-deep); }
+.compare__flag { font-weight: 400; }
+.compare__sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; min-width: 0; }
+.compare__side { min-width: 0; }
+.compare__sidehead { margin: 0 0 8px; font-size: 1rem; }
+@media (max-width: 900px) { .compare__sides { grid-template-columns: 1fr; } }
+
 .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
 .card-grid > * { min-width: 0; }
 .kv { display: grid; grid-template-columns: minmax(5rem, max-content) minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 13px; }

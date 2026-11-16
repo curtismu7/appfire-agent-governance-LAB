@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NOT_REACHED, decisionOf } from "./decision";
+import { NOT_REACHED, RISK_RUNGS, compareRows, decisionOf, riskLevelOf } from "./decision";
 
 // Hop and token shapes copied from real mock runs of the engine (UC1, UC7, UC8, UC13, UC16b, UC31); only the fields the card reads are kept.
 const hop = (kind, body, extra = {}) => ({ n: 1, kind, verdict: "ok", response: { body }, ...extra });
@@ -97,5 +97,54 @@ describe("decisionOf", () => {
   it("never throws on a sparse run", () => {
     expect(() => decisionOf({ outcome: "DENY" })).not.toThrow();
     expect(decisionOf({ outcome: "DENY" }).fields.every((f) => f.key === "decision" || f.value === NOT_REACHED)).toBe(true);
+  });
+});
+
+describe("risk strip level", () => {
+  it("places each run on the control it ended in: proceeds, second factor, a person, refused", () => {
+    expect(riskLevelOf(allowed)).toBe(1);
+    expect(riskLevelOf(stepUp)).toBe(2);
+    expect(riskLevelOf(human)).toBe(3);
+    expect(riskLevelOf(gatewayDeny)).toBe(4);
+    expect(riskLevelOf(injected)).toBe(4);
+    expect(riskLevelOf(bffDeny)).toBe(4);
+    expect(RISK_RUNGS.map((r) => r.word)).toEqual(["PERMIT", "STEP_UP", "HITL_REQUIRED", "DENY"]);
+  });
+
+  it("the card carries the level; Real outcomes map the same way; a hold with an approval is a person", () => {
+    expect(decisionOf(stepUp).level).toBe(2);
+    expect(riskLevelOf({ kind: "real", outcome: "REAL_PERMIT" })).toBe(1);
+    expect(riskLevelOf({ kind: "real", outcome: "REAL_HOLD" })).toBe(3);
+    expect(riskLevelOf({ kind: "real", outcome: "REAL_DENY" })).toBe(4);
+    expect(riskLevelOf({ outcome: "CIBA" })).toBe(3);
+  });
+
+  it("no level when no decision was made: guided, identity-provider-only, not completed, no run", () => {
+    expect(riskLevelOf({ kind: "guided", computed: false, outcome: "PERMIT" })).toBeNull();
+    expect(riskLevelOf({ kind: "live", outcome: "LIVE_OK" })).toBeNull();
+    expect(riskLevelOf({ kind: "real", outcome: "REAL_NO_ACT" })).toBeNull();
+    expect(riskLevelOf(null)).toBeNull();
+    expect(decisionOf({ kind: "guided", computed: false, outcome: "PERMIT" }).level).toBeNull();
+  });
+});
+
+describe("compareRows", () => {
+  it("lines up the verdict and the five facts, and marks only the rows that differ", () => {
+    const rows = compareRows(allowed, gatewayDeny);
+    expect(rows.map((r) => r.key)).toEqual(["verdict", "agent", "principal", "tool", "policy", "decision"]);
+    const diff = Object.fromEntries(rows.map((r) => [r.key, r.differs]));
+    expect(diff).toEqual({ verdict: true, agent: false, principal: false, tool: true, policy: true, decision: true });
+    expect(rows[0]).toMatchObject({ left: "ALLOWED", right: "DENIED" });
+  });
+
+  it("two runs that decide the same way differ on nothing but what they touched", () => {
+    const rows = compareRows(allowed, allowed);
+    expect(rows.every((r) => r.differs === false)).toBe(true);
+  });
+
+  it("returns nothing unless both runs exist", () => {
+    expect(compareRows(allowed, null)).toEqual([]);
+    expect(compareRows(null, allowed)).toEqual([]);
+    expect(compareRows(null, null)).toEqual([]);
   });
 });

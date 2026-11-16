@@ -89,6 +89,7 @@ export default function EvidenceColumn({ run, selHop, onSelect, config, onTab, o
         <h2 className="evcol__title">Evidence</h2>
         <span className="muted" data-testid="evidence-count">{run ? `${run.useCase?.id} · ${ranCount(hops)} hops${notRunText(hops)}${run.kind === "real" ? " · REAL" : run.mode === "mock" ? " · MOCK engine" : run.mode === "live" ? " · LIVE, identity provider only" : ""}` : "nothing run yet"}</span>
         <span className="spacer" />
+        <button type="button" onClick={() => onFull("compare")} data-testid="open-compare" title="Two runs side by side, in Mock: what is decided differently">Compare</button>
         <button type="button" onClick={() => onFull("sequence")} data-testid="full-sequence" title="The sequence view on a page of its own">Full page</button>
       </header>
       {showHandoff ? <HandoffSummary uc={uc} catalog={catalog} vertical={vertical} userId={userId} /> : (

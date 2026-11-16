@@ -44,7 +44,7 @@ export const DEMO_GUIDE = [
     short: "Allowed",
     title: "5 · A low-risk read is allowed automatically",
     req: "A low-risk, read-only request is allowed automatically.",
-    prove: "Run “show my balance”: the Decision card says ALLOWED, the tool ran, and nobody was asked.",
+    prove: "Run “show my balance”: the Decision card says ALLOWED, the tool ran, and nobody was asked. The strip under it shows which of the four controls it landed on. Press Compare to see it beside a denied call.",
     say: "Reads flow. Nobody approves a balance check, and the record is still written.",
     ucs: [{ uc: "UC1", label: "Run UC1 · show my balance" }],
   },
@@ -53,7 +53,7 @@ export const DEMO_GUIDE = [
     short: "Risk",
     title: "6 · A higher-risk request is denied, constrained or sent for approval",
     req: "A higher-risk write or sensitive-data request is denied, constrained or routed for approval, based on policy.",
-    prove: "Run the four in order. $600 steps up (ESCALATED: a second factor). $300 needs a person (ESCALATED: approve it on the mock phone). $2500 is refused (DENIED). The actor-injection attack is refused too: nothing is dispatched. The amounts are the lab's own; Appfire sets the real ones in policy.",
+    prove: "Run the four in order (or press Compare for “Second factor vs a person” and “Asked first vs refused”). $600 steps up (ESCALATED: a second factor). $300 needs a person (ESCALATED: approve it on the mock phone). $2500 is refused (DENIED). The actor-injection attack is refused too: nothing is dispatched. The amounts are the lab's own; Appfire sets the real ones in policy.",
     say: "Controlled autonomy. A risky write stops for a second factor, a riskier one for a person, and an out-of-bounds one is refused. A manipulated agent still meets the same decision, because the enforcement point is not the model.",
     ucs: [
       { uc: "UC7", label: "Run UC7 · $600 transfer" },

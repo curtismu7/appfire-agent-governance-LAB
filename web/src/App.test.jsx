@@ -741,3 +741,88 @@ describe("decision card and the session walkthrough (agenda)", () => {
     expect(screen.getByTestId("guide-run-escalate-UC13")).toBeTruthy();
   });
 });
+
+describe("risk strip and compare page", () => {
+  const answer = (over) => () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true, run: { ...runBody().run, ...over } }) });
+  const byId = (map) => (id, body) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true, run: { ...runBody(id).run, useCase: { id, track: "foundations", title: `t ${id}`, maturity: "works", flag: null }, ...(map[id + (body.persona ? `:${body.persona}` : "")] || map[id] || {}) } }) });
+  const current = () => [...document.querySelectorAll('[data-testid^="risk-"][aria-current="step"]')].map((n) => n.getAttribute("data-testid"));
+
+  test("the decision card carries a risk strip with the run's control marked: 1 for a permit, 2 for a step-up, 4 for a refusal", async () => {
+    await boot();
+    const u = await pick("UC1");
+    await runIt(u);
+    expect(await screen.findByTestId("risk-strip")).toBeTruthy();
+    expect(screen.getByTestId("risk-strip").querySelectorAll("li")).toHaveLength(4);
+    expect(current()).toEqual(["risk-1"]);
+    expect(screen.getByTestId("risk-1").textContent).toMatch(/this run · PERMIT/);
+    cleanup(); vi.unstubAllGlobals();
+    await boot({ runAnswer: answer({ outcome: "STEP_UP" }) });
+    await runIt(await pick("UC1"));
+    await screen.findByTestId("risk-strip");
+    expect(current()).toEqual(["risk-2"]);
+    cleanup(); vi.unstubAllGlobals();
+    await boot({ runAnswer: answer({ outcome: "DENY" }) });
+    await runIt(await pick("UC1"));
+    await screen.findByTestId("risk-strip");
+    expect(current()).toEqual(["risk-4"]);
+  });
+
+  test("a guided run has no risk strip", async () => {
+    await boot({ runAnswer: answer({ kind: "guided", computed: false, matchesExpected: null, outcome: "PERMIT" }) });
+    await runIt(await pick("UC1"));
+    await screen.findByTestId("decision-card");
+    expect(screen.queryByTestId("risk-strip")).toBeNull();
+  });
+
+  test("Compare opens #compare, runs the first pair fresh in Mock (mode: mock on every call), and shows both decisions with the rows that differ marked", async () => {
+    await boot({ runAnswer: byId({ UC31: { outcome: "DENY" } }) });
+    const u = userEvent.setup();
+    await u.click(screen.getByTestId("open-compare"));
+    await screen.findByTestId("page-compare");
+    expect(window.location.hash).toBe("#compare");
+    await waitFor(() => expect(screen.getAllByTestId("decision-card")).toHaveLength(2));
+    const posts = api.calls.filter((c) => c.method === "POST" && c.path.startsWith("/api/run/"));
+    expect(posts.map((c) => c.path).sort()).toEqual(["/api/run/UC1", "/api/run/UC31"]);
+    expect(posts.every((c) => c.body.mode === "mock")).toBe(true);
+    expect([...screen.getAllByTestId("decision-word")].map((n) => n.textContent)).toEqual(["ALLOWED", "DENIED"]);
+    expect(screen.getByTestId("compare-row-verdict").getAttribute("data-diff")).toBe("true");
+    expect(screen.getByTestId("compare-row-principal").getAttribute("data-diff")).toBe("false");
+    expect(screen.getByTestId("compare-row-verdict").textContent).toMatch(/differs/);
+    expect(document.querySelectorAll('[data-testid="sequence-view"]')).toHaveLength(2);
+  });
+
+  test("a preset re-runs both sides: UC21 premium and standard send their persona, and the previous pair is replaced", async () => {
+    await boot({ runAnswer: byId({ "UC21:standard": { outcome: "DENY_403" } }) });
+    const u = userEvent.setup();
+    await u.click(screen.getByTestId("open-compare"));
+    await waitFor(() => expect(screen.getAllByTestId("decision-card")).toHaveLength(2));
+    await u.click(screen.getByTestId("compare-person-tier"));
+    await waitFor(() => expect(api.calls.filter((c) => c.path === "/api/run/UC21")).toHaveLength(2));
+    const bodies = api.calls.filter((c) => c.path === "/api/run/UC21").map((c) => c.body);
+    expect(bodies.map((b) => b.persona).sort()).toEqual(["premium", "standard"]);
+    expect(bodies.every((b) => b.mode === "mock")).toBe(true);
+    await waitFor(() => expect([...screen.getAllByTestId("decision-word")].map((n) => n.textContent)).toEqual(["ALLOWED", "DENIED"]));
+    expect(screen.getByTestId("compare-person-tier").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("compare-why").textContent).toMatch(/premium and a standard customer/);
+  });
+
+  test("a side the server refuses shows the server's words and the other side still shows", async () => {
+    await boot({ runAnswer: (id) => (id === "UC31"
+      ? Promise.resolve({ ok: false, status: 403, json: () => Promise.resolve({ error: "refused", detail: "this run was refused by the server" }) })
+      : Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(runBody(id)) })) });
+    await userEvent.setup().click(screen.getByTestId("open-compare"));
+    expect((await screen.findByTestId("compare-error")).textContent).toBe("this run was refused by the server");
+    await waitFor(() => expect(screen.getAllByTestId("decision-card")).toHaveLength(1));
+    expect(screen.queryByTestId("compare-table")).toBeNull();
+  });
+
+  test("a direct #compare link opens the page, and Back to chat returns to the agent", async () => {
+    window.location.hash = "#compare";
+    api = mockApi(); vi.stubGlobal("fetch", api);
+    render(<App />);
+    await screen.findByTestId("page-compare");
+    await userEvent.setup().click(screen.getByTestId("back-to-chat"));
+    await screen.findByTestId("uc-UC1");
+    expect(screen.queryByTestId("page-compare")).toBeNull();
+  });
+});

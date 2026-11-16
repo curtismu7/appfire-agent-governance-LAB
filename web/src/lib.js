@@ -90,3 +90,6 @@ export const HOT_CLAIMS = ["intent", "amr"];
 
 // The hosted build (mock only): the note beside its disabled Real button.
 export const HOSTED_REAL_NOTE = "Mock only on the hosted copy. Run the lab locally for Real.";
+
+// The hop the evidence opens on after a run: the one that decided or stopped it, else none (the visitor clicks).
+export const focusHop = (run) => (run?.hops || []).find((h) => h.decision || (h.verdict && h.verdict !== "ok" && h.verdict !== "skip"))?.n ?? null;
