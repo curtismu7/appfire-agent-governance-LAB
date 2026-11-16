@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { outcomeState } from "../lib";
+import { outcomeState, pickFullPack, verticalName } from "../lib";
 import { routeOf } from "../handoff";
 import { Tag } from "./Bits";
 import Turn from "./Turn";
@@ -11,7 +11,7 @@ const STATUS = { idle: ["Ready", "info"], running: ["Running", "info"], waiting:
 
 // "Banking · Appfire Platform": the vertical's name, then its brand when that says something more.
 export const verticalHeading = (id, label) => {
-  const name = String(id || "").replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
+  const name = verticalName(id);
   return label && label.toLowerCase() !== name.toLowerCase() ? `${name} · ${label}` : name || label || "";
 };
 const opensApp = (p) => p.route === "Hand off";
@@ -30,7 +30,7 @@ function Chips({ list, typeAndSend, disabled, label, testId }) {
 
 // What to type, per vertical: always visible above the input (owner rule). The prompts that run here come first; the ones whose use case opens
 // its own app sit in their own group. A stub vertical says it has no demo pack yet.
-export function WhatToType({ prompts, vertical, verticalLabel, stub, typeAndSend, disabled, step = null, onNextStep }) {
+export function WhatToType({ prompts, vertical, verticalLabel, verticals, stub, typeAndSend, disabled, step = null, onNextStep }) {
   const heading = verticalHeading(vertical, verticalLabel);
   const at = step ? DEMO_GUIDE.findIndex((g) => g.id === step.id) : -1;
   const mine = step ? promptsOfStep(step.id, prompts) : [];
@@ -38,7 +38,7 @@ export function WhatToType({ prompts, vertical, verticalLabel, stub, typeAndSend
   return (
     <section className="wtt" aria-label={`What to type, ${heading}`} data-testid="what-to-type">
       <p className="kicker" data-testid="wtt-heading">What to type · {step ? `Step ${at + 1} · ${step.short} · ${heading}` : heading}</p>
-      {stub ? <p className="muted" data-testid="wtt-stub">{heading}: no demo pack yet. Pick Banking, Healthcare or Retail to chat.</p> : prompts.length === 0 ? <p className="muted">Loading the prompts…</p> : step ? (
+      {stub ? <p className="muted" data-testid="wtt-stub">{heading}: no demo pack yet. {pickFullPack(verticals)} to chat.</p> : prompts.length === 0 ? <p className="muted">Loading the prompts…</p> : step ? (
         // Presenter mode: only this step's prompts, then on to the next step (the same Next as the step bar).
         <div className="wtt__groups" data-testid="wtt-step">
           {mine.length ? <Chips list={mine} typeAndSend={typeAndSend} disabled={disabled} label={`Prompts for step ${at + 1}`} testId={`wtt-step-${step.id}`} /> : <p className="muted" data-testid="wtt-none">No typed prompt for this step: use its buttons above.</p>}
@@ -93,7 +93,7 @@ function Starters({ agent, brand, prompts, typeAndSend, stub, step = null }) {
   );
 }
 
-export default function AgentColumn({ agent, brand, userId, vertical, verticalLabel, stub, prompts, turns, status, onSay, onHop, onPreview, running, instructions, step = null, onNextStep }) {
+export default function AgentColumn({ agent, brand, userId, vertical, verticalLabel, verticals, stub, prompts, turns, status, onSay, onHop, onPreview, running, instructions, step = null, onNextStep }) {
   const [text, setText] = useState("");
   const endRef = useRef(null);
   // Keep the newest reply in view: inside the chat box, and the page too when the (twice as tall) column runs below the window (follow.js).
@@ -135,7 +135,7 @@ export default function AgentColumn({ agent, brand, userId, vertical, verticalLa
       </div>
       <div className="agentcol__foot">
         {instructions}
-        <WhatToType prompts={prompts} vertical={vertical} verticalLabel={verticalLabel} stub={stub} typeAndSend={typeAndSend} disabled={running} step={step} onNextStep={onNextStep} />
+        <WhatToType prompts={prompts} vertical={vertical} verticalLabel={verticalLabel} verticals={verticals} stub={stub} typeAndSend={typeAndSend} disabled={running} step={step} onNextStep={onNextStep} />
       </div>
       <div className="agentcol__compose">
         <form className={`composer${sending ? " composer--sending" : ""}`} onSubmit={send}>

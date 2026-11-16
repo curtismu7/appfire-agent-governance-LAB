@@ -73,11 +73,18 @@ test('GET /api/usecases is grouped by track, all 87, filterable by track and ver
   await withServer(async (url) => {
     const j = await (await get(url, '/api/usecases')).json();
     assert.equal(j.total, 87); assert.deepEqual(j.tracks.map((t) => [t.track, t.count]), Object.entries(TRACKS));
-    assert.equal(j.vertical, 'banking'); assert.equal(j.pack, 'full'); assert.match(j.source.commit, /^[0-9a-f]{40}$/);
+    assert.equal(j.vertical, 'software', 'the default vertical is the Appfire Work Suite'); assert.equal(j.pack, 'full'); assert.match(j.source.commit, /^[0-9a-f]{40}$/);
     const hc = await (await get(url, '/api/usecases?vertical=healthcare&track=controls')).json();
     assert.equal(hc.total, 16); assert.equal(hc.tracks.length, 1);
     assert.equal(hc.tracks[0].usecases.find((u) => u.id === 'UC6').tool, 'pay_bill');
-    assert.equal(j.tracks[2].usecases.find((u) => u.id === 'UC6').tool, 'create_transfer');
+    assert.equal(j.tracks[2].usecases.find((u) => u.id === 'UC6').tool, 'bulk_update_issues');
+    const sw = await (await get(url, '/api/usecases?vertical=software&track=controls')).json();
+    assert.equal(sw.tracks[0].usecases.find((u) => u.id === 'UC6').tool, 'bulk_update_issues');
+    const swTp = await (await get(url, '/api/usecases/UC31?vertical=software')).json();
+    assert.deepEqual(swTp.usecase.labInputs.args, { repo: 'payroll' }, 'the lab inputs shown for a software use case are the software ones');
+    assert.deepEqual((await (await get(url, '/api/usecases/UC31?vertical=banking')).json()).usecase.labInputs.args, { state: 'FL' });
+    const bank = await (await get(url, '/api/usecases?vertical=banking&track=controls')).json();
+    assert.equal(bank.tracks[0].usecases.find((u) => u.id === 'UC6').tool, 'create_transfer');
     const stub = await (await get(url, '/api/usecases?vertical=government')).json();
     assert.equal(stub.pack, 'stub'); assert.equal(stub.total, 87);
     const one = await (await get(url, '/api/usecases/UC12')).json();
@@ -97,6 +104,39 @@ test('bad query values are 400 with fixed text, and nothing typed comes back', a
     assert.equal((await get(url, '/api/story?vertical=government')).status, 501);
     const s = await (await get(url, '/api/story?vertical=retail')).json();
     assert.equal(s.cast.castBrand, 'Appfire Retail Suite'); assert.equal(s.total, 87); assert.ok(!JSON.stringify(s).includes('{{'));
+    const sw = await (await get(url, '/api/story?vertical=software')).json();
+    assert.equal(sw.cast.castBrand, 'Appfire Work Suite'); assert.equal(sw.cast.castUnit, 'issues'); assert.ok(!JSON.stringify(sw).includes('{{'));
+    assert.deepEqual(sw.fullVerticals, ['banking', 'healthcare', 'retail', 'software']);
+    assert.equal((await (await get(url, '/api/story')).json()).vertical, 'software');
+  });
+});
+
+// The catalog is banking-flavoured ("My mortgage", "transfer $600 from checking to savings"); a pack words it its own way (verticalText.js, routes.js localize).
+// The list, the use case view and the What to type list of the software pack carry no banking word and no dollar amount; the other packs keep the catalog words.
+test('software: /api/usecases, /api/usecase and /api/prompts carry no banking words; banking keeps the catalog text byte for byte', async () => {
+  const BANKING = /\b(balance|transfers?|checking|savings|mortgage|bank(ing)?|deposit|portfolio|branch(es)?|fee waiver|credit)\b|\$\d/i;
+  await withServer(async (url) => {
+    const sw = await (await get(url, '/api/usecases?vertical=software')).json();
+    const all = sw.tracks.flatMap((t) => t.usecases);
+    assert.equal(all.length, 87);
+    for (const u of all) {
+      const s = JSON.stringify({ title: u.title, buyerStory: u.buyerStory, pingOneSolution: u.pingOneSolution, productRoles: u.productRoles, trigger: u.trigger, live: u.live });
+      assert.doesNotMatch(s, BANKING, `${u.id}: ${s}`);
+      assert.equal(u.realGate.real, false, `${u.id} never runs Real in software`);
+    }
+    const byId = (id) => all.find((u) => u.id === id);
+    assert.equal(byId('UC33').title, 'Deployment status'); assert.equal(byId('UC33').trigger.text, 'show the status of my last deployment');
+    assert.equal(byId('UC1').trigger.text, 'show my open issues'); assert.equal(byId('UC7').trigger.text, 'bulk-edit 600 issues in the Billing project and move them to Done');
+    assert.equal(byId('UC7').expectedOutcome, 'STEP_UP', 'only words move, never the outcome');
+    assert.equal((await (await get(url, '/api/usecases/UC33?vertical=software')).json()).usecase.title, 'Deployment status');
+    const pr = await (await get(url, '/api/prompts?vertical=software')).json();
+    assert.doesNotMatch(JSON.stringify(pr), BANKING);
+    assert.equal(pr.prompts.find((p) => p.uc === 'UC33').title, 'Deployment status');
+    const bank = await (await get(url, '/api/usecases?vertical=banking')).json();
+    const b33 = bank.tracks.flatMap((t) => t.usecases).find((u) => u.id === 'UC33');
+    const cat = MANIFEST.usecases.find((u) => u.id === 'UC33');
+    assert.equal(b33.title, 'My mortgage'); assert.equal(b33.buyerStory, cat.buyerStory); assert.deepEqual(b33.trigger, cat.trigger);
+    for (const v of ['healthcare', 'retail']) assert.equal((await (await get(url, `/api/prompts?vertical=${v}`)).json()).prompts.find((p) => p.uc === 'UC33').title, 'My mortgage', v);
   });
 });
 
@@ -119,13 +159,13 @@ test('POST /api/run/:id runs a use case in mock and returns the full record', as
 test('every one of the 87 use cases runs over HTTP and matches its expected outcome, in every full vertical', async () => {
   await withServer(async (url) => {
     let n = 0;
-    for (const v of ['banking', 'healthcare', 'retail']) for (const uc of MANIFEST.usecases) {
+    for (const v of ['banking', 'healthcare', 'retail', 'software']) for (const uc of MANIFEST.usecases) {
       const ws = W(`all-${v}`);
       let r = await run(url, uc.id, { vertical: v }, ws);
       if (r.status === 409) { await post(url, '/api/reset', {}, ws); r = await run(url, uc.id, { vertical: v }, ws); } // a workspace holds 100 runs: Reset and go on
       assert.equal(r.status, 200, `${v}/${uc.id}`); assert.equal(r.body.run.outcome, uc.expectedOutcome, `${v}/${uc.id}`); n++;
     }
-    assert.equal(n, 261);
+    assert.equal(n, 348);
   });
 });
 

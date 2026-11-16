@@ -1,10 +1,10 @@
-import { NEEDS_LABELS, TRACK_LABELS, noIds, notRunText, outcomeState, ranCount, triggerText } from "../lib";
+import { NEEDS_LABELS, TRACK_LABELS, noIds, notRunText, outcomeState, pickFullPack, ranCount, triggerText } from "../lib";
 import { InventedTag, Json, LiveTag, RealTag, Tag, chipsNeeded } from "./Bits";
 import GatewayTrace from "../gateway-trace/GatewayTrace";
 
 // The honest refusal text for each answer the API can give instead of a run. The server's own detail is shown as it is.
 const REFUSAL = {
-  vertical_stub: ["Not built", "This vertical is a data stub: it has a name and no pack yet. Pick Banking, Healthcare or Retail to run."],
+  vertical_stub: ["Not built", "This vertical is a data stub: it has a name and no pack yet."], // "Pick <the full packs> to run." is added by Refusal, from the loaded list
   live_not_configured: ["Real is not set up", "The app's .env does not have the Real settings yet. Switch to Mock, or fill .env from .env.example."],
   sign_in_required: ["Sign in first", "Real runs as you: sign in (pi.flow) and run again."],
   live_busy: ["Live is busy", "Two live runs are already in flight. Wait a moment and run again."],
@@ -14,9 +14,10 @@ const REFUSAL = {
   network: ["No answer from the server", "The server did not answer. Is it running?"],
 };
 
-export function Refusal({ result }) {
+export function Refusal({ result, verticals }) {
   const code = result.body?.error || `http_${result.status}`;
-  const [head, fallback] = REFUSAL[code] || ["Refused", "The server refused this run."];
+  const [head, text] = REFUSAL[code] || ["Refused", "The server refused this run."];
+  const fallback = code === "vertical_stub" ? `${text} ${pickFullPack(verticals)} to run.` : text;
   const noAnswer = !result.status; // status 0 = the request never got an HTTP answer
   return (
     <div className="panel panel--inner" data-state={result.status === 501 || result.status === 503 ? "warn" : "bad"} role="alert" data-testid="refusal" data-code={code}>
@@ -118,7 +119,7 @@ export default function RunPanel({ uc, vertical, verticals, persona, setPersona,
       {stub && <p className="muted" data-testid="stub-hint">The selected vertical ({v.label}) is a stub. Running it shows the server's honest "not built" answer.</p>}
       {/* The live region says the outcome only; the hop and token dump is not announced. */}
       <p className="sr-only" role="status" aria-live="polite" data-testid="run-announce">{result?.ok ? announce(result.body.run) : ""}</p>
-      {result && !result.ok && <Refusal result={result} />}
+      {result && !result.ok && <Refusal result={result} verticals={verticals} />}
       {result?.ok && <RunResult run={result.body.run} />}
       {/* "What Privilege did" (rule 25): the gateway calls of THIS run, under its result. A run that never reached a gateway (a guided page, a refusal before it) has none, so nothing is drawn. */}
       {result?.ok && result.body.run.gatewayTrace?.length > 0 && <GatewayTrace exchanges={result.body.run.gatewayTrace} source={result.body.run.kind === "real" ? "real" : "mock"} />}

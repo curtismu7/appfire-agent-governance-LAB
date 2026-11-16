@@ -44,4 +44,18 @@ export const SITUATIONS = {
   'UC-AIC-TX': { chain: ['user-token', 'token-exchange'] },
   'UC-OBO': { chain: ['user-token', 'token-exchange'] },
 };
-export const situationOf = (id) => (Object.hasOwn(SITUATIONS, id) ? SITUATIONS[id] : {});
+// Where a vertical's third-party tools take other arguments (the software pack's scanner takes a repository, its web search a Jira question), the
+// override replaces the use case's `args`. Everything else about the use case is shared. Banking, healthcare and retail have no override.
+export const SITUATION_OVERRIDES = {
+  software: {
+    UC30: { args: { repo: 'platform' } },
+    UC31: { args: { repo: 'payroll' } },
+    UC41: { args: { query: 'Jira workflow automation best practices' } },
+    UC42: { args: { query: 'crypto-mining script in our build' } },
+  },
+};
+export const situationOf = (id, vertical) => {
+  const base = Object.hasOwn(SITUATIONS, id) ? SITUATIONS[id] : {};
+  const over = Object.hasOwn(SITUATION_OVERRIDES, vertical) && Object.hasOwn(SITUATION_OVERRIDES[vertical], id) ? SITUATION_OVERRIDES[vertical][id] : null;
+  return over ? { ...base, ...over } : base;
+};

@@ -1,11 +1,12 @@
-import { DEMO_GUIDE, TOPICS, buttonKey, topicOfStep } from "../demoGuide";
+import { DEMO_GUIDE, TOPICS, buttonKey, guideStep, topicOfStep } from "../demoGuide";
 
 // The session's seven steps as a bar of pills, shown in presenter mode: where you are in the walkthrough, what to say, and the Run buttons for this step.
 // It only selects a step and starts runs through the same handler as the demo guide; it holds no state of its own.
-export default function AgendaSteps({ step, onStep, onRun, onCompare, activeUc }) {
-  const now = DEMO_GUIDE[step] || DEMO_GUIDE[0];
-  const at = DEMO_GUIDE.indexOf(now);
-  const topic = topicOfStep(now.id);
+export default function AgendaSteps({ step, onStep, onRun, onCompare, activeUc, cast, prompts }) {
+  const raw = DEMO_GUIDE[step] || DEMO_GUIDE[0];
+  const at = DEMO_GUIDE.indexOf(raw);
+  const now = guideStep(raw, { cast, prompts }); // the words for the vertical on screen
+  const topic = topicOfStep(raw.id);
   return (
     <nav className="agenda" aria-label="Demo walkthrough" data-testid="agenda-steps">
       <p className="agenda__topicshead">Where we are in the 60 minutes</p>

@@ -26,7 +26,7 @@
     {
       "id": "appfire-agent-governance",
       "term": "Customer-facing agent",
-      "definition": "An AI agent that acts for a customer: it asks for a balance, a transfer, an order. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "definition": "An AI agent that acts for a customer: it asks for an open-issue list, a bulk edit, an order. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
       "aliases": [
         "customer agent"
       ]

@@ -6,11 +6,11 @@
 
 ## Appfire today: the split between HIVE and Ping
 
-HIVE manages Appfire's backend authorization rules and MCP-server eligibility. This lab shows the front end Ping governs: the agent triage-agent gets an identity, receives delegated privileges from the principal it acts for (alex.morgan), and every tool call gets a policy decision — enforced and recorded. The two layers complement each other; neither replaces the other.
+HIVE manages Appfire's backend authorization rules and MCP-server eligibility. This lab shows the front end Ping governs: the agent release-assistant at Appfire Work Suite gets an identity, receives delegated privileges from the principal it acts for (maya.chen), and every tool call gets a policy decision — enforced and recorded. In this vertical the agent works with projects and issues. The two layers complement each other; neither replaces the other.
 
 ## Step 2 · The agent gets its own identity
 
-Run “Delegated access (consent only)”: alex.morgan signs in, consents once, and RFC 8693 token exchange mints a delegated token whose sub is the USER and whose act names triage-agent — open the Tokens tab to read both claims raw. “Non-human (agent) identity lifecycle” shows the agent's own credential enrolled, rotated and retired as a first-class identity. The point: delegation, not impersonation — the agent never pretends to be the user, and every action traces back to a real human's consent.
+Run “Delegated access (consent only)”: maya.chen signs in, consents once, and RFC 8693 token exchange mints a delegated token whose sub is the USER and whose act names release-assistant — open the Tokens tab to read both claims raw. “Non-human (agent) identity lifecycle” shows the agent's own credential enrolled, rotated and retired as a first-class identity. The point: delegation, not impersonation — the agent never pretends to be the user, and every action traces back to a real human's consent.
 
 ## Step 3 · The agent tries a tool call: privilege is scoped per task
 
@@ -22,15 +22,15 @@ Run “Entitlement-tiered capability” (permits) and then “Group / entitlemen
 
 ## Step 5 · A low-risk read is allowed automatically
 
-Run “show my balance”: the decision card says ALLOWED, the tool ran and nobody was asked. The risk strip shows it landed on the first control. The record is still written.
+Run a low-risk read: the decision card says ALLOWED, the tool ran and nobody was asked. The risk strip shows it landed on the first control. The record is still written. Where the vertical lists a third-party MCP call the agent may use, run it next: the gateway lets it through, and step 6 shows the same kind of call refused.
 
 ## Step 6 · A higher-risk request is denied, constrained or approved
 
-The read you just saw needed nobody. Now the writes: “MFA step-up” (a $600 write) stops for a second factor. “MFA + HITL consent” stops for an actual human: approve it on the mock phone and, in Real mode, the approval is recorded with the HITL service and the call is retried with the verified receipt. The thresholds are the lab's own — the point is the model: controlled autonomy, not a person approving every step.
+The read you just saw needed nobody. Now the writes: “MFA step-up” (a bulk edit above the first threshold) stops for a second factor. “MFA + HITL consent” (a smaller bulk edit) stops for an actual human: approve it on the mock phone and, in Real mode, the approval is recorded with the HITL service and the call is retried with the verified receipt. A bulk edit above the limit is refused outright. A claim that someone 'already approved it' changes nothing: only a verified approval counts. The thresholds are the lab's own — the point is the model: controlled autonomy, not a person approving every step.
 
 ## Step 6 · Limiting damage from a manipulated agent
 
-Run “confused-deputy actor injection” (a forged actor claim is refused), “intent exceeded” (the agent tries more than the pushed authorization allows), “raw user-token forwarding” (zero-trust refusal), “token theft / replay”. Eleven attacks run in mock and every one ends in DENY with nothing dispatched. A manipulated agent cannot talk its way past the tool, data and action layers: permissions are enforced there, not left to the model to follow instructions.
+Run “confused-deputy actor injection” (a forged actor claim is refused), “intent exceeded” (the agent tries more than the pushed authorization allows), “raw user-token forwarding” (zero-trust refusal), “token theft / replay”, and a request for another person's private project (refused: the token's subject does not own it). Eleven attacks run in mock and every one ends in DENY with nothing dispatched. A manipulated agent cannot talk its way past the tool, data and action layers: permissions are enforced there, not left to the model to follow instructions.
 
 ## Step 7 · The decision history is there for audit
 
@@ -38,7 +38,7 @@ Run “Agent observability and traceability”, then open Run history: every run
 
 ## Real mode: this is live, not slides
 
-Switch the toggle to Real and sign in (pi.flow): “Delegated access” and the other Real use cases run the actual chain — the agent's own token, two RFC 8693 exchanges at PingOne, the SE Agent Gateway, a PingOne Authorize decision and the tool itself. The two approval use cases add the real HITL loop: the gateway mints a challenge, you approve on the mock phone, the approval is recorded with the HITL service and the call is retried with the verified receipt.
+Switch the toggle to Real and sign in (pi.flow): “Delegated access” and the other Real use cases run the actual chain — the agent's own token, two RFC 8693 exchanges at PingOne, the SE Agent Gateway, a PingOne Authorize decision and the tool itself. The two approval use cases add the real HITL loop: the gateway mints a challenge, you approve on the mock phone, the approval is recorded with the HITL service and the call is retried with the verified receipt. Real calls the SE gateway, which hosts only some verticals' tools: pick one it serves for a Real run (the vertical menu notes which); a vertical it does not serve stays on the labelled mock engine and every hop says MOCK and why.
 
 ## What is simulated
 
@@ -54,5 +54,5 @@ Challenge: Appfire's HIVE platform already manages the backend: data policy and 
 - Live mode reaches the identity provider only (discovery and the agent's client-credentials token). Sign-in, token exchange, gateway, authorize and tool steps are not run live, and a live run does not recompute the use case's outcome.
 - The live path has not been run against a real tenant by the builder: UNVERIFIED. The owner runs it.
 - The thresholds that decide step-up, approval and deny (lab-invented), the events that stage each attack, and the persona that drives group checks.
-- Seven verticals are data stubs (a name only); only banking, healthcare and retail have full packs.
+- Seven verticals are data stubs (a name only); only software, banking, healthcare and retail have full packs.
 - Guided use cases (learning pages, presenter guides, A2A reviews, the NHI inventory): the lab opens a stand-in step and does not recompute their outcome.

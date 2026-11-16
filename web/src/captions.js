@@ -42,7 +42,7 @@ export const CAPTIONS = {
   "api-call": { agenda: "allow", say: "The tool calls the Appfire back-end with the person's delegated access. The service sees who it is acting for, not just that an agent called.", point: "The request to the resource server and its answer." },
   "agent-reply": { agenda: "audit", say: "The agent answers in plain words. Behind that sentence is every step you just saw, and each one is recorded.", point: "The reply, then the decision card: agent, person, tool, policy, outcome." },
   "step-up": { agenda: "escalate", say: "A riskier write needs a second factor from the person before it goes ahead.", point: "The step-up request and the person's answer." },
-  "intent-binding-verified": { agenda: "escalate", say: "The approval is tied to this exact action. An approval for one transfer cannot be reused for another.", point: "The intent the approval was bound to." },
+  "intent-binding-verified": { agenda: "escalate", say: "The approval is tied to this exact action. An approval for one action cannot be reused for another.", point: "The intent the approval was bound to." },
   "vault-key-inject": { agenda: "evaluate", say: "The gateway adds the tool's own key. The agent never holds it.", point: "The key is added by the gateway, not present on the agent's request." },
   "api-key-swap": { agenda: "evaluate", say: "The gateway swaps the agent's token for the credential the back-end expects. The back-end never sees the agent's token.", point: "The two different credentials on either side of the gateway." },
   "database-query": { agenda: "allow", say: "The data layer is reached only through the service, never by the agent directly.", point: "The service as the only caller of the database." },

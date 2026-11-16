@@ -385,6 +385,11 @@ test('use-case gating: only tools served through the SE gateway run Real; the re
   // and the third-party tool servers (UC30, UC31, UC41, UC42, UC-TOOL1) run Real; the gateway's own tools/list still decides at run time.
   assert.deepEqual(realIds, ['UC1', 'UC3', 'UC19', 'UC20', 'UC33', 'UC4', 'UC6', 'UC7', 'UC8', 'UC21', 'UC24', 'UC17', 'UC30', 'UC31', 'UC41', 'UC42', 'UC-TOOL1', 'UC28']);
   const why = (id) => realGate(findUseCase(id), cast).reason;
+  // The software pack: the SE gateway serves none of its tools, so no use case runs Real, even the pass-through third-party ones (brave_news_search, code_search).
+  const soft = loadCast('/nonexistent', 'software');
+  assert.deepEqual(MANIFEST.usecases.filter((u) => realGate(u, soft).real).map((u) => u.id), [], 'no software use case runs Real');
+  for (const id of ['UC41', 'UC42', 'UC-TOOL1', 'UC1', 'UC7']) assert.match(realGate(findUseCase(id), soft).reason, /SE gateway serves no tool of this vertical/, id);
+  assert.match(realGate(findUseCase('UC9'), soft).reason, /guided page|SE gateway serves no tool/, 'a guided page keeps its own reason or the pack one');
   assert.match(why('UC13'), /trusted-caller/); assert.match(why('UC18'), /trusted-caller/);
   assert.equal(realGate(findUseCase('UC21'), cast).tool, 'get_sensitive_account_details', 'UC21 runs Real: the tier is the signed-in user\'s own PingOne group');
   assert.match(why('UC22'), /approval/); assert.match(why('UC2'), /A2A/); assert.match(why('UC37'), /A2A/);

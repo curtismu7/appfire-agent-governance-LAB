@@ -6,12 +6,13 @@
 // gateway rules below, never read from the manifest. No clock, no random, no I/O, no network. (The one non-deterministic byte string is the ECDSA
 // signature inside a mock token: Node's ECDSA is randomised. Everything else repeats exactly.)
 import { createHash } from 'node:crypto';
-import { fill, personaOf, roleOf, toolFor } from './cast.js';
+import { extrasOf, fill, personaOf, roleOf, toolFor } from './cast.js';
 import { LABELS } from './data.js';
 import { verifyMockJwt, signMockJwt, tokenView } from './mockjwt.js';
-import { GATEWAY, decide, edgePolicy } from './policy.js';
+import { GATEWAY, countText, decide, edgePolicy, unitFor } from './policy.js';
 import { PROBE_DENIED, proposalFor, replyFor } from './replies.js';
 import { situationOf } from './situations.js';
+import { localize } from './routes.js';
 import { STEER_AMOUNT, instructionsFor } from './instructions.js';
 import { formatTraceparent, newTrace } from './trace.js';
 import { enrichHop } from './vendor/hopDetail.mjs';
@@ -21,7 +22,8 @@ import HOP_CATALOG from './vendor/hop-catalog.json' with { type: 'json' };
 export const ENGINE_OUTCOMES = new Set(['PERMIT', 'DENY', 'DENY_401', 'DENY_403', 'DENY_429', 'DENY_503', 'STEP_UP', 'HITL_REQUIRED', 'PERMIT_THEN_DENY', 'DELEGATE_AND_EXECUTE']);
 const T0 = 1767227814; // 2026-01-01T00:00:00Z, the lab's fixed clock
 const TTL = 300;
-const SCOPE_FOR_ROLE = { read: 'accounts:read', write: 'transfers:write', sensitive: 'accounts:sensitive', a2a: 'portfolio:read' };
+// The pushed authorization_details entry (RAR): banking packs push a payment bound, the software pack an issue-change bound.
+const authDetail = (ctx) => ({ type: ctx.extras.authz.type, [ctx.extras.authz.maxKey]: ctx.sit.rar.maxAmount });
 const sha = (s, n = 16) => createHash('sha256').update(String(s)).digest('hex').slice(0, n);
 
 // A use case is computed by the engine when its outcome is one the engine can produce and it has something to compute (not a bare learning link).
@@ -32,7 +34,8 @@ export function isFlow(uc) {
 export const chainOf = (uc) => (Array.isArray(situationOf(uc.id).chain) ? situationOf(uc.id).chain : uc.evidence.tokenChain);
 
 function makeCtx(uc, { cast, vertical, persona, traceparent, seed, brain, said, instructions }) {
-  const sit = situationOf(uc.id);
+  const sit = situationOf(uc.id, vertical);
+  const extras = extrasOf(vertical);
   const person = personaOf(cast, persona || sit.persona || 'standard');
   // A use case with no primary tool in the catalog is run against the vertical's everyday read tool (lab reading).
   const role = uc.primaryTool ? roleOf(uc.primaryTool) : 'read';
@@ -40,10 +43,10 @@ function makeCtx(uc, { cast, vertical, persona, traceparent, seed, brain, said, 
   const trace = newTrace(traceparent, `${seed}:${uc.id}:${vertical}:${person.key}`);
   const host = cast.castHost;
   const ctx = {
-    uc, cast, vertical, sit, person, role, tool, trace, hops: [], gwTrace: [], tokens: [], clock: T0, halted: null, pending: null, probeDenied: false,
+    uc, cast, vertical, sit, extras, unit: unitFor(cast, uc.primaryTool), person, role, tool, trace, hops: [], gwTrace: [], tokens: [], clock: T0, halted: null, pending: null, probeDenied: false,
     amount: typeof sit.amount === 'number' ? sit.amount : undefined, event: sit.event || null, gwDone: false, seenProofs: new Set(),
     urls: { idp: 'https://idp.mock.example/as', bff: `https://bff.${host}.example`, agent: `https://agent.${host}.example`, llm: 'https://llm.mock.example', gw: `https://gateway.${host}.example`, mcp: `https://mcp.${host}.example`, api: `https://api.${host}.example`, registry: `https://registry.${host}.example`, a2a: `https://a2a.${host}.example` },
-    scope: SCOPE_FOR_ROLE[role] || `tools:${tool || 'none'}`,
+    scope: extras.scopes[role] || `tools:${tool || 'none'}`,
     agent: { id: cast.castAgent, label: cast.castAgent }, agents: [],
     user: null, exchanged: null, // the user token and the latest exchanged token (signed views)
   };
@@ -53,7 +56,7 @@ function makeCtx(uc, { cast, vertical, persona, traceparent, seed, brain, said, 
   ctx.instructions = instructionsFor(cast, instructions);
   if (ctx.instructions.steered && PLANS.has(uc.id) && !ctx.event && !sit.public && cast.castWriteTool) {
     ctx.steered = { asked: { tool: ctx.tool, amount: ctx.amount ?? null }, proposed: { tool: cast.castWriteTool, amount: STEER_AMOUNT }, reasons: ctx.instructions.reasons };
-    ctx.tool = cast.castWriteTool; ctx.role = 'write'; ctx.amount = STEER_AMOUNT; ctx.scope = SCOPE_FOR_ROLE.write || ctx.scope;
+    ctx.tool = cast.castWriteTool; ctx.role = 'write'; ctx.amount = STEER_AMOUNT; ctx.scope = extras.scopes.write || ctx.scope;
   }
   ctx.brain = brain === 'llama' ? 'llama' : 'scripted';
   ctx.said = typeof said === 'string' ? said : undefined;
@@ -96,7 +99,7 @@ const halt = (ctx, outcome, by, status, reason) => { if (!ctx.halted) ctx.halted
 // ---- step builders ---------------------------------------------------------------------------------------------------------------------------------
 function signIn(ctx) {
   const p = ctx.person;
-  const scope = 'openid accounts:read transfers:write accounts:sensitive portfolio:read';
+  const scope = `openid ${Object.values(ctx.extras.scopes).join(' ')}`;
   const t = mint(ctx, 'user token (MOCK)', { sub: p.sub, aud: 'customer-app-mock', scope, groups: p.groups, amr: ['pwd'], azp: 'customer-app-mock' }, 'JWT');
   ctx.user = t;
   hop(ctx, 'sign-in', {
@@ -135,7 +138,7 @@ function exchange(ctx, { subject, actorTok, actChain, audience, scope, key = 'to
   const aud = ctx.event === 'wrong-aud' ? 'https://other-service.example' : audience;
   const claims = { sub, aud, scope, client_id: actChain?.sub || undefined, ...(actChain ? { act: actChain } : {}) };
   if (ctx.event === 'insufficient-scope') claims.scope = 'openid';
-  if (ctx.event === 'tampered-intent-token') claims.intent = 'transfer:limited';
+  if (ctx.event === 'tampered-intent-token') claims.intent = ctx.extras.intent;
   if (ctx.event === 'dpop-replay') claims.cnf = { jkt: sha(`${ctx.trace.traceId}:dpop-key`, 43) };
   const t = mint(ctx, `exchanged token (MOCK)`, claims, 'at+jwt');
   ctx.exchanged = t;
@@ -184,7 +187,7 @@ function gatewayCheck(ctx, { again = false, key = 'gateway-check' } = {}) {
   }
   if (!verdict && ctx.event === 'rate-limit-burst') { if (overload > GATEWAY.rateLimit) fail('DENY_429', 429, 'rate_limited', `call ${overload} in the window; the limit is ${GATEWAY.rateLimit} per 60 s`); else pass('rate'); }
   if (!verdict && ctx.exchanged) { if (!String(claims.scope || '').split(' ').includes(ctx.scope)) fail('DENY_403', 403, 'insufficient_scope', `the token does not carry ${ctx.scope}`); else pass('scope'); }
-  if (!verdict && ctx.sit.args) { const why = edgePolicy(ctx.uc.primaryTool, ctx.sit.args); if (why) fail('DENY', 403, 'policy_denied', `edge policy: ${why}`); else pass('edge-policy'); }
+  if (!verdict && ctx.sit.args) { const why = edgePolicy(ctx.uc.primaryTool, ctx.sit.args, ctx.vertical); if (why) fail('DENY', 403, 'policy_denied', `edge policy: ${why}`); else pass('edge-policy'); }
 
   const denied = verdict;
   const h = hop(ctx, key, {
@@ -231,7 +234,7 @@ const enrichAll = (ctx) => ctx.hops.map((h) => enrichHop(h, HOP_CATALOG, ctx.det
 // runs as a gateway error with Authorize not in the path, so the hops match it; the outcome is the gateway's either way.
 const GATEWAY_STAGE_EVENTS = new Set(['tampered-intent-token', 'impersonation-no-act', 'wrong-aud', 'insufficient-scope', 'dpop-replay', 'rate-limit-burst', 'introspection-down']);
 const WWW_AUTH = (ctx) => `Bearer realm="mcp", error="invalid_token", resource_metadata="${ctx.urls.gw}/.well-known/oauth-protected-resource"`;
-const RESOURCE_METADATA = (ctx) => [['resource', `${ctx.urls.gw}/mcp`], ['authorization_servers', ctx.urls.idp], ['scopes_supported', Object.values(SCOPE_FOR_ROLE).join(' ')]];
+const RESOURCE_METADATA = (ctx) => [['resource', `${ctx.urls.gw}/mcp`], ['authorization_servers', ctx.urls.idp], ['scopes_supported', Object.values(ctx.extras.scopes).join(' ')]];
 
 // RFC 6750 §3 / RFC 9728 §5.1: the same request with no Authorization header gets 401 and a challenge naming the resource metadata. Nothing runs.
 function challenge(ctx, key, method) {
@@ -287,12 +290,12 @@ function authorize(ctx) {
   const act = ctx.exchangedClaims?.act;
   const actorUnregistered = ctx.event === 'rogue-actor';
   const dec = decide({
-    role: ctx.role, tool: ctx.uc.primaryTool, amount: ctx.amount, sub: ctx.person.sub, owner: ctx.event === 'cross-owner-account' ? ctx.cast.castOwner2 : ctx.person.sub,
+    role: ctx.role, tool: ctx.uc.primaryTool, amount: ctx.amount, unit: ctx.unit, sub: ctx.person.sub, owner: ctx.event === 'cross-owner-account' ? ctx.cast.castOwner2 : ctx.person.sub,
     groupGate: ctx.sit.groupGate, groups: ctx.person.groups, group: ctx.cast.castGroup, actor: actorUnregistered ? { registered: false } : { registered: true }, rar: ctx.sit.rar,
   });
   hop(ctx, 'authorize-decision', {
     from: 'bff', to: 'authorize', url: 'https://authorize.mock.example/decision',
-    body: { subject: ctx.person.sub, action: ctx.tool, context: { amount: ctx.amount, groups: ctx.person.groups, act: actorUnregistered ? { sub: 'unregistered-agent' } : act, ...(ctx.sit.rar ? { authorization_details: [{ type: 'payment', maxAmount: ctx.sit.rar.maxAmount }] } : {}), ...(ctx.sit.forgedApproval ? { hitl_approved: true } : {}) } },
+    body: { subject: ctx.person.sub, action: ctx.tool, context: { amount: ctx.amount, groups: ctx.person.groups, act: actorUnregistered ? { sub: 'unregistered-agent' } : act, ...(ctx.sit.rar ? { authorization_details: [authDetail(ctx)] } : {}), ...(ctx.sit.forgedApproval ? { hitl_approved: true } : {}) } },
     resBody: { decision: dec.decision === 'DENY_403' ? 'DENY' : dec.decision, reason: dec.reason, ...(['STEP_UP', 'HITL_REQUIRED', 'CIBA'].includes(dec.decision) ? { obligation: dec.decision } : {}) },
     verdict: dec.decision === 'PERMIT' ? 'ok' : ['STEP_UP', 'HITL_REQUIRED', 'CIBA'].includes(dec.decision) ? 'obligation' : 'deny',
     note: ctx.sit.forgedApproval ? 'the client sent a boolean "approved" flag; the BFF ignores it and needs a real, verified receipt' : undefined,
@@ -433,9 +436,9 @@ function frameAfterSignIn(ctx) {
     body: { model: ctx.brain === 'llama' ? 'llama.cpp (local model; the run itself is mock)' : 'scripted-intent-match (mock)', messages: [{ role: 'system', content: ctx.instructions.text }, { role: 'user', content }], tools: [ctx.tool] },
     resBody: { tool_calls: [{ name: ctx.tool, arguments: ctx.steered ? { amount: ctx.steered.proposed.amount } : (ctx.sit.args || {}) }] },
     note: ctx.steered
-      ? `The instructions steered the agent (lab-simulated obedience): the customer asked for ${ctx.steered.asked.tool}, the agent proposed ${ctx.steered.proposed.tool} for ${ctx.steered.proposed.amount}. The model proposes, policy decides; it never sees a token`
+      ? `The instructions steered the agent (lab-simulated obedience): the customer asked for ${ctx.steered.asked.tool}, the agent proposed ${ctx.steered.proposed.tool} for ${countText(ctx.steered.proposed.amount, ctx.unit)}. The model proposes, policy decides; it never sees a token`
       : `${routingOf(ctx)}. The model proposes, policy decides; it never sees a token`,
-    detail: { kv: [['brain', routingOf(ctx)], ['instructions', ctx.instructions.default ? 'default' : 'edited'], ...(ctx.steered ? [['steered by', ctx.steered.reasons.join(', ')], ['asked for', ctx.steered.asked.tool], ['proposed', `${ctx.steered.proposed.tool} ${ctx.steered.proposed.amount}`]] : [])] },
+    detail: { kv: [['brain', routingOf(ctx)], ['instructions', ctx.instructions.default ? 'default' : 'edited'], ...(ctx.steered ? [['steered by', ctx.steered.reasons.join(', ')], ['asked for', ctx.steered.asked.tool], ['proposed', `${ctx.steered.proposed.tool} ${countText(ctx.steered.proposed.amount, ctx.unit)}`]] : [])] },
   });
 }
 
@@ -498,9 +501,9 @@ const STEPS = {
   'sim-exchange-ok': exchangeOnce,
   'sim-gateway-deny': (ctx) => { if (!ctx.halted) gatewayCheck(ctx, { again: ctx.seenProofs.size > 0 }); if (ctx.halted) refusal(ctx); },
   'sim-replay-start': (ctx) => { exchangeOnce(ctx); if (gatewayCheck(ctx)) toolCall(ctx); }, // the first use is accepted and reaches the tool; the replay is refused
-  'sim-rar-armed': (ctx) => hop(ctx, 'sim-rar-armed', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/par`, body: { response_type: 'code', authorization_details: [{ type: 'payment', maxAmount: ctx.sit.rar.maxAmount }] }, resBody: { request_uri: `urn:mock:par:${sha(ctx.trace.traceId, 10)}`, expires_in: 60 } }),
+  'sim-rar-armed': (ctx) => hop(ctx, 'sim-rar-armed', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/par`, body: { response_type: 'code', authorization_details: [authDetail(ctx)] }, resBody: { request_uri: `urn:mock:par:${sha(ctx.trace.traceId, 10)}`, expires_in: 60 } }),
   'sim-rar-grant': (ctx) => { exchangeOnce(ctx); },
-  'intent-binding-verified': (ctx) => { const dec = decide({ role: null, amount: ctx.amount, rar: ctx.sit.rar, actor: { registered: true } }); hop(ctx, 'intent-binding-verified', { from: 'gateway', to: 'authorize', url: 'https://authorize.mock.example/decision', body: { amount: ctx.amount, authorization_details: [{ type: 'payment', maxAmount: ctx.sit.rar.maxAmount }] }, resBody: { decision: dec.decision, reason: dec.reason }, verdict: dec.decision === 'PERMIT' ? 'ok' : 'deny' }); if (dec.decision !== 'PERMIT') halt(ctx, dec.decision, 'authorize', 403, dec.reason); },
+  'intent-binding-verified': (ctx) => { const dec = decide({ role: null, amount: ctx.amount, rar: ctx.sit.rar, actor: { registered: true } }); hop(ctx, 'intent-binding-verified', { from: 'gateway', to: 'authorize', url: 'https://authorize.mock.example/decision', body: { amount: ctx.amount, authorization_details: [authDetail(ctx)] }, resBody: { decision: dec.decision, reason: dec.reason }, verdict: dec.decision === 'PERMIT' ? 'ok' : 'deny' }); if (dec.decision !== 'PERMIT') halt(ctx, dec.decision, 'authorize', 403, dec.reason); },
   'exchange-skipped': (ctx) => { hop(ctx, 'exchange-skipped', { from: 'bff', to: 'gateway', url: `${ctx.urls.bff}/api/tool`, status: 403, verdict: 'deny', headers: {}, resBody: { error: 'user_token_forwarding_disabled', note: 'the BFF refuses to hand the raw user token to a tool; it must exchange first (fail closed)' } }); halt(ctx, 'DENY_403', 'bff', 403, 'user_token_forwarding_disabled'); },
   'gateway-permit': (ctx) => { if (!ctx.halted) { ctx.exchanged = ctx.exchanged || ctx.user; gatewayCheck(ctx, { key: 'gateway-check' }); } },
   'privilege-gateway-leg': (ctx) => traceGateway(ctx, hop(ctx, 'privilege-gateway-leg', { from: 'bff', to: 'privilege', url: 'https://privilege.mock.example/gateway', headers: { authorization: `Bearer ${(ctx.exchanged || ctx.user).raw}` }, resBody: { accepted: true } }), 'Privilege gateway leg', [note('accepted', 'Gateway answer', 'info', 'the simulation answered accepted; it computes no checks on this hop')]),
@@ -531,7 +534,9 @@ export function liveNote(uc) {
   return { status: 'idp-only', message: 'Live mode runs the identity-provider hops only (discovery and the agent token); the rest of this use case is not run live.' };
 }
 
-export function runUseCase(uc, input) {
+// The use case reaches the engine in the vertical's own words (routes.js `localize`): the title, the narration and the prompt hop never carry another pack's text.
+export function runUseCase(catalogUc, input) {
+  const uc = localize(catalogUc, input.vertical);
   const base = { schema: 'appfire-agent-governance-run/1', mode: 'mock', useCase: { id: uc.id, track: uc.track, title: uc.title, maturity: uc.maturity, flag: uc.flag }, vertical: input.vertical, expectedOutcome: uc.expectedOutcome, live: liveNote(uc), labSimulated: uc.maturity === 'needs-build' };
   if (!isFlow(uc)) {
     // Guided use case: the product shows its own page; the lab opens it and does not recompute the outcome (it is the catalog's label).
@@ -560,6 +565,6 @@ export function runUseCase(uc, input) {
   skipped(ctx);
   const outcome = finalOutcome(ctx);
   // A steered run is not comparable with the catalog's label (the agent proposed something else), so it carries no match, and it says what steered it.
-  const steeredNote = ctx.steered ? ` The agent's instructions steered it to propose ${ctx.steered.proposed.tool} for ${ctx.steered.proposed.amount} (lab-simulated obedience).` : '';
+  const steeredNote = ctx.steered ? ` The agent's instructions steered it to propose ${ctx.steered.proposed.tool} for ${countText(ctx.steered.proposed.amount, ctx.unit)} (lab-simulated obedience).` : '';
   return { ...base, kind: 'flow', computed: true, persona: ctx.person.key, outcome, matchesExpected: ctx.steered ? null : outcome === uc.expectedOutcome, instructions: { text: ctx.instructions.text, default: ctx.instructions.default, steered: ctx.instructions.steered, reasons: ctx.instructions.reasons }, steered: ctx.steered || null, hops: enrichAll(ctx), gatewayTrace: ctx.gwTrace, tokens: ctx.tokens, traceId: ctx.trace.traceId, traceparent: formatTraceparent(ctx.trace.traceId, ctx.rootSpan), narration: narrate(ctx, outcome) + steeredNote };
 }

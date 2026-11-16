@@ -11,8 +11,18 @@ export const BOOKING_TOOLS = new Set(['book_airline_flight']);
 export const bandsFor = (tool, role) => (BOOKING_TOOLS.has(tool) ? BANDS.booking : role === 'write' ? BANDS.money : null);
 
 export const GATEWAY = { audience: 'gateway', rateLimit: 30, allowedState: 'TX', blockedTerms: ['bitcoin', 'crypto'] };
+// The third-party code scanner the software pack may use (LAB-INVENTED): the repositories its gateway entry is configured for. The software pack's
+// scan tool takes the place of the weather tool's state rule; every other vertical keeps the state rule.
+export const SCANNER_REPOS = ['platform', 'billing', 'mobile'];
+export const SCAN_VERTICALS = new Set(['software']);
 
-// PDP decision. ctx: { role, tool, amount, owner, sub, groupGate, groups, group, actor: { registered }, rar, event }
+// How a count prints. A vertical whose amount is a count (the software pack: issues in a bulk edit) names its unit in the cast (castUnit); every other
+// pack prints the bare number (policy text) or dollars (replies). A booking tool's amount is money in every pack.
+export const unitFor = (cast, tool) => (cast && typeof cast.castUnit === 'string' && cast.castUnit && !BOOKING_TOOLS.has(tool) ? cast.castUnit : null);
+export const countText = (n, unit) => (unit ? `${n} ${n === 1 ? unit.replace(/s$/, '') : unit}` : String(n));
+
+// PDP decision. ctx: { role, tool, amount, unit, owner, sub, groupGate, groups, group, actor: { registered }, rar, event }
+// `unit` (optional, from unitFor) only changes how the amount reads in the reason: "600 issues is in the STEP_UP band" instead of "amount 600 is ...".
 // Returns { decision: PERMIT|DENY|DENY_403|STEP_UP|HITL_REQUIRED|CIBA, reason }.
 export function decide(ctx) {
   if (ctx.actor && ctx.actor.registered === false) return { decision: 'DENY', reason: 'the acting agent in the act chain is not a registered agent' };
@@ -22,13 +32,16 @@ export function decide(ctx) {
   const bands = bandsFor(ctx.tool, ctx.role);
   if (bands && typeof ctx.amount === 'number') {
     const hit = bands.find((b) => ctx.amount >= b.min);
-    if (hit) return { decision: hit.decision, reason: `amount ${ctx.amount} is in the ${hit.decision} band (lab-invented threshold ${hit.min})` };
+    if (hit) return { decision: hit.decision, reason: `${ctx.unit ? countText(ctx.amount, ctx.unit) : `amount ${ctx.amount}`} is in the ${hit.decision} band (lab-invented threshold ${hit.min})` };
   }
   return { decision: 'PERMIT', reason: 'no rule restricts this call' };
 }
 
 // Gateway edge policy for third-party servers: arguments are read at the edge. Returns null (allowed) or a reason.
-export function edgePolicy(tool, args) {
+export function edgePolicy(tool, args, vertical) {
+  if (tool === 'get_weather' && SCAN_VERTICALS.has(vertical)) {
+    return SCANNER_REPOS.includes(String(args?.repo || '').toLowerCase()) ? null : `the code scanner is configured for the ${SCANNER_REPOS.join(', ')} repositories only`;
+  }
   if (tool === 'get_weather') return args?.state === GATEWAY.allowedState ? null : `the configured state scope is ${GATEWAY.allowedState}`;
   if (tool === 'brave_news_search') {
     const q = String(args?.query || '').toLowerCase();

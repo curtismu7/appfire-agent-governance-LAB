@@ -2,6 +2,8 @@
 // shown alongside HIVE's back-end role). One entry per step. Each carries three customer-safe fields: what the step is (req, the agenda's words),
 // how this lab shows it (prove, naming the use case to run and the thing to point at) and the talking points the presenter says (say).
 // `ucs` wires the Run buttons: one button per use case; a step with none is a look-and-listen step.
+// Every string may carry {{castUser}}-style tokens (the vertical's cast) and {{prompt:UC1|fallback}} (that use case's typed prompt in the vertical's
+// What to type list); `guideStep` / `fillGuide` fill them, so one walkthrough reads naturally in every vertical (software, banking, healthcare, retail).
 export const DEMO_GUIDE = [
   {
     id: "start",
@@ -9,9 +11,9 @@ export const DEMO_GUIDE = [
     short: "Start",
     title: "1 · A person or application starts an AI-assisted workflow",
     req: "An authenticated user or application starts an AI-assisted workflow.",
-    prove: "Run “show my balance”. The sequence opens with the sign-in and prompt hops: alex.morgan signs in to the Appfire app and asks for something. The simulation banner says what is mock; HIVE is never called.",
+    prove: "Run {{prompt:UC1|a low-risk read}}. The sequence opens with the sign-in and prompt hops: {{castUser}} signs in to {{castBrand}} and asks {{castAgent}} for something. The simulation banner says what is mock; HIVE is never called.",
     say: "The workflow starts the way it does today: a person signs in to an application and asks for something. Nothing about the agent is trusted yet.",
-    ucs: [{ uc: "UC1", label: "Start the workflow: a balance request" }],
+    ucs: [{ uc: "UC1", label: "Start the workflow: a low-risk read" }],
   },
   {
     id: "identity",
@@ -39,27 +41,27 @@ export const DEMO_GUIDE = [
     short: "Evaluate",
     title: "4 · Ping evaluates the call",
     req: "Ping evaluates the request using agent identity, delegated permissions, the requested action, the resource and risk context.",
-    prove: "The highlighted step in the sequence is the decision. Run “Entitlement-tiered capability” twice, as the premium customer and as the standard customer: same tool, same data, a different person, a different decision. In Real mode the tier is your PingOne group: flip your user in or out of the premium-tier group in PingOne, Sign out, sign in again and run it again. The Decision card names the policy that applied.",
+    prove: "The highlighted step in the sequence is the decision. Run {{prompt:UC21|“Entitlement-tiered capability”}} twice, as the premium customer and as the standard customer: same tool, same {{castAsset}}, a different person, a different decision. In Real mode the tier is your PingOne group: flip your user in or out of the {{castGroup}} group in PingOne, Sign out, sign in again and run it again. The Decision card names the policy that applied.",
     say: "Every call gets its own decision: identity, entitlement, action, resource, risk. It is a policy evaluation you can audit, not a prompt the model answers.",
     ucs: [{ uc: "UC21", label: "Evaluate a call: entitlement tiers" }],
   },
   {
     id: "allow",
-    prompts: ["UC1"],
+    prompts: ["UC1", "UC30"],
     short: "Allowed",
     title: "5 · A low-risk read is allowed automatically",
     req: "A low-risk, read-only request is allowed automatically.",
-    prove: "Run “show my balance”: the Decision card says ALLOWED, the tool ran, and nobody was asked. The strip under it shows which of the four controls it landed on. Press Compare to see it beside a denied call.",
-    say: "Reads flow. Nobody approves a balance check, and the record is still written.",
+    prove: "Run {{prompt:UC1|a low-risk read}}: the Decision card says ALLOWED, the tool ran, and nobody was asked. The strip under it shows which of the four controls it landed on. Press Compare to see it beside a denied call. Where What to type lists a third-party MCP call the agent is allowed to use, run it too: the gateway's edge policy lets it through, and the next step shows the same tool refused.",
+    say: "Reads flow. Nobody approves a read, and the record is still written.",
     ucs: [{ uc: "UC1", label: "Run a low-risk read" }],
   },
   {
     id: "escalate",
-    prompts: ["UC7", "UC8", "UC6", "UC13"],
+    prompts: ["UC7", "UC8", "UC22", "UC6", "UC31", "UC10", "UC27", "UC13"],
     short: "Risk",
     title: "6 · A higher-risk request is denied, constrained or sent for approval",
     req: "A higher-risk write or sensitive-data request is denied, constrained or routed for approval, based on policy.",
-    prove: "Run the buttons in order. $600 steps up (ESCALATED: a second factor). $300 needs a person (ESCALATED: approve it on the mock phone). $2500 is refused (DENIED), and so is the third-party call outside what the agent may use. The actor-injection attack is refused too: nothing is dispatched. “Poisoned instructions” and “Compare two runs” open the Compare page (always Mock) side by side: a careful agent against one told to ignore its limits, and a held write against a refused one. The amounts are the lab's own; Appfire sets the real ones in policy.",
+    prove: "Run the buttons in order. {{prompt:UC7|The first write}} steps up (ESCALATED: a second factor). {{prompt:UC8|The next write}} needs a person (ESCALATED: approve it on the mock phone). {{prompt:UC6|The largest write}} is refused (DENIED), and so is the third-party call outside what the agent may use. The actor-injection attack is refused too: nothing is dispatched. The typed prompts for this step add more refusals where the vertical lists them: another person's private {{castAsset}}, an approval the agent forged, and a lower rung of human approval. “Poisoned instructions” and “Compare two runs” open the Compare page (always Mock) side by side: a careful agent against one told to ignore its limits, and a held write against a refused one. The amounts are the lab's own; Appfire sets the real ones in policy.",
     say: "Controlled autonomy. A risky write stops for a second factor, a riskier one for a person, and an out-of-bounds one is refused. A manipulated agent still meets the same decision, because the enforcement point is not the model.",
     ucs: [
       { uc: "UC7", label: "Higher risk: needs a second factor" },
@@ -119,3 +121,29 @@ export function promptGroups(list) {
   return { groups, more };
 }
 
+
+// ---- Filling the walkthrough for the vertical on screen ----
+// Words used while the cast has not loaded yet, or when a vertical's cast lacks a key. They are vertical-neutral on purpose.
+const CAST_FALLBACK = { castUser: "the signed-in person", castUser2: "the premium person", castAgent: "the agent", castBrand: "the app", castAsset: "resource", castAction: "write", castGroup: "premium-tier" };
+const GUIDE_TOKEN = /\{\{(prompt:UC[\d.]+|\w+)(?:\|([^{}]*))?\}\}/g;
+
+// Fill {{castX}} from the vertical's cast and {{prompt:UCn|fallback}} from its What to type list (the prompt in curly quotes; the fallback, never quoted, when
+// the vertical lists none). An unknown token is left as it is, so a typo shows up in a test instead of being swallowed. ctx = { cast, prompts }.
+export function fillGuide(text, ctx = {}) {
+  const cast = ctx.cast || {};
+  return String(text).replace(GUIDE_TOKEN, (m, key, fallback) => {
+    if (key.startsWith("prompt:")) {
+      const hit = (ctx.prompts || []).find((p) => p.uc === key.slice(7));
+      return hit?.text ? `“${hit.text}”` : fallback ?? "the matching prompt in What to type";
+    }
+    if (typeof cast[key] === "string" && cast[key]) return cast[key];
+    if (Object.hasOwn(CAST_FALLBACK, key)) return CAST_FALLBACK[key];
+    return m;
+  });
+}
+
+// A walkthrough step with its words filled for the vertical: the same shape as the step, so a component reads it exactly as it read the static one.
+export function guideStep(step, ctx) {
+  if (!step) return step;
+  return { ...step, title: fillGuide(step.title, ctx), req: fillGuide(step.req, ctx), prove: fillGuide(step.prove, ctx), say: fillGuide(step.say, ctx), ucs: step.ucs.map((b) => ({ ...b, label: fillGuide(b.label, ctx) })) };
+}

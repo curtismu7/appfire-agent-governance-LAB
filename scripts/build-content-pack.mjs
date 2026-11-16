@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_CAST } from '../server/src/cast.js';
+import { DEFAULT_CAST, DEFAULT_VERTICAL } from '../server/src/cast.js';
 import { buildStory } from '../server/src/story.js';
 import { MANIFEST, TRACKS } from '../server/src/manifest.js';
 
@@ -24,7 +24,7 @@ const TRACK_BLURB = {
 };
 
 export function buildPack() {
-  const story = buildStory(DEFAULT_CAST, 'banking');
+  const story = buildStory(DEFAULT_CAST, DEFAULT_VERTICAL);
   const sid = (n) => `S${String(n).padStart(2, '0')}`;
   const tracks = Object.keys(TRACKS);
   const why = story.talkTrack.find((t) => t.id === 'why-appfire-agent-governance').say;
@@ -35,7 +35,7 @@ export function buildPack() {
     version,
     demo: { id: 'appfire-agent-governance-lab', name: 'Appfire Agent Governance LAB', catalog: 'D000', baseUrl: 'http://localhost:7814', doctor: '/api/health', tags: ['appfire-agent-governance', 'token-exchange', 'act-claim', 'authorize', 'gateway', 'step-up', 'hitl', 'ciba', 'attacks', 'simulated'] },
     glossary: [
-      { id: 'appfire-agent-governance', term: 'Customer-facing agent', definition: `An AI agent that acts for a customer: it asks for a balance, a transfer, an order. ${NOTE}`, aliases: ['customer agent'] },
+      { id: 'appfire-agent-governance', term: 'Customer-facing agent', definition: `An AI agent that acts for a customer: it asks for an open-issue list, a bulk edit, an order. ${NOTE}`, aliases: ['customer agent'] },
       { id: 'delegation', term: 'Delegation with an act claim', definition: `RFC 8693 token exchange mints a delegated token whose sub is the customer and whose act claim names the agent. Delegation, not impersonation. ${NOTE}`, aliases: ['act claim', 'on behalf of'] },
       { id: 'consent', term: 'Consent (may_act)', definition: `The customer lets a named agent act for them before the exchange. ${NOTE}`, aliases: ['may_act'] },
       { id: 'authorize-decision', term: 'Authorize decision', definition: `A policy decision on every call: PERMIT, DENY, or an obligation (step-up, human approval, CIBA). The lab's thresholds are lab-invented, fitted to the catalog's example amounts. ${NOTE}`, aliases: ['PDP'] },

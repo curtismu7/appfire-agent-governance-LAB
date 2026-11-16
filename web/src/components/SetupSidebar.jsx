@@ -1,4 +1,4 @@
-import { outcomeState, titleOfUc } from "../lib";
+import { MOCK_ONLY_VERTICALS, REAL_VERTICAL_NOTE, outcomeState, titleOfUc } from "../lib";
 import { Tag } from "./Bits";
 
 // The vertical selector, shared by the sidebar and the diagram pages.
@@ -44,6 +44,8 @@ export default function SetupSidebar({ onNewChat, mode, host, several, setSevera
         </select>
       </label>
       <VerticalSelect vertical={vertical} verticals={verticals} onChange={onVertical} />
+      {/* Real runs call the SE gateway, which serves banking, healthcare and retail tools only; say so beside the menu while Real is on and the pack is one it serves none of. */}
+      {mode === "live" && MOCK_ONLY_VERTICALS.includes(vertical) && <p className="muted" data-testid="real-vertical-note">{REAL_VERTICAL_NOTE}</p>}
       {children}
       <p className="kicker">Sessions · this workspace</p>
       {sessions.length === 0 ? <p className="muted" data-testid="sessions-empty">No runs yet in this workspace.</p> : (

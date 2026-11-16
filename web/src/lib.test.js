@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { EXTRAS, NEEDS_LABELS, TRACK_LABELS, extraHops, haystack, newTraceparent, outcomeState, triggerText, verdictState , holdWords } from "./lib";
+import { DEFAULT_VERTICAL, EXTRAS, NEEDS_LABELS, REAL_VERTICAL_NOTE, TRACK_LABELS, extraHops, fullPackNames, haystack, joinOr, newTraceparent, outcomeState, pickFullPack, triggerText, verdictState , holdWords, verticalName } from "./lib";
 import { visible } from "./safeText";
 import { USECASES } from "./testFixtures";
 
@@ -57,5 +57,24 @@ describe("the mock phone's words", () => {
     expect(holdWords("REAL_HOLD")).toBe("The gateway holds this call for approval");
     for (const o of ["STEP_UP", "HITL_REQUIRED", "REAL_HOLD", undefined, "x"]) expect(holdWords(o)).not.toMatch(/\bUC\d/);
   });
+  test("the page opens on the software vertical", () => {
+    expect(DEFAULT_VERTICAL).toBe("software");
+  });
+  test("a sentence that names the full packs is built from the loaded list, never typed by hand", () => {
+    const list = [{ id: "software", pack: "full" }, { id: "banking", pack: "full" }, { id: "healthcare", pack: "full" }, { id: "retail", pack: "full" }, { id: "sporting-goods", pack: "stub" }];
+    expect(fullPackNames(list)).toEqual(["Software", "Banking", "Healthcare", "Retail"]);
+    expect(pickFullPack(list)).toBe("Pick Software, Banking, Healthcare or Retail");
+    expect(pickFullPack([{ id: "banking", pack: "full" }, { id: "retail", pack: "full" }])).toBe("Pick Banking or Retail");
+    expect(pickFullPack([{ id: "retail", pack: "full" }])).toBe("Pick Retail");
+    expect(pickFullPack([])).toBe("Pick one of the full-pack verticals"); // before the list loads
+    expect(pickFullPack(undefined)).toBe("Pick one of the full-pack verticals");
+    expect(verticalName("sporting-goods")).toBe("Sporting goods");
+    expect(joinOr(["a", "b", "c"])).toBe("a, b or c");
+    expect(joinOr([])).toBe("");
+  });
+  test("the Real note says in one line which verticals Real needs", () => {
+    expect(REAL_VERTICAL_NOTE).toMatch(/Real runs need the Banking, Healthcare or Retail vertical today/);
+    expect(REAL_VERTICAL_NOTE).toMatch(/banking, healthcare and retail tools/);
+    expect(REAL_VERTICAL_NOTE.split("\n")).toHaveLength(1);
+  });
 });
-

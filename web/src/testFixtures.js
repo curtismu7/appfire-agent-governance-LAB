@@ -16,12 +16,12 @@ export const USECASES = [
 ];
 export const TRACK_ORDER = ["foundations", "learn", "controls", "hitl", "demo", "attacks", "tools", "nhi"];
 export const catalog = (vertical = "banking") => ({
-  schema: "appfire-agent-governance-usecases/1", vertical, pack: ["banking", "healthcare", "retail"].includes(vertical) ? "full" : "stub", total: USECASES.length, meta: {},
+  schema: "appfire-agent-governance-usecases/1", vertical, pack: ["software", "banking", "healthcare", "retail"].includes(vertical) ? "full" : "stub", total: USECASES.length, meta: {},
   tracks: TRACK_ORDER.map((t) => { const items = USECASES.filter((u) => u.track === t); return { track: t, count: items.length, usecases: items }; }).filter((t) => t.count),
 });
 export const INFO = {
   mode: "mock", modes: ["mock", "live"], simulated: true, total: 87, counts: {}, personas: ["standard", "premium"],
-  verticals: [{ id: "banking", label: "Appfire Platform", pack: "full" }, { id: "healthcare", label: "Appfire Health Suite", pack: "full" }, { id: "government", label: "Government", pack: "stub" }],
+  verticals: [{ id: "software", label: "Appfire Work Suite", pack: "full" }, { id: "banking", label: "Appfire Platform", pack: "full" }, { id: "healthcare", label: "Appfire Health Suite", pack: "full" }, { id: "government", label: "Government", pack: "stub" }],
 };
 export const STORY = {
   title: "Appfire Agent Governance LAB",
