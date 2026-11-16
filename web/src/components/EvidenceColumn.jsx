@@ -66,7 +66,7 @@ export function HopSources({ run }) {
   return (
     <div className="evwhy" data-testid="hop-sources">
       <p className="kicker">Where each hop ran</p>
-      {run.realGate && run.realGate.real === false && <p className="muted" data-testid="hop-sources-why">Real mode runs real only: this use case cannot run Real ({visible(run.realGate.reason)}).</p>}
+      {run.realGate && run.realGate.real === false && <p className="muted" data-testid="hop-sources-why">This use case cannot run Real ({visible(run.realGate.reason)}), so the mock engine ran it: every hop below is MOCK.</p>}
       {run.kind === "live" && <p className="muted">Real, identity provider only: two calls with the old worker client, nothing past the identity provider.</p>}
       <ol className="steps">
         {hops.map((h) => (

@@ -1,23 +1,24 @@
-// Which use cases run Real (owner, 2026-11-10). A use case runs Real only when the tool it calls (resolved for the vertical) is served by the SE
-// mcp-server itself, and when nothing in it needs a part this lab keeps simulated. Everything else stays Mock in Real mode, and its hops say why.
+// Which use cases run Real (owner, 2026-11-10; widened 2026-11-16). A use case runs Real only when the tool it calls (resolved for the vertical) is
+// served through the SE Agent Gateway, and when nothing in it needs a part this lab keeps simulated. Everything else runs on the labelled mock engine
+// in Real mode (owner 2026-11-16, reversing the 2026-11-13 refusal), and its hops say MOCK and why.
 //
 // SE_MCP_TOOLS: tool NAMES only, read once from AI-DEMO2's oauth-mcp source (src/tools/BankingToolRegistry.ts and
-// src/tools/handlers/verticalTools.generated.ts at origin/main, 2026-11-10), limited to the tools the use cases here can call. Tools that need a service
-// that is scaled to 0 on SE (api-resource-server, mcp-resource-server, agent-service) or a service not known to run there are NOT in the list; their
-// reason is in TOOL_NEEDS. The gateway's own tools/list is checked at run time as well: a tool it does not list is never called.
+// src/tools/handlers/verticalTools.generated.ts at origin/main, 2026-11-10), limited to the tools the use cases here can call. 2026-11-16: the
+// owner scaled api-resource-server up on SE (show_mortgage), and the third-party tool servers (mcp-weather, mcp-brave, mcp-code-search) are
+// running there, so show_mortgage, get_weather, brave_news_search and code_search are listed too. Whether the gateway routes the third-party ones
+// to this lab's token is UNVERIFIED: the gateway's own tools/list is checked at run time, and a tool it does not list is never called (the run
+// ends REAL_NOT_LISTED and says so). Tools that need a service still scaled to 0 on SE (agent-service) are NOT in the list; their reason is in
+// TOOL_NEEDS.
 import { isFlow, chainOf } from './flow.js';
 import { toolFor } from './cast.js';
 
 export const SE_MCP_TOOLS = new Set([
   'get_my_accounts', 'get_account_balance', 'create_transfer', 'get_sensitive_account_details', 'get_branch_hours', 'request_fee_waiver',
   'redeem_miles', 'book_airline_flight', 'view_coverage', 'pay_bill', 'sensitive_patient_records', 'list_orders', 'checkout', 'sensitive_order_history',
+  'show_mortgage', 'get_weather', 'brave_news_search', 'code_search',
 ]);
 export const TOOL_NEEDS = {
   get_portfolio_summary: 'the A2A agent-service, which is scaled to 0 on SE',
-  show_mortgage: 'api-resource-server, which is scaled to 0 on SE',
-  code_search: 'a code-search service that is not known to run on SE (UNVERIFIED)',
-  get_weather: 'a tool server the SE mcp-server does not serve',
-  brave_news_search: 'a tool server the SE mcp-server does not serve',
 };
 // Trusted-caller features: they need headers a caller must never send (forced actor, rate-limit toggle, TraT, tiers).
 const TRUSTED_FEATURE = { UC13: 'the forced actor', UC18: 'the rate-limit toggle', UC21: 'the entitlement tiers' };
@@ -50,7 +51,7 @@ export function realGate(uc, cast) {
 
 // The arguments the lab sends for each tool (lab-invented, labelled). Account ids come from get_my_accounts in the same session (the user's own).
 export const NEEDS_ACCOUNTS = new Set(['get_account_balance', 'create_transfer', 'request_fee_waiver']);
-export function toolArgs(tool, { vertical, accounts = [], amount }) {
+export function toolArgs(tool, { vertical, accounts = [], amount, args }) {
   const a0 = accounts[0] ?? null; const a1 = accounts[1] ?? accounts[0] ?? null;
   const amt = Number.isFinite(amount) ? amount : 25;
   switch (tool) {
@@ -59,6 +60,9 @@ export function toolArgs(tool, { vertical, accounts = [], amount }) {
     case 'request_fee_waiver': return { account_id: a0, reason: 'Customer request' };
     case 'get_branch_hours': return { vertical };
     case 'pay_bill': case 'checkout': return { amount: amt };
+    // The third-party tools take what the use case stages (situations.js args: a state, a search query). Parameter names are UNVERIFIED against SE.
+    case 'get_weather': return { state: typeof args?.state === 'string' ? args.state : 'TX' };
+    case 'brave_news_search': case 'code_search': return { query: typeof args?.query === 'string' ? args.query : 'status' };
     default: return {};
   }
 }

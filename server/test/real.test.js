@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createReal, realConfig, assertAuthUrl, scrubError, REDIRECT_URI, PASSWORD_SHOWN } from '../src/real.js';
 import { createLive, liveConfig } from '../src/live.js';
 import { gatewayHeaders, TRUSTED_HEADERS, SENT_HEADERS, assertNoTrusted, parseAuditTrail, parseRpc, gatewayUrlProblem } from '../src/mcpClient.js';
-import { realGate, SE_MCP_TOOLS } from '../src/realGate.js';
+import { realGate, SE_MCP_TOOLS, toolArgs } from '../src/realGate.js';
 import { MANIFEST, findUseCase } from '../src/manifest.js';
 import { loadCast } from '../src/cast.js';
 import { installNetguard } from '../src/netguard.js';
@@ -375,26 +375,77 @@ test('sign-in is per workspace; sign-out works', async () => {
   });
 });
 
-test('use-case gating: only SE mcp-server tools run Real; the rest are REFUSED in Real mode (owner 2026-11-13: real only, no mock fallback)', async () => {
+test('use-case gating: only tools served through the SE gateway run Real; the rest run on the LABELLED MOCK engine in Real mode (owner 2026-11-16, reversing the 2026-11-13 refusal)', async () => {
   const cast = loadCast('/nonexistent', 'banking');
   const realIds = MANIFEST.usecases.filter((u) => realGate(u, cast).real).map((u) => u.id);
-  // Owner 2026-11-13: UC7/UC8 (HITL with the SE gateway's real challenge pipeline) run Real too.
-  assert.deepEqual(realIds, ['UC1', 'UC3', 'UC19', 'UC20', 'UC4', 'UC6', 'UC7', 'UC8', 'UC24', 'UC17', 'UC28']);
+  // Owner 2026-11-13: UC7/UC8 (HITL with the SE gateway's real challenge pipeline) run Real too. 2026-11-16: UC33 (api-resource-server scaled up on SE)
+  // and the third-party tool servers (UC30, UC31, UC41, UC42, UC-TOOL1) run Real; the gateway's own tools/list still decides at run time.
+  assert.deepEqual(realIds, ['UC1', 'UC3', 'UC19', 'UC20', 'UC33', 'UC4', 'UC6', 'UC7', 'UC8', 'UC24', 'UC17', 'UC30', 'UC31', 'UC41', 'UC42', 'UC-TOOL1', 'UC28']);
   const why = (id) => realGate(findUseCase(id), cast).reason;
   assert.match(why('UC13'), /trusted-caller/); assert.match(why('UC18'), /trusted-caller/); assert.match(why('UC21'), /tiers/);
-  assert.match(why('UC22'), /approval/); assert.match(why('UC2'), /A2A/); assert.match(why('UC33'), /scaled to 0/);
-  assert.match(why('UC40'), /Privilege|ID-JAG/); assert.match(why('UC-TOOL1'), /code-search/); assert.match(why('UC9'), /feature flag/);
+  assert.match(why('UC22'), /approval/); assert.match(why('UC2'), /A2A/); assert.match(why('UC37'), /A2A/);
+  assert.match(why('UC40'), /Privilege|ID-JAG/); assert.match(why('UC9'), /feature flag/);
+  assert.deepEqual(['UC33', 'UC30', 'UC41', 'UC-TOOL1'].map((id) => realGate(findUseCase(id), cast).tool), ['show_mortgage', 'get_weather', 'brave_news_search', 'code_search']);
   for (const id of realIds) assert.ok(SE_MCP_TOOLS.has(realGate(findUseCase(id), cast).tool));
+  assert.deepEqual(toolArgs('get_weather', { args: { state: 'FL' } }), { state: 'FL' }); assert.deepEqual(toolArgs('get_weather', {}), { state: 'TX' });
+  assert.deepEqual(toolArgs('brave_news_search', { args: { query: 'regional weather outlook' } }), { query: 'regional weather outlook' });
+  assert.deepEqual(toolArgs('show_mortgage', {}), {});
   await withFull(async (url, { gw }) => {
     await toReal(url);
     const r = await run(url, 'UC2', { vertical: 'banking' });
-    assert.equal(r.status, 403); assert.equal(r.body.error, 'mock_in_real_refused');
-    assert.match(r.body.detail, /Real mode runs real only: UC2 cannot run Real \(agent-to-agent/);
-    assert.equal(gw.seen.length, 0, 'a blocked use case never calls the gateway');
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const x = r.body.run;
+    assert.equal(x.mode, 'mock'); assert.equal(x.kind, 'flow'); assert.ok(x.hops.length > 0);
+    assert.deepEqual(x.realGate, { real: false, reason: x.realGate.reason }); assert.match(x.realGate.reason, /agent-to-agent/);
+    assert.ok(x.hops.every((h) => h.source === 'mock' || h.source === 'not-run'), 'every hop of a fallback run is MOCK or NOT RUN, never REAL');
+    assert.equal(gw.seen.length, 0, 'a use case that cannot run Real never calls the gateway');
+    const hist = await (await get(url, '/api/runs')).json();
+    assert.equal(hist.runs.at(-1).id, 'UC2');
     const list = await (await get(url, '/api/usecases?vertical=banking')).json();
     const uc1 = list.tracks.flatMap((t) => t.usecases).find((u) => u.id === 'UC1'); assert.equal(uc1.realGate.real, true);
     const uc2 = list.tracks.flatMap((t) => t.usecases).find((u) => u.id === 'UC2'); assert.equal(uc2.realGate.real, false); assert.match(uc2.realGate.reason, /A2A/);
   });
+});
+
+test('UC33 (show my mortgage) runs Real now that api-resource-server is up on SE: tools/call show_mortgage, a REAL_PERMIT reply, every hop REAL', async () => {
+  await withFull(async (url, { gw }) => {
+    await toReal(url); await signIn(url);
+    const r = await run(url, 'UC33', { vertical: 'banking' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const x = r.body.run;
+    assert.equal(x.kind, 'real'); assert.equal(x.outcome, 'REAL_PERMIT'); assert.equal(x.hops.length, 9);
+    const call = gw.seen.find((c) => c.rpc?.method === 'tools/call');
+    assert.equal(call.rpc.params.name, 'show_mortgage'); assert.deepEqual(call.rpc.params.arguments, {});
+    assert.ok(x.hops.every((h) => h.verdict === 'skip' || h.source === 'real'));
+  });
+});
+
+test('a third-party tool (UC31, get_weather) runs Real with the state the use case stages; if the gateway does not list it the run stops REAL_NOT_LISTED and never calls it', async () => {
+  await withFull(async (url, { gw }) => {
+    await toReal(url); await signIn(url);
+    const r = await run(url, 'UC31', { vertical: 'banking' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const call = gw.seen.find((c) => c.rpc?.method === 'tools/call');
+    assert.equal(call.rpc.params.name, 'get_weather'); assert.deepEqual(call.rpc.params.arguments, { state: 'FL' });
+    assert.equal(r.body.run.kind, 'real');
+  });
+  await withFull(async (url, { gw }) => {
+    await toReal(url); await signIn(url);
+    const r = await run(url, 'UC31', { vertical: 'banking' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.run.outcome, 'REAL_NOT_LISTED'); assert.match(r.body.run.reply.text, /does not list the tool get_weather/);
+    assert.equal(gw.seen.filter((c) => c.rpc?.method === 'tools/call').length, 0, 'a tool the gateway does not list is never called');
+  }, { gateway: 'no-weather' });
+});
+
+test('in Real mode, a use case that cannot run Real is refused with the reason only when the mock engine is not available here', async () => {
+  await withFull(async (url, { gw }) => {
+    await toReal(url);
+    const r = await run(url, 'UC2', { vertical: 'banking' });
+    assert.equal(r.status, 403); assert.equal(r.body.error, 'mock_in_real_refused');
+    assert.match(r.body.detail, /UC2 cannot run Real \(agent-to-agent/); assert.match(r.body.detail, /mock engine is not available here/);
+    assert.equal(gw.seen.length, 0);
+  }, { env: { ...ENV, ALLOW_MOCK_SIGNIN: '' } });
 });
 
 test('the old two-call path only while the new settings are absent, labelled identity provider only; any AAG_* setting turns it off', async () => {

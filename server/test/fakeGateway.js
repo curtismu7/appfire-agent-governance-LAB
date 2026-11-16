@@ -2,19 +2,21 @@
 // initialize, notifications/initialized, tools/list and tools/call, records every request (method, headers, body), and checks that the bearer is
 // a token the fake PingOne issued by exchange (with act). state.behaviour picks a variant:
 //   'ok' | 'sse' (answers as an event stream) | 'deny' (403 + X-Gw-Audit-Trail on tools/call) | 'token' (401 + WWW-Authenticate on initialize)
-//   | 'hold' (428 on tools/call) | 'down' (503 on initialize) | 'tool-error' (isError result) | 'no-tool' (tools/list without the tool)
+//   | 'hold' (428 on tools/call) | 'down' (503 on initialize) | 'tool-error' (isError result) | 'no-tool' (tools/list without get_account_balance) | 'no-weather' (tools/list without get_weather)
 //   | 'redirect' (307 on initialize to /elsewhere, counted in state.elsewhere) | 'one-account' (get_my_accounts lists one account)
 //   | 'audit-ctl' (403 with control characters in the audit trail's decision)
 import http from 'node:http';
 
 export const SESSION_ID = 'fake-mcp-session-0001';
 export const AUDIT_TRAIL = JSON.stringify([{ stage: 'jwt', result: 'pass' }, { stage: 'authorize', decision: 'DENY', reason: 'fake policy' }]);
-const TOOLS = ['get_my_accounts', 'get_account_balance', 'create_transfer', 'get_branch_hours', 'request_fee_waiver', 'view_coverage', 'pay_bill', 'list_orders', 'checkout'];
+const TOOLS = ['get_my_accounts', 'get_account_balance', 'create_transfer', 'get_branch_hours', 'request_fee_waiver', 'view_coverage', 'pay_bill', 'list_orders', 'checkout', 'show_mortgage', 'get_weather', 'brave_news_search', 'code_search'];
 const RESULTS = {
   get_my_accounts: { accounts: [{ id: 'acct-fake-1', accountType: 'CHECKING', balance: 1200.5 }, { id: 'acct-fake-2', accountType: 'SAVINGS', balance: 80 }] },
   get_account_balance: { account_id: 'acct-fake-1', balance: 1200.5, currency: 'USD' },
   view_coverage: { plan: 'Fake Silver', deductible: 500 },
   list_orders: { orders: [{ id: 'o-1' }, { id: 'o-2' }] },
+  show_mortgage: { loan_id: 'm-fake-1', balance: 250000, rate: 6.1 },
+  get_weather: { forecast: 'fake: sunny' },
 };
 
 export async function startFakeGateway({ behaviour = 'ok', isDelegated = () => true } = {}) {
@@ -40,7 +42,7 @@ export async function startFakeGateway({ behaviour = 'ok', isDelegated = () => t
       if (rpc.method !== 'initialize' && req.headers['mcp-session-id'] !== SESSION_ID) return reply(400, { jsonrpc: '2.0', id: rpc.id ?? null, error: { code: -32600, message: 'fake: no session' } });
       if (rpc.method === 'initialize') return reply(200, { jsonrpc: '2.0', id: rpc.id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'fake-gateway', version: '0' } } }, { 'mcp-session-id': SESSION_ID });
       if (rpc.method === 'notifications/initialized') { res.writeHead(202); res.end(); return undefined; }
-      if (rpc.method === 'tools/list') return reply(200, { jsonrpc: '2.0', id: rpc.id, result: { tools: (b === 'no-tool' ? TOOLS.filter((t) => t !== 'get_account_balance') : TOOLS).map((name) => ({ name, inputSchema: { type: 'object' } })) } });
+      if (rpc.method === 'tools/list') return reply(200, { jsonrpc: '2.0', id: rpc.id, result: { tools: (b === 'no-tool' ? TOOLS.filter((t) => t !== 'get_account_balance') : b === 'no-weather' ? TOOLS.filter((t) => t !== 'get_weather') : TOOLS).map((name) => ({ name, inputSchema: { type: 'object' } })) } });
       if (rpc.method === 'tools/call') {
         const name = rpc.params?.name;
         if (name !== 'get_my_accounts') {
