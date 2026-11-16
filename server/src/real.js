@@ -175,6 +175,12 @@ const failText = (r, who = 'PingOne') => (r.unreachable ? `${who} did not answer
 export function createReal({ config = { problem: 'not configured' }, missing = FULL_REQUIRED, wanted = false, fetchImpl = (...a) => globalThis.fetch(...a), timeoutMs = TIMEOUT_MS, maxBytes = MAX_BODY_BYTES, now = Date.now, gatewayFetch } = {}) {
   const configured = () => !config.problem;
   const sessions = new Map(); // workspace id -> { accessToken, claims, idClaims, expiresAt, steps }
+  // The PingOne session (owner, 2026-11-16: "once logged in, I should not have to login again. Use P1 session"): the cookies PingOne set during the last
+  // password sign-in, kept in memory only for this process (never returned, logged or put in a hop except the flow's own steps, never written to disk).
+  // A workspace with no valid token (a new tab, an expired token, a Reset) signs in again by sending them to authorize: PingOne answers COMPLETED with a code
+  // while its own session lives, and no password is needed. The password sign-in remains the fallback. UNVERIFIED against a real tenant.
+  let sso = null; // { cookies: Map(name -> value) } or null
+  let lastSilentFail = -Infinity;
   let inFlight = 0;
 
   async function p1(url, init, traceparent) {
@@ -208,20 +214,21 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
 
   // The pi.flow sign-in. password: what the person typed (a string). Returns { ok: true, user, steps } or { ok: false, status, error, message, steps }.
   // The password is used in one request body below and is not kept anywhere; `steps` (what the dialog and the Sign-in hop show) never carry it.
-  async function signIn(ws, password, traceparentIn) {
+  async function signIn(ws, password, traceparentIn, { silent = false } = {}) {
     if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
+    if (silent && !sso) return { ok: false, status: 401, error: 'no_p1_session', message: 'There is no PingOne session to use: sign in with your password.', steps: [] };
     if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two Real calls are already in flight; wait for one to finish', 429);
     if (!sessions.has(ws) && sessions.size >= MAX_SESSIONS) throw new RealRefused('too_many', 'too many signed-in workspaces; Reset one first', 429);
     inFlight += 1;
     const trace = newTrace(traceparentIn, `signin:${ws}`);
     const tp = () => formatTraceparent(trace.traceId, trace.span());
     const steps = [];
-    const jar = new Map();
+    const jar = new Map(silent ? sso.cookies : []);
     const keep = (cookies) => { for (const c of cookies) { const pair = String(c).split(';')[0]; const i = pair.indexOf('='); if (i > 0) jar.set(pair.slice(0, i).trim(), pair.slice(i + 1)); } };
     const cookieHeader = () => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
     let sent = false; // true once the password has gone to PingOne: from then on, only error codes are kept
     // Belt and braces: the exact password, if it ever appears in what is returned, is replaced (only for passwords long enough to be unambiguous).
-    const scrub = (v) => (password.length >= 4 ? JSON.parse(JSON.stringify(v).split(JSON.stringify(password).slice(1, -1)).join('[the password]')) : v);
+    const scrub = (v) => (typeof password === 'string' && password.length >= 4 ? JSON.parse(JSON.stringify(v).split(JSON.stringify(password).slice(1, -1)).join('[the password]')) : v);
     const fail = (status, error, message, r) => scrub({ ok: false, status, error, message, steps, ...(r ? { pingone: sent ? p1Codes(r) : p1Error(r) } : {}) });
     try {
       // 1. authorize, pi.flow: the answer is JSON (a flow), not a redirect.
@@ -234,14 +241,16 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       // resolves from, so the exchange-1 resource can stamp act.
       const query = { response_type: 'code', client_id: config.user.id, redirect_uri: REDIRECT_URI, scope: `${SIGN_IN_SCOPES} ${config.agentScope}`, response_mode: 'pi.flow', code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', state, nonce };
       const t1 = tp();
-      const a = await p1(`${config.base}/as/authorize?${new URLSearchParams(query)}`, { method: 'GET', headers: { accept: 'application/json' } }, t1);
+      const a = await p1(`${config.base}/as/authorize?${new URLSearchParams(query)}`, { method: 'GET', headers: { accept: 'application/json', ...(silent && jar.size ? { cookie: cookieHeader() } : {}) } }, t1);
       keep(a.cookies);
-      steps.push({ step: 'authorize (response_mode=pi.flow, PKCE S256)', traceparent: t1, request: { method: 'GET', url: `${config.base}/as/authorize`, query }, response: { status: a.status, body: a.json ? { id: str(a.json.id, 64), status: str(a.json.status, 64), ...(a.status === 200 ? {} : p1Error(a)) } : p1Error(a), 'set-cookie': a.cookies.map(String) } });
+      steps.push({ step: silent ? 'authorize (response_mode=pi.flow, PKCE S256, with your PingOne session: no password)' : 'authorize (response_mode=pi.flow, PKCE S256)', traceparent: t1, request: { method: 'GET', url: `${config.base}/as/authorize`, query }, response: { status: a.status, body: a.json ? { id: str(a.json.id, 64), status: str(a.json.status, 64), ...(a.status === 200 ? {} : p1Error(a)) } : p1Error(a), 'set-cookie': a.cookies.map(String) } });
       if (a.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network, or switch to Mock.', a);
       if (a.status !== 200 || !a.json || !FLOW_ID.test(String(a.json.id || ''))) return fail(502, 'signin_refused', `PingOne refused to start the sign-in (${failText(a)}).`, a);
       let flow = a.json;
       const flowId = a.json.id; // checked against FLOW_ID above; later answers never change the id the lab calls
       if (flow.status !== 'USERNAME_PASSWORD_REQUIRED' && flow.status !== 'COMPLETED') return fail(409, 'signin_step_unsupported', 'PingOne asked for a sign-in step this lab does not drive (only username and password). Check the user app\'s sign-on policy.');
+      // The PingOne session is gone (it ended or was never valid for this app): forget it, and ask for the password the usual way.
+      if (silent && flow.status === 'USERNAME_PASSWORD_REQUIRED') { sso = null; return fail(401, 'p1_session_ended', 'The PingOne session has ended, so PingOne asked for the password again. Sign in once more.'); }
       // 2. username and password, once.
       if (flow.status === 'USERNAME_PASSWORD_REQUIRED') {
         const t2 = tp();
@@ -260,6 +269,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       if (!code) {
         const t3 = tp();
         const r = await p1(`${config.base}/as/resume?flowId=${encodeURIComponent(flowId)}`, { method: 'GET', headers: { accept: 'application/json', ...(jar.size ? { cookie: cookieHeader() } : {}) } }, t3);
+        keep(r.cookies); // the PingOne session cookie can arrive here too
         steps.push({ step: 'resume: the authorization code', traceparent: t3, request: { method: 'GET', url: `${config.base}/as/resume?flowId=${flowId}`, headers: { cookie: cookieHeader() } }, response: { status: r.status, body: r.json?.authorizeResponse ? { authorizeResponse: { code: str(r.json.authorizeResponse.code, 2000), state: str(r.json.authorizeResponse.state, 200) } } : p1Codes(r) } });
         if (r.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network, or switch to Mock.', r);
         code = str(r.json?.authorizeResponse?.code, 2000); gotState = r.json?.authorizeResponse?.state;
@@ -277,10 +287,23 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       if (idClaims && idClaims.nonce !== nonce) return fail(502, 'signin_refused', 'The ID token does not carry the nonce the lab sent; the lab refuses it.');
       const dec = decodeJwt(at);
       const life = Number.isFinite(tok.json.expires_in) && tok.json.expires_in > 0 ? Math.min(tok.json.expires_in, 24 * 3600) : 3600;
-      const session = { accessToken: at, header: dec?.header ?? null, claims: dec?.claims ?? null, idClaims, expiresAt: now() + life * 1000, steps, traceId: trace.traceId };
+      const session = { accessToken: at, header: dec?.header ?? null, claims: dec?.claims ?? null, idClaims, expiresAt: now() + life * 1000, steps, traceId: trace.traceId, viaP1Session: silent };
       sessions.set(ws, session);
+      if (jar.size) sso = { cookies: new Map(jar) };
       return scrub({ ok: true, user: userOf(session), steps });
     } finally { inFlight -= 1; }
+  }
+
+  async function ensureSession(ws, traceparentIn) {
+    const have = sessionOf(ws);
+    if (have) return have;
+    if (!configured() || !sso || now() - lastSilentFail < 5000) return null;
+    try {
+      const out = await signIn(ws, null, traceparentIn, { silent: true });
+      if (out.ok) return sessionOf(ws);
+    } catch { /* busy or not configured: no silent sign-in this time */ }
+    lastSilentFail = now();
+    return null;
   }
 
   const userOf = (s) => ({ sub: str(s.idClaims?.sub ?? s.claims?.sub, 120), name: str(s.idClaims?.preferred_username ?? s.idClaims?.name ?? s.idClaims?.email ?? config.username, 200), expiresAt: new Date(s.expiresAt).toISOString() });
@@ -311,7 +334,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       };
 
       // 1. Sign-in (done in the dialog before this run): what happened, and the user's token.
-      push({ kind: 'sign-in', label: 'Sign-in [REAL]: pi.flow with the password you typed in the Sign in dialog (no redirect)', from: 'browser', to: 'pingone', verdict: 'ok', traceparent: session.steps[0]?.traceparent ?? tp(), note: 'Done once in the Sign in dialog: authorize with response_mode=pi.flow and PKCE S256, the flows API username/password step, then the code for tokens. The password was sent once and is shown nowhere.', request: { steps: session.steps.map((s) => ({ step: s.step, ...s.request })) }, response: { steps: session.steps.map((s) => ({ step: s.step, ...s.response })), user: userOf(session) } });
+      push({ kind: 'sign-in', label: session.viaP1Session ? 'Sign-in [REAL]: your PingOne session, pi.flow with no password this time (no redirect)' : 'Sign-in [REAL]: pi.flow with the password you typed in the Sign in dialog (no redirect)', from: 'browser', to: 'pingone', verdict: 'ok', traceparent: session.steps[0]?.traceparent ?? tp(), note: session.viaP1Session ? 'The lab used the PingOne session from your earlier sign-in: authorize with response_mode=pi.flow and PKCE S256 and the session cookie, then the code for tokens. No password was typed or sent.' : 'Done once in the Sign in dialog: authorize with response_mode=pi.flow and PKCE S256, the flows API username/password step, then the code for tokens. The password was sent once and is shown nowhere.', request: { steps: session.steps.map((s) => ({ step: s.step, ...s.request })) }, response: { steps: session.steps.map((s) => ({ step: s.step, ...s.response })), user: userOf(session) } });
       addToken('user access token (REAL, from the pi.flow sign-in)', session.accessToken, 'REAL token from your PingOne environment, shown raw for teaching (rule 4). It expires in minutes; secrets and your password are never shown.');
 
       // 2. Agent token (the actor), with the agent scope.
@@ -531,6 +554,10 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     hosts: () => (configured() ? [new URL(config.base).hostname, new URL(config.gatewayUrl).hostname] : []),
     a2aReady: () => configured() && Boolean(config.a2a), a2aProblem: () => (configured() ? config.a2aProblem ?? null : null),
     signIn, session: sessionOf, signOut: (ws) => sessions.delete(ws), userOf, run,
+    // A workspace's session, or one signed in silently from the PingOne session (null when there is none or it has ended). Waits 5 s after a failed try.
+    ensureSession,
+    // Forget the PingOne session: an explicit Sign out. (Reset ends only the workspace's token session, so the next run signs in silently.)
+    forgetP1: () => { sso = null; }, hasP1Session: () => Boolean(sso),
   };
 }
 

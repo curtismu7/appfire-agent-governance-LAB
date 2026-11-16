@@ -234,12 +234,15 @@ export function createApp({
   // The Sign in dialog (full Real). GET: whether sign-in is available, who is signed in, and the username to prefill (from AAG_DEMO_USERNAME).
   // POST {password}: the pi.flow sign-in on the server (real.js). The password is used once and never stored, logged or returned; errors are fixed text.
   const signInRefusal = (req) => liveRefusal(realCtx(req)) ?? (realLevel() === 'full' ? null : notConfiguredText(real.missing(), real.problem()));
-  api.get('/signin', (req, res) => {
+  api.get('/signin', async (req, res, next) => {
+    try {
     const id = ws(req, res); if (!id) return;
     noStore(res);
     const why = signInRefusal(req);
-    const s = why ? null : real.session(id);
+    // Owner 2026-11-16: a workspace with no token (a new tab, an expired token) signs in from the PingOne session when there is one: no password again.
+    const s = why ? null : await real.ensureSession(id, parseTraceparent(req.headers.traceparent) ? req.headers.traceparent : randomTraceparent());
     res.json({ available: why === null, reason: why, method: 'pi.flow', redirect: false, username: why ? null : real.username(), signedIn: Boolean(s), user: s ? real.userOf(s) : null });
+    } catch (e) { next(e); }
   });
   api.post('/signin', jsonWrites, async (req, res, next) => {
     try {
@@ -264,6 +267,7 @@ export function createApp({
     noStore(res);
     if (!strict(req, res, KEYS.signout)) return;
     real.signOut(id);
+    real.forgetP1(); // an explicit Sign out also forgets the PingOne session: the next sign-in asks for the password
     res.json({ signedIn: false });
   });
 
@@ -409,7 +413,7 @@ export function createApp({
             // the run carries the reason (the same one the picker shows), so it is never mistaken for a real run.
             return await runMock(gate);
           }
-          const session = real.session(id);
+          const session = await real.ensureSession(id, traceparent);
           if (!session) return res.status(401).json({ error: 'sign_in_required', detail: 'Sign in first: Real runs as you. Use Sign in (pi.flow, the username is filled in for you).' });
           let run;
           // Owner 2026-11-13: body.approvalId carries an APPROVED HITL session id; the lab swaps it for the gateway's
@@ -443,7 +447,7 @@ export function createApp({
       noStore(res);
       if (!strict(req, res, KEYS.reset)) return;
       await workspaces.reset(id);
-      real.signOut(id); // Reset also ends this workspace's Real sign-in
+      real.signOut(id); // Reset also ends this workspace's Real token session; the PingOne session stays, so the next run signs in silently
       return res.json({ reset: 'ok', workspace: id });
     } catch (e) { return next(e); }
   });

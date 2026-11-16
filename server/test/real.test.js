@@ -359,18 +359,20 @@ test('rule 19: not configured = Real disabled with the missing names, POST /api/
     await post(url, '/api/mode', { source: 'mock' });
     assert.equal((await run(url, 'UC1', { vertical: 'banking' })).body.run.mode, 'mock', 'back to Mock without a restart');
     await post(url, '/api/reset', {});
-    assert.equal((await (await get(url, '/api/signin')).json()).signedIn, false, 'Reset signs the workspace out');
+    assert.equal((await (await get(url, '/api/signin')).json()).signedIn, true, 'Reset ends the workspace\'s token session, not the PingOne session: signed in again with no password (owner 2026-11-16)');
+    await post(url, '/api/signout', {});
+    assert.equal((await (await get(url, '/api/signin')).json()).signedIn, false, 'an explicit Sign out ends it for good');
     await toReal(url);
     assert.equal((await run(url, 'UC1', { vertical: 'banking' })).status, 401);
   });
 });
 
-test('sign-in is per workspace; sign-out works', async () => {
+test('a sign-in is a token session per workspace; another workspace signs in from the PingOne session (no password); sign-out ends it', async () => {
   await withFull(async (url) => {
     await toReal(url, W('ws-a')); await toReal(url, W('ws-b'));
     await signIn(url, DEMO_PASSWORD, W('ws-a'));
     assert.equal((await run(url, 'UC1', { vertical: 'banking' }, W('ws-a'))).status, 200);
-    assert.equal((await run(url, 'UC1', { vertical: 'banking' }, W('ws-b'))).status, 401);
+    assert.equal((await run(url, 'UC1', { vertical: 'banking' }, W('ws-b'))).status, 200, 'the other workspace signs in from the PingOne session: no password');
     await post(url, '/api/signout', {}, W('ws-a'));
     assert.equal((await run(url, 'UC1', { vertical: 'banking' }, W('ws-a'))).status, 401);
   });
@@ -728,5 +730,78 @@ test('no HTTP response at all is a timeout or a failed connection, said as such:
     }, { env: ENV, real });
   } finally { await p1.close(); await gw.close(); }
   assert.ok(seen.includes('initialize') && seen.includes('tools/list') && seen.includes('tools/call'));
+});
+
+// ---- the PingOne session (owner, 2026-11-16): once signed in, no password again ------------------------------------------------------------------------------
+const WA = W('w-aaaaaaaaaaaaaaaa'); const WB = W('w-bbbbbbbbbbbbbbbb');
+const passwordPosts = (p1) => p1.seen.filter((c) => c.method === 'POST' && /\/flows\//.test(c.url)).length;
+const authorizes = (p1) => p1.seen.filter((c) => c.url.includes('/as/authorize'));
+async function withClock(fn) {
+  const p1 = await startFakePingOne({}); const gw = await startFakeGateway({ isDelegated: (t) => p1.issued.delegated.has(t) });
+  let t = Date.now();
+  const real = createReal({ config: realConfig(fullSettingsFor(gw.url, {}), { AAG_LIVE_TEST_BASE: p1.base }), missing: [], wanted: true, now: () => t });
+  try { await withServer((url) => fn(url, { p1, gw, real, advance: (ms) => { t += ms; } }), { env: ENV, real }); } finally { await p1.close(); await gw.close(); }
+}
+
+test('P1 session: after one password sign-in, another workspace (a new tab) is signed in with no password, runs Real, and says so in the sign-in hop; no cookie or password leaks', async () => {
+  await withFull(async (url, { p1 }) => {
+    await toReal(url, WA); await toReal(url, WB);
+    assert.equal((await signIn(url, DEMO_PASSWORD, WA)).status, 200); assert.equal(passwordPosts(p1), 1);
+    const sres = await get(url, '/api/signin', WB); const stext = await sres.clone().text(); const s = await sres.json();
+    assert.equal(s.signedIn, true); assert.equal(s.user.name, DEMO_USERNAME);
+    assert.equal(passwordPosts(p1), 1, 'the password was not sent again');
+    assert.match(String(authorizes(p1).at(-1).headers.cookie), /P1SSO=/, 'the PingOne session cookie went to authorize');
+    const { status, body } = await run(url, 'UC1', { vertical: 'banking' }, WB);
+    assert.equal(status, 200); assert.equal(body.run.outcome, 'REAL_PERMIT');
+    assert.match(body.run.hops[0].label, /your PingOne session/); assert.match(body.run.hops[0].note, /No password was typed or sent/);
+    assert.match(body.run.hops[0].request.steps[0].step, /with your PingOne session: no password/);
+    const text = stext + JSON.stringify(body.run.hops[0]);
+    assert.ok(!/P1SSO=[0-9a-f]{6}/.test(stext), 'the session cookie is not returned by /api/signin'); noSecret(text, 'the silent sign-in');
+  });
+});
+
+test('P1 session: an expired token signs in again silently (no password), and a Reset keeps the PingOne session', async () => {
+  await withClock(async (url, { p1, advance }) => {
+    await toReal(url, WA);
+    assert.equal((await signIn(url, DEMO_PASSWORD, WA)).status, 200);
+    advance(2 * 3600 * 1000); // the token (and the workspace session) have expired
+    const s = await (await get(url, '/api/signin', WA)).json();
+    assert.equal(s.signedIn, true, 'signed in again from the PingOne session'); assert.equal(passwordPosts(p1), 1);
+    assert.equal((await run(url, 'UC1', { vertical: 'banking' }, WA)).body.run.outcome, 'REAL_PERMIT');
+    assert.equal((await post(url, '/api/reset', {}, WA)).status, 200);
+    assert.equal((await (await get(url, '/api/signin', WA)).json()).signedIn, true, 'Reset ended the token session, not the PingOne session'); assert.equal(passwordPosts(p1), 1);
+  });
+});
+
+test('P1 session: when PingOne ended its session the password is asked for the usual way; one failed silent try is not repeated for 5 seconds', async () => {
+  await withClock(async (url, { p1, advance }) => {
+    await toReal(url, WA); await toReal(url, WB);
+    assert.equal((await signIn(url, DEMO_PASSWORD, WA)).status, 200);
+    p1.state.sso.mode = 'expired';
+    const before = authorizes(p1).length;
+    assert.equal((await (await get(url, '/api/signin', WB)).json()).signedIn, false);
+    assert.equal(authorizes(p1).length, before + 1, 'one silent try');
+    const r = await run(url, 'UC1', { vertical: 'banking' }, WB);
+    assert.equal(r.status, 401); assert.equal(r.body.error, 'sign_in_required');
+    assert.equal(authorizes(p1).length, before + 1, 'no second try inside 5 seconds');
+    advance(6000);
+    assert.equal((await (await get(url, '/api/signin', WB)).json()).signedIn, false); assert.equal(passwordPosts(p1), 1);
+    // PingOne forgot the session, so the lab forgot it too: the next try goes straight to the password
+    const n = authorizes(p1).length; advance(6000);
+    assert.equal((await (await get(url, '/api/signin', WB)).json()).signedIn, false); assert.equal(authorizes(p1).length, n, 'the lab no longer tries a session PingOne ended');
+    assert.equal((await signIn(url, DEMO_PASSWORD, WB)).status, 200, 'the password still signs in');
+  });
+});
+
+test('P1 session: an explicit Sign out forgets the PingOne session; the next workspace is not signed in and PingOne is not asked', async () => {
+  await withFull(async (url, { p1 }) => {
+    await toReal(url, WA); await toReal(url, WB);
+    assert.equal((await signIn(url, DEMO_PASSWORD, WA)).status, 200);
+    assert.equal((await post(url, '/api/signout', {}, WA)).status, 200);
+    const n = authorizes(p1).length;
+    assert.equal((await (await get(url, '/api/signin', WB)).json()).signedIn, false);
+    assert.equal(authorizes(p1).length, n, 'no silent try after Sign out');
+    assert.equal((await run(url, 'UC1', { vertical: 'banking' }, WB)).status, 401);
+  });
 });
 
