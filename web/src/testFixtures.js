@@ -93,7 +93,7 @@ export const noActBody = (ucId = "UC1") => {
   b.run.tokens[3] = { ...b.run.tokens[3], label: "delegated token (REAL, exchange 2: for the gateway, NO act claim)", claims: { sub: "u-1", aud: "gw-aud" } };
   return b;
 };
-export const mockInRealBody = (ucId = "UC2") => runBody(ucId, { realGate: { real: false, reason: "agent-to-agent (A2A) multi-hop runs on the agent-service, which is scaled to 0 on SE" }, hops: runBody(ucId).run.hops.map((h) => ({ ...h, source: "mock", label: `${h.label} [MOCK]` })) });
+export const mockInRealBody = (ucId = "UC2") => runBody(ucId, { realGate: { real: false, reason: "the agent-to-agent (A2A) chain needs the specialist agent's PingOne settings (AAG_A2A_*), which are not set" }, hops: runBody(ucId).run.hops.map((h) => ({ ...h, source: "mock", label: `${h.label} [MOCK]` })) });
 export const FULL_INFO = { real: { level: "full", label: "Real: sign-in (pi.flow), agent token, token exchange and the Agent Gateway", missing: [], redirectUri: "https://local.example/cb", origins: [] } };
 
 export const guidedBody = () => runBody("UC-LEARN2", { kind: "guided", computed: false, matchesExpected: null, outcome: "GUIDED_LEARNING", expectedOutcome: "GUIDED_LEARNING", hops: [hop(1, "guided", { from: "browser", to: "page" })], tokens: [] });

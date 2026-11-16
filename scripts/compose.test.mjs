@@ -72,7 +72,9 @@ export const COMPOSE_ENV = {
     // Full Real (owner, 2026-11-10): exactly these eight names, which the owner's scripts write ...
     'AAG_USER_CLIENT_ID', 'AAG_USER_CLIENT_SECRET', 'AAG_AGENT_CLIENT_ID', 'AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME', 'AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE',
     // ... and, optional, the agent scope (empty = agent:invoke), the agent client's token auth, and the SE HITL service (the mock phone's real approvals).
-    'AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET'],
+    'AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET',
+    // ... and, optional, Real A2A (2026-11-16): the specialist agent's app and the two audiences and scopes of the chained exchange (all six together turn it on).
+    'AAG_A2A_AGENT_CLIENT_ID', 'AAG_A2A_AGENT_CLIENT_SECRET', 'AAG_A2A_AGENT_TOKEN_AUTH', 'AAG_A2A_INTERMEDIATE_AUDIENCE', 'AAG_A2A_INTERMEDIATE_SCOPE', 'AAG_A2A_GATEWAY_AUDIENCE', 'AAG_A2A_SCOPE'],
   fixed: ['PORT', 'CALAB_BIND', 'AAG_PUBLISH', 'ALLOW_MOCK_SIGNIN', 'AAG_DEPLOY_MODE', 'AAG_LIVE_FROM_ENV'],
 };
 export function environmentOf(text) {

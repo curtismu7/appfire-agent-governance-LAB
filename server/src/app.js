@@ -26,7 +26,7 @@ import { parseTraceparent, randomTraceparent } from './trace.js';
 import { createLive, LiveRefused } from './live.js';
 import { createReal, RealRefused, REDIRECT_URI } from './real.js';
 import { createApprovals } from './approval.js';
-import { realGate } from './realGate.js';
+import { A2A_VERTICAL, realGate } from './realGate.js';
 import { shelfInfo } from './shelfLink.js';
 import { promptsFor, routeOf } from './routes.js';
 import { createBrain, REASONS } from './brain.js';
@@ -41,7 +41,7 @@ const KEYS = Object.freeze({ run: ['vertical', 'persona', 'mode', 'brain', 'said
 // lab opens the product's page and does not compute the outcome) or computed by the engine. `labInputs` are the lab-invented numbers and events fed to the engine (empty for most).
 // `route` says where the use case runs (data/handoff.json): Here, Here + go deeper, Hand off (another standalone app) or Guide.
 // `realGate`: whether full Real runs this use case (realGate.js), or the fixed reason it stays Mock in Real mode.
-const view = (uc, cast) => ({ ...uc, tool: uc.primaryTool ? toolFor(cast, uc.primaryTool) : null, live: liveNote(uc), guided: !isFlow(uc), labInputs: { ...situationOf(uc.id) }, route: { ...routeOf(uc.id) }, realGate: realGate(uc, cast) });
+const view = (uc, cast, a2a) => ({ ...uc, tool: uc.primaryTool ? toolFor(cast, uc.primaryTool) : null, live: liveNote(uc), guided: !isFlow(uc), labInputs: { ...situationOf(uc.id) }, route: { ...routeOf(uc.id) }, realGate: realGate(uc, cast, a2a) });
 
 export const REAL_LABELS = {
   full: 'Real: sign-in (pi.flow), agent token, token exchange and the Agent Gateway',
@@ -102,6 +102,11 @@ export function createApp({
   // Rule 19: Real can be chosen when the guards hold AND the PingOne settings are complete; otherwise the fixed how-to (names only) is the reason.
   // Which Real this lab has: 'full' (sign-in, agent token, token exchange, Agent Gateway), 'idp-only' (the OLD two calls with the worker client, only
   // while none of the full-Real settings is set) or null. Once any AAG_* full-Real setting is there, the old path is ignored entirely.
+  // Real A2A (owner, 2026-11-16): realGate's third argument: A2A runs Real only when the AAG_A2A_* settings are complete and the vertical is the one they name.
+  const a2aOpts = (v) => {
+    if (!real.a2aReady()) return { a2a: false, a2aWhy: real.a2aProblem() };
+    return v === A2A_VERTICAL ? { a2a: true } : { a2a: false, a2aWhy: `the specialist agent set up for A2A Real is the ${A2A_VERTICAL} one` };
+  };
   const realLevel = () => (real.configured() ? 'full' : real.wanted() ? null : live.configured() ? 'idp-only' : null);
   // The approval service (owner 2026-11-13): the mock phone in both modes. The SE HITL service URL and its internal
   // secret come from the app's .env (write-only: the secret never reaches the page or a log).
@@ -185,7 +190,7 @@ export function createApp({
     if (track !== undefined && !(typeof track === 'string' && Object.hasOwn(TRACKS, track))) return res.status(400).json({ error: 'bad_track', detail: 'track is not one of the eight tracks' });
     const cast = loadCast(configFile, isFullVertical(v) ? v : DEFAULT_VERTICAL);
     const tracks = Object.keys(TRACKS).filter((t) => track === undefined || t === track).map((t) => {
-      const items = MANIFEST.usecases.filter((u) => u.track === t).map((u) => view(u, cast));
+      const items = MANIFEST.usecases.filter((u) => u.track === t).map((u) => view(u, cast, a2aOpts(v)));
       return { track: t, count: items.length, usecases: items };
     });
     res.json({ schema: 'appfire-agent-governance-usecases/1', vertical: v, pack: isFullVertical(v) ? 'full' : 'stub', total: tracks.reduce((n, t) => n + t.count, 0), source: MANIFEST.source, meta: MANIFEST.meta, tracks });
@@ -223,7 +228,7 @@ export function createApp({
     const uc = findUseCase(req.params.id);
     if (!uc) return res.status(404).json({ error: 'unknown_use_case' });
     const v = verticalOf(req.query.vertical, res); if (!v) return;
-    res.json({ vertical: v, usecase: view(uc, loadCast(configFile, isFullVertical(v) ? v : DEFAULT_VERTICAL)) });
+    res.json({ vertical: v, usecase: view(uc, loadCast(configFile, isFullVertical(v) ? v : DEFAULT_VERTICAL), a2aOpts(v)) });
   });
 
   // The Sign in dialog (full Real). GET: whether sign-in is available, who is signed in, and the username to prefill (from AAG_DEMO_USERNAME).
@@ -398,7 +403,7 @@ export function createApp({
         const traceparent = parseTraceparent(req.headers.traceparent) ? req.headers.traceparent : randomTraceparent();
         const cast = loadCast(configFile, vertical);
         if (level === 'full') {
-          const gate = realGate(uc, cast);
+          const gate = realGate(uc, cast, a2aOpts(vertical));
           if (!gate.real) {
             // Owner 2026-11-16 (reversing 2026-11-13): a use case that cannot run Real runs on the labelled mock engine instead. Every hop says MOCK and
             // the run carries the reason (the same one the picker shows), so it is never mistaken for a real run.
@@ -411,7 +416,7 @@ export function createApp({
           // challenge id (server-side only) so the retry discharges the consent. The approval must belong to this
           // workspace and be approved — otherwise it is ignored (a plain run).
           const approvalReceipt = typeof body.approvalId === 'string' ? approvals.receiptOf(id, body.approvalId) : null;
-          try { run = await real.run(uc, { vertical, tool: gate.tool, traceparent, session, receipt: approvalReceipt ?? null }); } catch (e) {
+          try { run = await real.run(uc, { vertical, tool: gate.tool, traceparent, session, receipt: approvalReceipt ?? null, a2a: gate.a2a === true }); } catch (e) {
             if (e instanceof RealRefused) return res.status(e.code === 'busy' ? 429 : e.status).json({ error: e.code === 'busy' ? 'live_busy' : e.code, detail: e.message });
             throw e;
           }

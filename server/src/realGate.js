@@ -7,8 +7,8 @@
 // owner scaled api-resource-server up on SE (show_mortgage), and the third-party tool servers (mcp-weather, mcp-brave, mcp-code-search) are
 // running there, so show_mortgage, get_weather, brave_news_search and code_search are listed too. Whether the gateway routes the third-party ones
 // to this lab's token is UNVERIFIED: the gateway's own tools/list is checked at run time, and a tool it does not list is never called (the run
-// ends REAL_NOT_LISTED and says so). Tools that need a service still scaled to 0 on SE (agent-service) are NOT in the list; their reason is in
-// TOOL_NEEDS.
+// ends REAL_NOT_LISTED and says so). TOOL_NEEDS holds the reason for a tool that needs a service this lab cannot
+// reach (none today).
 import { isFlow, chainOf } from './flow.js';
 import { toolFor } from './cast.js';
 
@@ -17,9 +17,13 @@ export const SE_MCP_TOOLS = new Set([
   'redeem_miles', 'book_airline_flight', 'view_coverage', 'pay_bill', 'sensitive_patient_records', 'list_orders', 'checkout', 'sensitive_order_history',
   'show_mortgage', 'get_weather', 'brave_news_search', 'code_search',
 ]);
-export const TOOL_NEEDS = {
-  get_portfolio_summary: 'the A2A agent-service, which is scaled to 0 on SE',
-};
+// Real A2A (owner, 2026-11-16): the chained exchange (AI-DEMO2 a2aDelegationService) runs Real for the use cases whose whole chain is the plain two-agent
+// hand-off (UC2, UC2.5: banking's Investment Advisor, tool get_portfolio_summary) when the AAG_A2A_* settings are complete. The agent card, the A2A
+// protocol messages, the mismatch probe and the signed assertion (UC2.6, UC2.7, UC37) are staged by the mock engine only. (The SE agent-service is NOT
+// needed: it is reasoning-only, the BFF holds token custody.)
+export const A2A_VERTICAL = 'banking';
+const A2A_REAL_CHAIN = new Set(['user-token', 'a2a-agent1-actor', 'a2a-exchange1', 'a2a-agent2-actor', 'a2a-exchange2', 'tool-dispatched']);
+export const TOOL_NEEDS = {};
 // Trusted-caller features: they need headers a caller must never send (forced actor, rate-limit toggle, TraT). UC21 (entitlement tiers) is NOT one in Real
 // (owner 2026-11-16): the tier is the signed-in user's own PingOne group, so it runs Real; the owner flips the group in PingOne and signs in again.
 const TRUSTED_FEATURE = { UC13: 'the forced actor', UC18: 'the rate-limit toggle' };
@@ -28,7 +32,8 @@ const PRIVILEGE_LANE = /^(privilege-gateway-leg|credential-swap|enterprise-manag
 const APPROVAL = new Set(['ciba-poll', 'ciba-authorize', 'hitl-receipt']);
 
 // { real: true, tool } or { real: false, reason } (fixed words; the reason names the part that keeps it Mock).
-export function realGate(uc, cast) {
+// opts.a2a: the AAG_A2A_* settings are complete and the vertical is A2A_VERTICAL; opts.a2aWhy: the fixed words saying why not, when they are not.
+export function realGate(uc, cast, { a2a = false, a2aWhy = null } = {}) {
   if (!isFlow(uc)) return { real: false, reason: 'it is a guided page: the lab shows it and does not compute it' };
   const chain = chainOf(uc);
   // Owner 2026-11-13: UC7/UC8 (the hitl track, tool create_transfer) run REAL — the SE gateway's HITL pipeline
@@ -38,7 +43,11 @@ export function realGate(uc, cast) {
   if (uc.track !== 'hitl' && chain.some((k) => APPROVAL.has(k))) return { real: false, reason: 'its human approval (CIBA or elicitation) is simulated in this lab' };
   if (Object.hasOwn(TRUSTED_FEATURE, uc.id)) return { real: false, reason: `${TRUSTED_FEATURE[uc.id]} is a trusted-caller feature, and this lab never sends trusted-caller headers` };
   if (/\btrat\b|transaction token/i.test(`${uc.title} ${uc.pingOneSolution}`)) return { real: false, reason: 'transaction tokens (TraT) are a trusted-caller feature, and this lab never sends trusted-caller headers' };
-  if (chain.some((k) => A2A.test(k)) || uc.primaryTool === 'get_portfolio_summary') return { real: false, reason: 'agent-to-agent (A2A) multi-hop runs on the agent-service, which is scaled to 0 on SE' };
+  if (chain.some((k) => A2A.test(k)) || uc.primaryTool === 'get_portfolio_summary') {
+    if (uc.primaryTool !== 'get_portfolio_summary' || !chain.every((k) => A2A_REAL_CHAIN.has(k))) return { real: false, reason: 'its agent-to-agent (A2A) steps (the agent card, the protocol messages, a mismatch probe or a signed assertion) are staged by the mock engine only' };
+    if (!a2a) return { real: false, reason: a2aWhy || 'the agent-to-agent (A2A) chain needs the specialist agent\'s PingOne settings (AAG_A2A_*), which are not set' };
+    return { real: true, tool: toolFor(cast, uc.primaryTool), a2a: true };
+  }
   if (chain.some((k) => PRIVILEGE_LANE.test(k)) || (uc.needs || []).includes('privilege')) return { real: false, reason: 'the Privilege, PingFederate and ID-JAG lanes are not part of this Real path' };
   if (chain.includes('personal-agent-lookup')) return { real: false, reason: 'the personal-agent lane is not part of this Real path' };
   if (chain.some((k) => k.startsWith('sim-'))) return { real: false, reason: 'it stages an attack, which only the mock engine can stage' };

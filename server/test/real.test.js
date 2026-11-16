@@ -13,6 +13,7 @@ import { fullWanted, missingFull, FULL_KEYS } from '../src/settings.js';
 import { get, post, run, W, withServer } from './helpers.js';
 import { AGENT_AUDIENCE, AGENT_CLIENT_ID, AGENT_CLIENT_SECRET, AGENT_SCOPE, AUDIENCE, CLIENT_SECRET, DEMO_PASSWORD, DEMO_USERNAME, ENV_ID, SCOPE, USER_CLIENT_SECRET, fullSettingsFor, settingsFor, startFakePingOne } from './fakePingone.js';
 import { AUDIT_TRAIL, startFakeGateway } from './fakeGateway.js';
+import { A2A_GATEWAY_AUD, A2A_INTERMEDIATE_AUD, A2A_INTERMEDIATE_SCOPE, A2A_SCOPE, SPECIALIST_ID, SPECIALIST_SECRET, a2aSettings } from './fakePingone.js';
 
 const ENV = { ALLOW_MOCK_SIGNIN: '1' };
 const TP = '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01';
@@ -465,7 +466,7 @@ test('in Real mode, a use case that cannot run Real is refused with the reason o
     await toReal(url);
     const r = await run(url, 'UC2', { vertical: 'banking' });
     assert.equal(r.status, 403); assert.equal(r.body.error, 'mock_in_real_refused');
-    assert.match(r.body.detail, /UC2 cannot run Real \(agent-to-agent/); assert.match(r.body.detail, /mock engine is not available here/);
+    assert.match(r.body.detail, /UC2 cannot run Real \(the agent-to-agent/); assert.match(r.body.detail, /mock engine is not available here/);
     assert.equal(gw.seen.length, 0);
   }, { env: { ...ENV, ALLOW_MOCK_SIGNIN: '' } });
 });
@@ -592,4 +593,102 @@ test('an error PingOne writes that echoes the agent secret is scrubbed before th
   assert.deepEqual(scrubError({ error: 'e', access_token: 'eyJabcdef.eyJxyz.sig', details: [{ message: 'x eyJabcdef.eyJxyz', code: 'C' }, 5] }, ['s3cr3t-value']).access_token, 'eyJabcdef.eyJxyz.sig', 'a success answer\'s access_token is not touched');
   assert.equal(scrubError({ message: 'is s3cr3t-value ok' }, ['s3cr3t-value']).message, 'is [secret] ok');
   assert.equal(scrubError({ message: 'x eyJabcdef.eyJxyz' }, ['s3cr3t-value']).message, 'x eyJabcdef.eyJxyz', 'a token echoed in an error is not redacted');
+});
+
+// ---- Real A2A (owner, 2026-11-16): the chained exchange of AI-DEMO2's a2aDelegationService, against the fakes -------------------------------------------------
+const ranBank = async (url, id = 'UC2', extra = {}) => { const r = await run(url, id, { vertical: 'banking', ...extra }, { traceparent: TP }); return { status: r.status, x: r.body.run, body: r.body }; };
+
+test('A2A Real: UC2 runs the chained exchange (agent 1, then the specialist as actor, a nested act) and the gateway call; the exact parameters are pinned', async () => {
+  await withFull(async (url, { p1, gw }) => {
+    await toReal(url); assert.equal((await signIn(url)).status, 200);
+    const { status, x } = await ranBank(url);
+    assert.equal(status, 200); assert.equal(x.kind, 'real'); assert.equal(x.outcome, 'REAL_PERMIT', JSON.stringify(x.reply));
+    assert.equal(x.real.a2a, true); assert.equal(x.real.tool, 'get_portfolio_summary');
+    assert.deepEqual(x.hops.map((h) => h.kind), ['sign-in', 'actor-token', 'a2a-exchange-1', 'actor-token', 'a2a-exchange-2', 'gateway-check', 'authorize-decision', 'tool-dispatched', 'api-call', 'agent-reply']);
+    assert.deepEqual(x.hops.filter((h) => /^A2A/.test(h.title)).map((h) => h.title), ['A2A exchange 1: act = agent 1', 'A2A actor token: the specialist', 'A2A exchange 2: nested act']);
+    assert.ok(x.hops.every((h) => h.source === 'real'), 'every hop is REAL');
+    // what the lab sent, in order (the sign-in code exchange first)
+    const calls = tokenCalls(p1).slice(1);
+    assert.equal(calls.length, 4);
+    const [agentCc, ex1, specCc, ex2] = calls;
+    assert.deepEqual([agentCc.form.grant_type, agentCc.form.scope], ['client_credentials', 'agent:invoke']);
+    assert.equal(agentCc.auth, BASIC_AGENT);
+    assert.equal(ex1.form.grant_type, TX); assert.equal(ex1.form.audience, A2A_INTERMEDIATE_AUD); assert.equal(ex1.form.scope, A2A_INTERMEDIATE_SCOPE); assert.ok(ex1.form.actor_token, 'exchange 1 has the agent as actor');
+    assert.equal(ex1.auth, BASIC_AGENT, 'exchange 1 is made by the agent client');
+    assert.deepEqual([specCc.form.grant_type, specCc.form.scope], ['client_credentials', A2A_INTERMEDIATE_SCOPE]);
+    assert.equal(specCc.form.client_id, SPECIALIST_ID, 'the specialist is CLIENT_SECRET_POST: id and secret in the body, no Authorization header'); assert.equal(specCc.auth, undefined);
+    assert.equal(ex2.form.grant_type, TX); assert.equal(ex2.form.audience, A2A_GATEWAY_AUD); assert.equal(ex2.form.scope, A2A_SCOPE);
+    assert.equal(ex2.form.client_id, SPECIALIST_ID, 'exchange 2 is made by the specialist');
+    assert.notEqual(ex2.form.actor_token, ex1.form.actor_token, 'exchange 2 has the specialist, not the first agent, as actor');
+    // the chain, read from the delegated token the gateway was given
+    const delegated = x.tokens.find((t) => /A2A exchange 2: nested act/.test(t.label));
+    const c = claimsOf(delegated.raw);
+    assert.equal(c.act.sub, SPECIALIST_ID); assert.equal(c.act.act.sub, AGENT_CLIENT_ID); assert.equal(c.aud, A2A_GATEWAY_AUD);
+    assert.match(delegated.notice, /UNVERIFIED/);
+    const toolCall = gw.seen.find((r) => r.rpc?.method === 'tools/call');
+    assert.equal(toolCall.rpc.params.name, 'get_portfolio_summary');
+    assert.match(String(toolCall.headers.authorization), /^Bearer /);
+    assert.deepEqual(Object.keys(toolCall.headers).filter((h) => TRUSTED_HEADERS.map((t) => t.toLowerCase()).includes(h)), [], 'no trusted-caller header');
+    for (const sec of [SPECIALIST_SECRET, ...SECRETS]) assert.ok(!JSON.stringify({ hops: x.hops, reply: x.reply }).includes(sec), 'no secret in the hops or the reply');
+  }, { settings: a2aSettings() });
+});
+
+test('A2A Real: without the AAG_A2A_* settings UC2 runs the labelled mock engine in Real mode and names them; some of them set names the missing ones; never a value', async () => {
+  await withFull(async (url, { gw }) => {
+    await toReal(url); await signIn(url);
+    const { status, x } = await ranBank(url);
+    assert.equal(status, 200); assert.equal(x.realGate.real, false); assert.match(x.realGate.reason, /AAG_A2A_\*/);
+    assert.ok(x.hops.every((h) => h.source !== 'real')); assert.equal(gw.seen.length, 0, 'the gateway was never called');
+  });
+  const partial = { AAG_A2A_AGENT_CLIENT_ID: SPECIALIST_ID, AAG_A2A_AGENT_CLIENT_SECRET: SPECIALIST_SECRET };
+  await withFull(async (url, { gw }) => {
+    await toReal(url); await signIn(url);
+    const { x } = await ranBank(url);
+    assert.equal(x.realGate.real, false); assert.match(x.realGate.reason, /sets some AAG_A2A_\* names but not AAG_A2A_INTERMEDIATE_AUDIENCE, AAG_A2A_INTERMEDIATE_SCOPE, AAG_A2A_GATEWAY_AUDIENCE, AAG_A2A_SCOPE/);
+    assert.ok(!JSON.stringify(x).includes(SPECIALIST_SECRET)); assert.equal(gw.seen.length, 0);
+  }, { settings: partial });
+  assert.match(realConfig(fullSettingsFor('http://127.0.0.1:1/mcp', { ...a2aSettings(), AAG_A2A_INTERMEDIATE_SCOPE: 'two scopes' }), { AAG_LIVE_TEST_BASE: `http://127.0.0.1:1/${ENV_ID}` }).a2aProblem, /AAG_A2A_INTERMEDIATE_SCOPE/);
+  assert.equal(realConfig(fullSettingsFor('http://127.0.0.1:1/mcp', a2aSettings({ AAG_A2A_AGENT_CLIENT_ID: 'replace-me' })), { AAG_LIVE_TEST_BASE: `http://127.0.0.1:1/${ENV_ID}` }).a2a, null, 'a placeholder counts as unset');
+});
+
+test('A2A Real: every failure stops before the gateway and says which step: the specialist token, exchange 1, exchange 2 refused, a flat act, no act', async () => {
+  const cases = [
+    ['specialist', { specialist: 'bad-secret' }, 'REAL_REFUSED', /specialist agent's token/],
+    ['exchange1', { exchange1: 'refuse' }, 'REAL_REFUSED', /token exchange 1/],
+    ['exchange2', { exchange2: 'refuse' }, 'REAL_REFUSED', /A2A exchange 2/],
+    ['flat', { exchange2: 'flat' }, 'REAL_NO_ACT', /nested act chain/],
+    ['none', { exchange2: 'none' }, 'REAL_NO_ACT', /nested act chain/],
+  ];
+  for (const [name, a2a, outcome, text] of cases) {
+    await withFull(async (url, { gw }) => {
+      await toReal(url); await signIn(url);
+      const { status, x } = await ranBank(url);
+      assert.equal(status, 200, name); assert.equal(x.outcome, outcome, name); assert.match(x.reply.text, text, name);
+      assert.equal(gw.seen.length, 0, `${name}: nothing was sent to the gateway`);
+      assert.ok(x.hops.some((h) => h.source === 'not-run'), `${name}: the steps that did not run say so`);
+      for (const sec of [SPECIALIST_SECRET, ...SECRETS]) assert.ok(!JSON.stringify({ hops: x.hops, reply: x.reply }).includes(sec), `${name}: no secret`);
+    }, { settings: a2aSettings(), setup: (p1) => Object.assign(p1.state.a2a, a2a) });
+  }
+});
+
+test('A2A Real: only the plain two-agent hand-off (UC2, UC2.5) in the vertical the settings name; the agent card, protocol, mismatch probe and signed assertion stay mock', () => {
+  const cast = loadCast(null, 'banking');
+  for (const id of ['UC2', 'UC2.5']) {
+    assert.deepEqual(realGate(findUseCase(id), cast, { a2a: true }), { real: true, tool: 'get_portfolio_summary', a2a: true }, id);
+    assert.equal(realGate(findUseCase(id), cast, { a2a: false }).real, false, `${id}: off without the settings`);
+    assert.match(realGate(findUseCase(id), cast, { a2a: false, a2aWhy: 'because' }).reason, /^because$/);
+  }
+  for (const id of ['UC2.6', 'UC2.7', 'UC37']) {
+    const g = realGate(findUseCase(id), cast, { a2a: true });
+    assert.equal(g.real, false, id); assert.match(g.reason, /A2A.*mock engine only/, id);
+  }
+});
+
+test('A2A Real: in a vertical other than the one the settings name, UC2 stays mock and says so', async () => {
+  await withFull(async (url, { gw }) => {
+    await toReal(url); await signIn(url);
+    const r = await run(url, 'UC2', { vertical: 'healthcare' }, { traceparent: TP });
+    assert.equal(r.status, 200); assert.equal(r.body.run.realGate.real, false); assert.match(r.body.run.realGate.reason, /banking/);
+    assert.equal(gw.seen.length, 0);
+  }, { settings: a2aSettings() });
 });

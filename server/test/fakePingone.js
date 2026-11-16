@@ -31,6 +31,18 @@ export const AUDIENCE = 'fake-gateway-audience';
 export const SCOPE = 'fake:mcp:invoke';
 export const AGENT_SCOPE = 'agent:invoke';
 export const AGENT_AUDIENCE = 'fake-agent-audience';
+// Real A2A (owner, 2026-11-16): the specialist agent app and the two resources of the chained exchange, as AI-DEMO2's a2aDelegationService uses them.
+// state.a2a picks a variant: { specialist: 'ok' | 'bad-secret', exchange1: 'ok' | 'refuse', exchange2: 'ok' | 'refuse' | 'flat' (one actor, not nested) | 'none' (no act) }.
+export const SPECIALIST_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+export const SPECIALIST_SECRET = ['fake', '-specialist-', 'secret-', 'for-tests-', '2468ace013579bdf'].join('');
+export const A2A_INTERMEDIATE_AUD = 'fake-a2a-intermediate-audience';
+export const A2A_INTERMEDIATE_SCOPE = 'agent:invoke:investment';
+export const A2A_GATEWAY_AUD = 'fake-a2a-gateway-audience';
+export const A2A_SCOPE = 'invest:read';
+export const a2aSettings = (extra = {}) => ({
+  AAG_A2A_AGENT_CLIENT_ID: SPECIALIST_ID, AAG_A2A_AGENT_CLIENT_SECRET: SPECIALIST_SECRET, AAG_A2A_AGENT_TOKEN_AUTH: 'CLIENT_SECRET_POST', AAG_A2A_INTERMEDIATE_AUDIENCE: A2A_INTERMEDIATE_AUD,
+  AAG_A2A_INTERMEDIATE_SCOPE: A2A_INTERMEDIATE_SCOPE, AAG_A2A_GATEWAY_AUDIENCE: A2A_GATEWAY_AUD, AAG_A2A_SCOPE: A2A_SCOPE, ...extra,
+});
 export const USER_SUB = '99999999-aaaa-4bbb-8ccc-dddddddddddd';
 const jwt = (claims) => [b64u({ alg: 'RS256', typ: 'JWT', kid: 'fake-kid' }), b64u({ iss: `http://fake.invalid/${ENV_ID}/as`, iat: 1700000000, exp: 4102444800, ...claims }), 'ZmFrZXNpZ25hdHVyZWZvcnRlc3Rz'].join('.');
 const basicOf = (id, secret) => `Basic ${Buffer.from(`${id}:${secret}`).toString('base64')}`;
@@ -45,13 +57,50 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
     gateway: { name: 'Fake gateway resource', audience: AUDIENCE, scopes: [SCOPE], act: 'passthrough' },
   };
   // agentGrants: the scopes the agent app may ask for (the owner setup script grants both).
-  const state = { behaviour, delayMs, full: { signin: 'ok', exchange: 'ok' }, resources, agentGrants: [agentScope, SCOPE] };
+  const state = { behaviour, delayMs, full: { signin: 'ok', exchange: 'ok' }, a2a: { specialist: 'ok', exchange1: 'ok', exchange2: 'ok' }, resources, agentGrants: [agentScope, SCOPE] };
   const flows = new Map(); // flow id -> { cookie, challenge, state, nonce, done }
   const codes = new Map(); // code -> { challenge, nonce }
   // exchange1: tokens minted for the agent scope's resource. delegated: tokens for the gateway scope's resource that carry act (what the gateway and
   // Authorize accept). noAct: gateway-resource tokens WITHOUT act (the old single-exchange bug): the fake gateway refuses these.
-  const issued = { user: new Set(), agent: new Set(), exchange1: new Set(), delegated: new Set(), noAct: new Set() };
+  const issued = { user: new Set(), agent: new Set(), exchange1: new Set(), delegated: new Set(), noAct: new Set(), a2a1: new Set(), agent2: new Set() };
   const resourceOf = (scope) => { const asked = String(scope || '').split(' ').filter(Boolean); return asked.length && asked.every((sc) => Object.values(resources).some((r) => r.scopes.includes(sc))) ? Object.values(resources).find((r) => r.scopes.includes(asked[0])) : null; };
+  // A2A: the specialist's client-credentials token, A2A exchange 1 (the agent client, the intermediate audience) and A2A exchange 2 (the specialist as actor
+  // and exchanger, the A2A gateway audience, a NESTED act). Returns [status, body] for a request that is part of the chain, or null for every other request.
+  const A2A_GRANT = 'urn:ietf:params:oauth:grant-type:token-exchange';
+  const sentBasic = (auth) => { const m = /^Basic (.+)$/.exec(String(auth || '')); return m ? Buffer.from(m[1], 'base64').toString('utf8') : ''; };
+  const a2aToken = (form, auth) => {
+    const cfg = state.a2a;
+    const isSpecialist = form.client_id === SPECIALIST_ID || sentBasic(auth).startsWith(`${SPECIALIST_ID}:`);
+    const specialistOk = cfg.specialist !== 'bad-secret' && (auth === basicOf(SPECIALIST_ID, SPECIALIST_SECRET) || (form.client_id === SPECIALIST_ID && form.client_secret === SPECIALIST_SECRET));
+    const agentOk = auth === basicOf(AGENT_CLIENT_ID, AGENT_CLIENT_SECRET) || (form.client_id === AGENT_CLIENT_ID && form.client_secret === AGENT_CLIENT_SECRET);
+    if (form.grant_type === 'client_credentials' && isSpecialist) {
+      if (!specialistOk) return [401, { error: 'invalid_client', error_description: 'fake: specialist client' }];
+      if (form.scope !== A2A_INTERMEDIATE_SCOPE) return [400, { error: 'invalid_scope', error_description: 'fake: the specialist app has no grant for that scope' }];
+      const at = jwt({ sub: SPECIALIST_ID, client_id: SPECIALIST_ID, aud: A2A_INTERMEDIATE_AUD, scope: form.scope }); issued.agent2.add(at);
+      return [200, { access_token: at, token_type: 'Bearer', expires_in: 3600, scope: form.scope }];
+    }
+    if (form.grant_type !== A2A_GRANT) return null;
+    if (form.audience === A2A_INTERMEDIATE_AUD) { // A2A exchange 1
+      if (!agentOk) return [401, { error: 'invalid_client', error_description: 'fake: agent client' }];
+      if (cfg.exchange1 === 'refuse') return [400, { error: 'invalid_request', error_description: 'fake: A2A exchange 1 refused' }];
+      if (form.scope !== A2A_INTERMEDIATE_SCOPE) return [400, { error: 'invalid_scope', error_description: 'fake: not the intermediate scope' }];
+      if (!issued.user.has(form.subject_token) || !issued.agent.has(form.actor_token) || form.subject_token_type !== AT_TYPE || form.actor_token_type !== AT_TYPE) return [400, { error: 'invalid_grant', error_description: 'fake: the subject or actor token is not one this fake issued' }];
+      const subject = claimsIn(form.subject_token); const actor = claimsIn(form.actor_token);
+      const at = jwt({ sub: subject.sub, aud: A2A_INTERMEDIATE_AUD, scope: form.scope, client_id: AGENT_CLIENT_ID, act: { sub: actor.client_id } }); issued.a2a1.add(at);
+      return [200, { access_token: at, issued_token_type: AT_TYPE, token_type: 'Bearer', expires_in: 900, scope: form.scope }];
+    }
+    if (form.audience === A2A_GATEWAY_AUD) { // A2A exchange 2
+      if (!isSpecialist || !specialistOk) return [401, { error: 'invalid_client', error_description: 'fake: the exchanger must be the specialist client' }];
+      if (cfg.exchange2 === 'refuse') return [400, { error: 'invalid_request', error_description: 'fake: A2A exchange 2 refused' }];
+      if (form.scope !== A2A_SCOPE) return [400, { error: 'invalid_scope', error_description: 'fake: not the A2A scope' }];
+      if (!issued.a2a1.has(form.subject_token) || !issued.agent2.has(form.actor_token)) return [400, { error: 'invalid_grant', error_description: 'fake: the subject is not an A2A exchange-1 token, or the actor is not the specialist\'s' }];
+      const subject = claimsIn(form.subject_token); const actor = claimsIn(form.actor_token);
+      const act = cfg.exchange2 === 'none' ? null : cfg.exchange2 === 'flat' ? { sub: actor.client_id } : { sub: actor.client_id, act: subject.act };
+      const at = jwt({ sub: subject.sub, aud: A2A_GATEWAY_AUD, scope: form.scope, client_id: SPECIALIST_ID, ...(act ? { act } : {}) }); issued.delegated.add(at);
+      return [200, { access_token: at, issued_token_type: AT_TYPE, token_type: 'Bearer', expires_in: 900, scope: form.scope }];
+    }
+    return null;
+  };
   const server = http.createServer((req, res) => {
     const body = [];
     req.on('data', (c) => body.push(c));
@@ -97,6 +146,8 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
         if (req.method === 'POST' && u.pathname === `/${ENV_ID}/as/token` && req.headers.authorization !== `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')}`) {
           const form = Object.fromEntries(new URLSearchParams(Buffer.concat(body).toString('utf8')));
           const auth = req.headers.authorization;
+          const a2aAnswer = a2aToken(form, auth);
+          if (a2aAnswer) return send(a2aAnswer[0], a2aAnswer[1]);
           if (form.grant_type === 'authorization_code') {
             if (auth !== basicOf(USER_CLIENT_ID, USER_CLIENT_SECRET)) return send(401, { error: 'invalid_client', error_description: 'fake: user client' });
             const c = codes.get(form.code); codes.delete(form.code);
