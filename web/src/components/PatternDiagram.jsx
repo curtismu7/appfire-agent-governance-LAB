@@ -14,7 +14,7 @@ const HANDLES = [["t", Position.Top], ["b", Position.Bottom], ["l", Position.Lef
 
 function Box({ data }) {
   return (
-    <div className="dnode" data-color={data.color} data-on={data.on ? "true" : "false"}>
+    <div className="dnode" data-color={data.color} data-on={data.on ? "true" : "false"} data-represented={data.represented ? "true" : undefined}>
       {HANDLES.map(([k, pos]) => (
         <span key={k}>
           <Handle id={`s-${k}`} type="source" position={pos} className="dnode__handle" />
@@ -75,7 +75,7 @@ function Canvas({ diagram, positions, onMove, stepper }) {
   const active = stepper.step >= 0 ? diagram.steps[stepper.step] : null;
   const nodes = diagram.nodes.map((n) => ({
     id: n.id, type: "box", position: positions[n.id], draggable: true,
-    data: { label: n.label, color: diagram.groups?.[n.kind]?.color || "dark", on: !!active && (active.from === n.id || active.to === n.id) },
+    data: { label: n.label, color: diagram.groups?.[n.kind]?.color || "dark", on: !!active && (active.from === n.id || active.to === n.id), represented: n.kind === "appfire" },
   }));
   const offs = labelOffsets(diagram.steps);
   const edges = diagram.steps.map((s, i) => {
@@ -85,7 +85,7 @@ function Canvas({ diagram, positions, onMove, stepper }) {
     return {
       id: `e${i}`, source: s.from, target: s.to, sourceHandle: `s-${a}`, targetHandle: `t-${b}`, type: "label",
       animated: now, data: { text: `${i + 1}. ${s.label}`, dy: offs[i], now, dim: stepper.step >= 0 && !seen },
-      className: `dedge${now ? " dedge--now" : ""}${stepper.step >= 0 && !seen ? " dedge--dim" : ""}`,
+      className: `dedge${s.dashed ? " dedge--dashed" : ""}${now ? " dedge--now" : ""}${stepper.step >= 0 && !seen ? " dedge--dim" : ""}`,
       markerEnd: { type: MarkerType.ArrowClosed },
     };
   });

@@ -48,7 +48,9 @@ export default function SequenceView({ hops = [], selected = null, onSelect }) {
   const total = shown.length;
   const ns = shown.map((h) => h.n);
   // The cast comes from the whole run, not the revealed slice, so columns hold still during a narration.
-  const cast = useMemo(() => actorsIn(shown), [shown]);
+  // HIVE (Appfire's platform) is drawn as the last lane of every run: dashed, with no arrows, because the lab never calls it. It shows where
+  // its job sits (back-end data policy and MCP-server eligibility) next to the tool, and clicking it says so.
+  const cast = useMemo(() => { const c = actorsIn(shown); return c.length ? [...c, "hive"] : c; }, [shown]);
 
   // Slow mode: rows are revealed one at a time for narration; the rest are drawn faint as pending.
   const [revealed, setRevealed] = useState(total);
@@ -212,7 +214,7 @@ export default function SequenceView({ hops = [], selected = null, onSelect }) {
                 </g>
               );
               return (
-                <g key={id} className="sq-lane" style={{ "--lane": laneVar(id) }} data-actor={id}>
+                <g key={id} className="sq-lane" style={{ "--lane": laneVar(id) }} data-actor={id} data-represented={a.represented ? "true" : undefined}>
                   {box(4, 34, 26, false, "top")}
                   <line className="sq-life" x1={x} y1="38" x2={x} y2={footY} />
                   {box(footY, 28, footY + 19, true, "bottom")}

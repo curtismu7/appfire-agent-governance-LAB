@@ -204,7 +204,10 @@ try {
       for (const dn of ['delegation-chain', 'gateway-refusals']) {
         await t(`dg-${dn}`).click(); await page.locator('.react-flow__node').first().waitFor(); await sleep(600);
         const o = await page.evaluate(overlapScript);
-        check(o.overlaps === 0 && o.labels === 6, `${tag}: ${dn} has ${o.labels} labels and ${o.overlaps} overlaps`);
+        // The delegation chain has a seventh, dashed step: HIVE, represented and never called.
+        const want = dn === 'delegation-chain' ? 7 : 6;
+        check(o.overlaps === 0 && o.labels === want, `${tag}: ${dn} has ${o.labels} labels (want ${want}) and ${o.overlaps} overlaps`);
+        if (dn === 'delegation-chain') check((await page.locator('.dnode[data-represented="true"]').count()) === 1 && (await page.locator('.dedge--dashed').count()) === 1, `${tag}: HIVE is one dashed box and one dashed arrow`);
         check((await overflow()) <= 0, `${tag}: the diagram page does not scroll sideways`);
       }
       check(requests.slice(before).some((u) => u.includes('/api/diagram?') && u.includes('name=gateway-refusals')), `${tag}: the diagram was loaded by name from the server`);

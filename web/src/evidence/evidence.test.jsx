@@ -427,3 +427,37 @@ describe("hops not in this run", () => {
     expect(detail().getAttribute("aria-label")).toBe("Step 9 detail");
   });
 });
+
+describe("HIVE lane (Appfire's platform, represented and never called)", () => {
+  test("every run ends with a dashed HIVE lane after the cast; no step touches it", () => {
+    const { container } = render(<SequenceView hops={UC1_RUN} selected={null} onSelect={() => {}} />);
+    const lanes = [...container.querySelectorAll(".sq-lane")];
+    const hive = lanes.at(-1);
+    expect(hive.getAttribute("data-actor")).toBe("hive");
+    expect(hive.getAttribute("data-represented")).toBe("true");
+    expect(lanes.slice(0, -1).every((l) => l.getAttribute("data-represented") === null)).toBe(true);
+    expect(lanes.length).toBe(actorsIn(UC1_RUN).length + 1);
+    expect(UC1_RUN.some((h) => h.from === "hive" || h.to === "hive")).toBe(false);
+    expect(within(hive).getAllByText("HIVE (not called)")).toHaveLength(2); // the top and the bottom lifeline box
+  });
+
+  test("clicking the HIVE lifeline box says what it is in the brief's words and that no step touches it", () => {
+    const { container } = render(<SequenceView hops={UC1_RUN} selected={null} onSelect={() => {}} />);
+    fireEvent.click(container.querySelector('[data-actor="hive"] .sq-lbtn'));
+    const card = screen.getByTestId("actor-card");
+    expect(card.textContent).toMatch(/back-end data policy and which MCP servers may be used/);
+    expect(card.textContent).toMatch(/never calls it/);
+    expect(card.textContent).toMatch(/none in this run/);
+  });
+
+  test("no run, no lane: the empty message stands alone", () => {
+    const { container } = render(<SequenceView hops={[]} selected={null} onSelect={() => {}} />);
+    expect(container.querySelector('[data-actor="hive"]')).toBeNull();
+    expect(screen.getByTestId("sequence-empty")).toBeTruthy();
+  });
+
+  test("a HIVE actor is described by the table, so the card never falls back to 'an actor this lab does not describe'", () => {
+    expect(actorOf("hive")).toMatchObject({ label: "HIVE (not called)", represented: true });
+    expect(actorOf("hive").role).not.toMatch(/does not describe/);
+  });
+});

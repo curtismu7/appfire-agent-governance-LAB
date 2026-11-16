@@ -9,14 +9,14 @@ function Step({ step, onRun, activeUc }) {
   return (
     <article className="guide__step" data-testid={`guide-step-${step.id}`}>
       <h3 className="guide__title">{step.title}</h3>
-      <p className="guide__row"><span className="guide__tag">Asked for</span>{step.req}</p>
-      <p className="guide__row"><span className="guide__tag">How we prove it</span>{step.prove}</p>
+      <p className="guide__row"><span className="guide__tag">The step</span>{step.req}</p>
+      <p className="guide__row"><span className="guide__tag">How the lab shows it</span>{step.prove}</p>
       <p className="guide__row"><span className="guide__tag guide__tag--say">Say</span>{step.say}</p>
-      {step.uc && (
-        <button type="button" className="guide__run" onClick={() => onRun?.(step)} data-testid={`guide-run-${step.uc}`} aria-pressed={activeUc === step.uc}>
-          {activeUc === step.uc ? `Running ${step.uc}…` : `Run ${step.uc} now`}
+      {step.ucs.map((b) => (
+        <button key={b.uc} type="button" className="guide__run" onClick={() => onRun?.({ uc: b.uc, stepId: step.id })} data-testid={`guide-run-${step.id}-${b.uc}`} aria-pressed={activeUc === b.uc}>
+          {activeUc === b.uc ? `Running ${b.uc}…` : b.label}
         </button>
-      )}
+      ))}
     </article>
   );
 }
@@ -57,7 +57,7 @@ export default function DemoGuide({ isOpen, onClose, onRun, activeUc, catalog })
     <FloatingDialog isOpen={isOpen} onClose={onClose} title="Appfire demo guide" ariaLabel="Step-by-step demo guide"
       defaultWidth={460} defaultHeight={640} placement="right" storageKey="aag.guide" testId="demo-guide">
       <div className="stack">
-        <p className="muted" data-testid="guide-intro">Eight steps, one per requirement in the Appfire Agentic AI Demo Brief. Everything the customer sees here is customer-safe: ask for, proof, talking point.</p>
+        <p className="muted" data-testid="guide-intro">Seven steps, the demo walkthrough from the session agenda: one agent workflow from request to audit record. Each has what it is, how the lab shows it, and what to say.</p>
         {DEMO_GUIDE.map((s) => <Step key={s.id} step={s} onRun={onRun} activeUc={activeUc} />)}
         <RealHelp catalog={catalog} onRun={onRun} activeUc={activeUc} />
       </div>

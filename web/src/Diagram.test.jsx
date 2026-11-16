@@ -100,3 +100,20 @@ describe("label and arrow placement (no overlap)", () => {
     expect(first).toEqual(["b", "t"]);
   });
 });
+
+describe("a represented step (HIVE) is drawn dashed", () => {
+  const diagram = {
+    ...DIAGRAM.diagram,
+    groups: { ...DIAGRAM.diagram.groups, appfire: { label: "Appfire (represented, not called)", color: "grey" } },
+    nodes: [...DIAGRAM.diagram.nodes, { id: "hive", label: "HIVE (represented, not called)", kind: "appfire", x: 1000, y: 600 }],
+    steps: [...DIAGRAM.diagram.steps, { from: "hive", to: DIAGRAM.diagram.nodes[0].id, label: "HIVE (represented, not called)", say: "Never called.", edge: 99, dashed: true }],
+  };
+  test("the HIVE box is marked represented and its arrow carries the dashed class; the others do not", async () => {
+    render(<PatternDiagram diagram={diagram} />);
+    await waitFor(() => expect(document.querySelectorAll(".react-flow__node")).toHaveLength(diagram.nodes.length));
+    const marked = [...document.querySelectorAll(".dnode")].filter((n) => n.getAttribute("data-represented") === "true");
+    expect(marked).toHaveLength(1);
+    expect(marked[0].textContent).toMatch(/HIVE/);
+    expect(diagram.steps.filter((s) => s.dashed)).toHaveLength(1);
+  });
+});
