@@ -56,6 +56,7 @@
 .decision[data-tone="warn"] .decision__word { color: var(--status-warn); }
 .decision[data-tone="bad"] .decision__word { color: var(--danger-text); }
 .decision[data-tone="info"] .decision__word { color: var(--status-info); }
+.decision__steer { margin: 4px 0; font-weight: 700; color: var(--status-warn); }
 .decision__reason { margin: 4px 0 10px; line-height: 1.45; }
 .decision .kv { grid-template-columns: minmax(10rem, max-content) minmax(0, 1fr); font-size: 14px; }
 @media (max-width: 600px) { .decision .kv { grid-template-columns: 1fr; } }
@@ -82,6 +83,17 @@
 .risk__word { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
 .risk__rung[aria-current="step"] .risk__word { color: var(--text); font-weight: 700; }
 @media (max-width: 600px) { .risk { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ===== agent instructions panel (agent column) and privilege settings panel (evidence column) ===== */
+.instr, .priv { margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.instr__sum, .priv__sum { cursor: pointer; }
+.instr__body { display: grid; gap: 8px; margin-top: 8px; }
+.instr__text { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; resize: vertical; }
+.instr__found { margin: 0; font-weight: 700; color: var(--status-warn); }
+.instr__note { margin: 0; }
+.priv .kv { margin-top: 8px; grid-template-columns: minmax(12rem, max-content) minmax(0, 1fr); font-size: 14px; }
+@media (max-width: 600px) { .priv .kv { grid-template-columns: 1fr; } }
+.priv__gap { margin: 8px 0 0; }
 
 /* ===== compare page (#compare): two runs side by side ===== */
 .compare { display: grid; gap: 12px; min-width: 0; }

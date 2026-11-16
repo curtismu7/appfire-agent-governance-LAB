@@ -3,7 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import userEvent from "@testing-library/user-event";
 import App, { BANNER_UNKNOWN, BASE_NAV } from "./App";
 import { forgetWorkspace } from "./workspace";
-import { catalog, mockApi, RAW, runBody } from "./testFixtures";
+import { catalog, INSTR, mockApi, RAW, runBody } from "./testFixtures";
+import AgentInstructions from "./components/AgentInstructions";
 
 let api;
 const boot = async (state) => {
@@ -824,5 +825,89 @@ describe("risk strip and compare page", () => {
     await userEvent.setup().click(screen.getByTestId("back-to-chat"));
     await screen.findByTestId("uc-UC1");
     expect(screen.queryByTestId("page-compare")).toBeNull();
+  });
+});
+
+describe("agent instructions and privilege settings", () => {
+  const answer = (over) => () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true, run: { ...runBody().run, ...over } }) });
+  const posts = () => api.calls.filter((c) => c.method === "POST" && c.path.startsWith("/api/run/"));
+
+  test("the instructions panel shows the default, flags override phrases as you type, and the presets set and clear them", async () => {
+    await boot();
+    const panel = await screen.findByTestId("instructions");
+    const u = userEvent.setup();
+    await u.click(panel.querySelector("summary"));
+    expect(screen.getByTestId("instructions-text").value).toBe(INSTR.default);
+    expect(screen.getByTestId("instructions-state").textContent).toBe("default");
+    expect(screen.getByTestId("instructions-preset-default").getAttribute("aria-pressed")).toBe("true");
+    await u.click(screen.getByTestId("instructions-preset-poisoned"));
+    expect(screen.getByTestId("instructions-text").value).toBe(INSTR.presets[1].text);
+    expect(screen.getByTestId("instructions-state").textContent).toBe("steers the agent");
+    expect(screen.getByTestId("instructions-found").textContent).toMatch(/ignore all, largest amount/);
+    await u.click(screen.getByTestId("instructions-preset-default"));
+    expect(screen.getByTestId("instructions-state").textContent).toBe("default");
+    expect(screen.queryByTestId("instructions-found")).toBeNull();
+    await u.clear(screen.getByTestId("instructions-text"));
+    await u.type(screen.getByTestId("instructions-text"), "Be brief.");
+    expect(screen.getByTestId("instructions-state").textContent).toBe("edited");
+    expect(screen.getByTestId("instructions-note").textContent).toMatch(/LAB-INVENTED/);
+  });
+
+  test("a Mock run sends the instructions only when they were edited; the default sends none", async () => {
+    await boot();
+    const u = await pick("UC1");
+    await runIt(u);
+    expect(posts().at(-1).body.instructions).toBeUndefined();
+    await u.click((await screen.findByTestId("instructions")).querySelector("summary"));
+    await u.click(screen.getByTestId("instructions-preset-poisoned"));
+    await u.click(screen.getByTestId("run"));
+    await waitFor(() => expect(posts()).toHaveLength(2));
+    expect(posts().at(-1).body.instructions).toBe(INSTR.presets[1].text);
+  });
+
+  test("in Real mode the panel says the instructions are not sent", () => {
+    render(<AgentInstructions config={INSTR} text={null} onText={() => {}} mode="live" />);
+    expect(screen.getByTestId("instructions-note").textContent).toMatch(/Real runs do not send these/);
+  });
+
+  test("a steered run says so on the decision card, and the card still reports the policy's decision", async () => {
+    const steered = { asked: { tool: "get_account_balance", amount: null }, proposed: { tool: "create_transfer", amount: 2500 }, reasons: ["ignore all"] };
+    await boot({ runAnswer: answer({ outcome: "DENY", matchesExpected: null, steered }) });
+    await runIt(await pick("UC1"));
+    expect((await screen.findByTestId("decision-steer")).textContent).toMatch(/proposed create_transfer for 2500 though the customer asked for get_account_balance/);
+    expect(screen.getByTestId("decision-word").textContent).toBe("DENIED");
+  });
+
+  test("the privilege panel sits under the decision card, collapsed to a summary, with the rows and what it does not read", async () => {
+    await boot();
+    await runIt(await pick("UC1"));
+    const panel = await screen.findByTestId("privilege-panel");
+    expect(screen.getByTestId("decision-card").compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(panel.hasAttribute("open")).toBe(false);
+    expect(screen.getByTestId("privilege-summary").textContent).toMatch(/for alex\.morgan/);
+    expect(screen.getByTestId("privilege-agent").textContent).toBe("not in this run");
+    expect(screen.getByTestId("privilege-gap").textContent).toMatch(/federated identity is enabled/);
+    cleanup(); vi.unstubAllGlobals();
+    await boot({ runAnswer: answer({ kind: "guided", computed: false, matchesExpected: null, outcome: "PERMIT" }) });
+    await runIt(await pick("UC1"));
+    await screen.findByTestId("decision-card");
+    expect(screen.queryByTestId("privilege-panel")).toBeNull();
+  });
+
+  test("Compare has a careful-vs-poisoned preset: it loads the preset text and runs the same use case twice, once with the poisoned instructions, in Mock", async () => {
+    await boot({ runAnswer: (id, body) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true, run: { ...runBody(id).run, ...(body.instructions ? { outcome: "DENY", matchesExpected: null, steered: { asked: { tool: "get_account_balance", amount: null }, proposed: { tool: "create_transfer", amount: 2500 }, reasons: ["ignore all"] } } : {}) } }) }) });
+    const u = userEvent.setup();
+    await u.click(screen.getByTestId("open-compare"));
+    await waitFor(() => expect(screen.getAllByTestId("decision-card")).toHaveLength(2));
+    await u.click(screen.getByTestId("compare-careful-poisoned"));
+    // the first pair ran UC1 once (with UC31); the preset runs UC1 twice more: the default instructions, then the poisoned ones
+    await waitFor(() => expect(posts().filter((c) => c.path === "/api/run/UC1")).toHaveLength(3));
+    const pair = posts().filter((c) => c.path === "/api/run/UC1").slice(-2).map((c) => c.body);
+    expect(pair.map((b) => b.instructions)).toEqual([undefined, INSTR.presets[1].text]);
+    expect(pair.every((b) => b.mode === "mock")).toBe(true);
+    expect(api.calls.some((c) => c.path === "/api/instructions")).toBe(true);
+    await waitFor(() => expect(screen.getAllByTestId("decision-card")).toHaveLength(2));
+    expect(await screen.findByTestId("decision-steer")).toBeTruthy();
+    expect([...screen.getAllByTestId("decision-word")].map((n) => n.textContent)).toEqual(["ALLOWED", "DENIED"]);
   });
 });

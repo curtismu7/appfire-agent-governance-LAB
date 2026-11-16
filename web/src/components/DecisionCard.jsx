@@ -25,6 +25,7 @@ export default function DecisionCard({ run }) {
   return (
     <section className="decision" data-tone={d.tone} data-verdict={d.verdict} aria-label="Decision" data-testid="decision-card">
       <p className="decision__word" data-testid="decision-word">{d.word}</p>
+      {d.steer && <p className="decision__steer" data-testid="decision-steer">{visible(d.steer)}</p>}
       <p className="decision__reason" data-testid="decision-reason">{visible(d.reason)}</p>
       <RiskStrip level={d.level} />
       {d.fields.length > 0 && (

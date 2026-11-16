@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import SequenceView from "../evidence/SequenceView";
 import DecisionCard from "./DecisionCard";
 import { Tag } from "./Bits";
-import { postJson } from "../api";
+import { getJson, postJson } from "../api";
 import { PRESETS } from "../compare";
 import { compareRows } from "../decision";
 import { focusHop, newTraceparent, outcomeState } from "../lib";
@@ -22,9 +22,15 @@ export default function ComparePage({ vertical, onBack }) {
     const mine = ++seq.current;
     setPresetId(p.id);
     setSides(p.sides.map(() => ({ status: "running" })));
-    const answers = await Promise.all(p.sides.map((s) => postJson(`/api/run/${encodeURIComponent(s.uc)}`,
-      { vertical, ...(s.persona ? { persona: s.persona } : {}), mode: "mock" }, { traceparent: newTraceparent() })
-      .catch(() => ({ ok: false, status: 0, body: {} }))));
+    // A side that runs with a preset's instructions needs its text from the server (the one place the presets live).
+    let presets = [];
+    if (p.sides.some((s) => s.instructionsPreset)) presets = await getJson(`/api/instructions?vertical=${encodeURIComponent(vertical)}`).then((j) => j.presets || [], () => []);
+    const textOf = (s) => presets.find((x) => x.id === s.instructionsPreset)?.text;
+    const answers = await Promise.all(p.sides.map((s) => (s.instructionsPreset && !textOf(s)
+      ? Promise.resolve({ ok: false, status: 0, body: { detail: "The instructions preset could not be loaded." } })
+      : postJson(`/api/run/${encodeURIComponent(s.uc)}`,
+        { vertical, ...(s.persona ? { persona: s.persona } : {}), ...(s.instructionsPreset ? { instructions: textOf(s) } : {}), mode: "mock" }, { traceparent: newTraceparent() })
+        .catch(() => ({ ok: false, status: 0, body: {} })))));
     if (mine !== seq.current) return; // a newer comparison took over
     setSides(answers.map((r) => (r.ok ? { status: "done", run: r.body.run } : { status: "error", message: r.body?.detail || r.body?.message || `The server refused this run${r.status ? ` (HTTP ${r.status})` : ""}.` })));
   }, [vertical]);

@@ -20,6 +20,7 @@ import { runUseCase, liveNote, isFlow } from './flow.js';
 import { maskDeep } from './mask.js';
 import { cleanFree } from './credentials.js';
 import { toolFor } from './cast.js';
+import { MAX_INSTRUCTIONS, instructionsConfig } from './instructions.js';
 import { situationOf } from './situations.js';
 import { parseTraceparent, randomTraceparent } from './trace.js';
 import { createLive, LiveRefused } from './live.js';
@@ -34,7 +35,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
 const CONFIG = process.env.CUSTOMER_CONFIG || path.resolve(HERE, '../../customer.config.json');
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-const KEYS = Object.freeze({ run: ['vertical', 'persona', 'mode', 'brain', 'said'], mode: ['mode'], reset: [], pick: ['vertical', 'text'], signin: ['password'], signout: [] });
+const KEYS = Object.freeze({ run: ['vertical', 'persona', 'mode', 'brain', 'said', 'instructions'], mode: ['mode'], reset: [], pick: ['vertical', 'text'], signin: ['password'], signout: [] });
 
 // What a list or detail answer shows for a use case: the manifest row, plus the tool resolved for the vertical and whether the run is guided (the
 // lab opens the product's page and does not compute the outcome) or computed by the engine. `labInputs` are the lab-invented numbers and events fed to the engine (empty for most).
@@ -159,6 +160,14 @@ export function createApp({
     const v = verticalOf(req.query.vertical, res); if (!v) return;
     if (!isFullVertical(v)) return res.status(501).json({ error: 'vertical_stub', detail: 'this vertical is a data stub: it has a name and no story yet' });
     res.json(buildStory(loadCast(configFile, v), v));
+  });
+
+  // The agent's instructions: the default, the presets and the phrases the simulated agent obeys (instructions.js). Static, cast filled.
+  api.get('/instructions', (req, res) => {
+    staticCatalog(res);
+    const v = verticalOf(req.query.vertical, res); if (!v) return;
+    if (!isFullVertical(v)) return res.status(501).json({ error: 'vertical_stub', detail: 'this vertical is a data stub: it has a name and no instructions yet' });
+    res.json(instructionsConfig(loadCast(configFile, v)));
   });
 
   // A diagram by name (diagram-studio/1 data, cast filled). An unknown name falls back to the first one and is never echoed.
@@ -355,6 +364,8 @@ export function createApp({
       // first like all free text (zero-width and bidi removed, control characters to spaces, every credential shape masked, long-blob included).
       if (body.brain !== undefined && body.brain !== 'scripted' && body.brain !== 'llama') return res.status(400).json({ error: 'bad_brain', detail: 'brain must be scripted or llama' });
       if (body.said !== undefined && (typeof body.said !== 'string' || body.said.length > 400)) return res.status(400).json({ error: 'bad_said', detail: 'said must be a string of at most 400 characters' });
+      // The agent's instructions (Mock only: a Real run sends no instructions to anything). Free text: cleaned like `said`.
+      if (body.instructions !== undefined && (typeof body.instructions !== 'string' || body.instructions.length > MAX_INSTRUCTIONS)) return res.status(400).json({ error: 'bad_instructions', detail: `instructions must be a string of at most ${MAX_INSTRUCTIONS} characters` });
       const requested = body.mode === undefined ? workspaces.peek(id).mode : modeOf(body.mode);
       if (!requested) return res.status(400).json({ error: 'bad_mode', detail: 'mode must be mock or live' });
       if (!isFullVertical(vertical)) return res.status(501).json({ error: 'vertical_stub', detail: 'this vertical is a data stub: it has a name and no pack yet' });
@@ -400,7 +411,7 @@ export function createApp({
       if (why) return res.status(403).json({ error: 'mock_signin_refused', detail: why });
       const out = await workspaces.write(id, (s) => {
         if (s.runs.length >= MAX_RUNS) throw refuse('workspace_full', `this workspace already holds ${MAX_RUNS} runs; Reset it to continue`, 409);
-        const run = withSource(runUseCase(uc, { cast: loadCast(configFile, vertical), vertical, persona: body.persona, brain: body.brain, said: body.said === undefined ? undefined : cleanFree(body.said, 400), traceparent: parseTraceparent(req.headers.traceparent) ? req.headers.traceparent : randomTraceparent(), seed: 'run' }));
+        const run = withSource(runUseCase(uc, { cast: loadCast(configFile, vertical), vertical, persona: body.persona, brain: body.brain, said: body.said === undefined ? undefined : cleanFree(body.said, 400), instructions: body.instructions === undefined ? undefined : cleanFree(body.instructions, MAX_INSTRUCTIONS), traceparent: parseTraceparent(req.headers.traceparent) ? req.headers.traceparent : randomTraceparent(), seed: 'run' }));
         s.seq += 1;
         s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: run.persona, outcome: run.outcome, matchesExpected: run.matchesExpected, traceId: run.traceId });
         return { seq: s.seq, run };

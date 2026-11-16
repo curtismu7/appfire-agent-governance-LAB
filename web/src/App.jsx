@@ -23,6 +23,7 @@ import VerifyMark from "./components/VerifyMark.jsx";
 import DemoGuide from "./components/DemoGuide";
 import AgendaSteps from "./components/AgendaSteps";
 import ComparePage from "./components/ComparePage";
+import AgentInstructions from "./components/AgentInstructions";
 import { DEMO_GUIDE } from "./demoGuide";
 import MockPhone from "./components/MockPhone";
 import SignInDialog from "./components/SignInDialog";
@@ -68,6 +69,8 @@ export default function App() {
   const [persona, setPersona] = useState(resumed?.persona || "standard");
   const [catalog, setCatalog] = useState(null);
   const [prompts, setPrompts] = useState([]);
+  const [instrConfig, setInstrConfig] = useState(null); // the default instructions, the presets and the override phrases (GET /api/instructions)
+  const [instrEdit, setInstrEdit] = useState(null); // the edited instructions, or null while the default is in use
   const [selectedId, setSelectedId] = useState(resumed?.selectedId ?? null);
   const [results, setResults] = useState({});
   const [running, setRunning] = useState(false);
@@ -141,6 +144,12 @@ export default function App() {
   useEffect(() => {
     let live = true; // a late catalog for a vertical the visitor has already left is dropped
     getJson(`/api/usecases?vertical=${encodeURIComponent(vertical)}`).then((j) => { if (live) setCatalog(j); }, (e) => { if (live) setError(e.message); });
+    return () => { live = false; };
+  }, [vertical]);
+  useEffect(() => {
+    let live = true; // the agent's instructions for this vertical; an edit made for another vertical is dropped (it names that vertical's money)
+    setInstrConfig(null); setInstrEdit(null);
+    getJson(`/api/instructions?vertical=${encodeURIComponent(vertical)}`).then((j) => { if (live) setInstrConfig(j); }, () => {});
     return () => { live = false; };
   }, [vertical]);
   useEffect(() => {
@@ -225,7 +234,7 @@ export default function App() {
     // A typed or chip turn tells the server what was said and which brain actually picked the use case ("llama" only when llama.cpp did;
     // a fallback is "scripted"). A picked or previewed run sends neither.
     const typed = turn && turn.how !== "picked" ? { said: String(turn.said).slice(0, 400), brain: turn.how === "llm" ? "llama" : "scripted" } : {};
-    const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(extra ?? {}) }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
+    const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(mode !== "live" && instrEdit !== null ? { instructions: instrEdit } : {}), ...(extra ?? {}) }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
     if (mine !== runSeq.current) return; // a Reset or a newer run took over
     setRunning(false);
     // Real runs as the person: no sign-in yet opens the Sign in dialog, and the run goes again once it succeeds.
@@ -344,6 +353,7 @@ export default function App() {
   // Reset: the server clears this workspace's mode and runs; results, the chat, extra pages and the diagram go back to the start.
   const reset = useCallback(async () => {
     runSeq.current += 1;
+    setInstrEdit(null);
     dropPick();
     setRunning(false);
     const ok = await resetWorkspace().catch(() => false);
@@ -468,7 +478,8 @@ export default function App() {
               )}
               <div className="work">
                 <AgentColumn agent={cast.castAgent} brand={cast.castBrand} userId={userId} vertical={vertical} verticalLabel={verticalLabel} stub={stub} prompts={prompts} turns={shownTurns}
-                  status={busy ? "running" : statusOf(lastTurn)} onSay={say} onHop={onHop} onPreview={preview} running={busy} />
+                  status={busy ? "running" : statusOf(lastTurn)} onSay={say} onHop={onHop} onPreview={preview} running={busy}
+                  instructions={<AgentInstructions config={instrConfig} text={instrEdit} onText={setInstrEdit} mode={mode} />} />
                 {qcOpen ? (
                   <QuickConfig id="quick-config" mode={mode} liveReason={liveReason} realTitle={realTitle} hostedOnly={hostedOnly} onMode={chooseMode} config={cfg}
                     brainInfo={brainInfo} onBrain={(b) => setCfg((c) => ({ ...c, brain: b }))} onRouting={(r) => setCfg((c) => ({ ...c, routing: r }))}

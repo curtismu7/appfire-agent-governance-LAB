@@ -68,6 +68,14 @@ export function riskLevelOf(run) {
   return null;
 }
 
+// When the agent's instructions steered it, the card says so: what it proposed against what the customer asked for.
+function steerOf(run) {
+  const s = run?.steered;
+  if (!s || !s.proposed || !text(s.proposed.tool)) return null;
+  const amount = typeof s.proposed.amount === "number" ? ` for ${s.proposed.amount}` : "";
+  return `The agent's instructions steered it: it proposed ${s.proposed.tool}${amount} though the customer asked for ${text(s.asked?.tool) || "something else"}.`;
+}
+
 const WORD = { allowed: "ALLOWED", denied: "DENIED", escalated: "ESCALATED" };
 const TONE = { allowed: "ok", denied: "bad", escalated: "warn" };
 
@@ -76,10 +84,10 @@ export function decisionOf(run) {
   if (!run || typeof run !== "object") return null;
   const outcome = String(run.outcome || "");
   if (run.kind === "guided" || run.computed === false) {
-    return { verdict: "guided", word: "GUIDED", tone: "info", level: null, reason: "A guided page: the lab shows the catalog's label and does not decide anything here.", fields: [] };
+    return { verdict: "guided", word: "GUIDED", tone: "info", level: null, steer: null, reason: "A guided page: the lab shows the catalog's label and does not decide anything here.", fields: [] };
   }
   if (run.kind === "live") {
-    return { verdict: "idp", word: "IDENTITY PROVIDER ONLY", tone: "info", level: null, reason: "Real, identity provider only: two calls, nothing past the identity provider, so no tool call was decided.", fields: [] };
+    return { verdict: "idp", word: "IDENTITY PROVIDER ONLY", tone: "info", level: null, steer: null, reason: "Real, identity provider only: two calls, nothing past the identity provider, so no tool call was decided.", fields: [] };
   }
   const verdict = verdictOf(outcome);
   const { person, agent } = actors(run);
@@ -106,7 +114,7 @@ export function decisionOf(run) {
   }
   const decided = outcome ? (policy?.decision && policy.decision !== outcome ? `${outcome} (${policy.decision})` : outcome) : NOT_REACHED;
   return {
-    verdict: verdict || "other", word, tone, level: riskLevelOf(run), reason,
+    verdict: verdict || "other", word, tone, level: riskLevelOf(run), steer: steerOf(run), reason,
     fields: [
       { key: "agent", label: "Which agent acted", value: agent || NOT_REACHED },
       { key: "principal", label: "On whose behalf", value: person || NOT_REACHED },

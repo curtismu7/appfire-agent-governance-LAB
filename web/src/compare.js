@@ -21,4 +21,9 @@ export const PRESETS = [
     why: "A $600 transfer is held for a second factor; a $2500 one is refused outright.",
     sides: [{ uc: "UC7", label: "transfer $600" }, { uc: "UC6", label: "transfer $2500" }],
   },
+  {
+    id: "careful-poisoned", title: "Careful vs poisoned instructions",
+    why: "The customer asks for a balance both times. Poisoned instructions make the simulated agent propose a $2500 transfer instead (lab-simulated obedience); Agent Authorize refuses it. The decision comes from the call, never from the prompt.",
+    sides: [{ uc: "UC1", label: "default instructions" }, { uc: "UC1", instructionsPreset: "poisoned", label: "poisoned instructions" }],
+  },
 ];
