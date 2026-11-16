@@ -79,7 +79,7 @@ export default function ComparePage({ vertical, onBack }) {
             {s.status === "running" && <p className="muted" data-testid="compare-running">Running in Mock...</p>}
             {s.status === "error" && <p className="turn__refused" role="alert" data-testid="compare-error">{visible(s.message)}</p>}
             {s.run && <DecisionCard run={s.run} />}
-            {s.run && <SequenceView hops={s.run.hops} selected={focusHop(s.run)} onSelect={none} />}
+            {s.run && <SequenceView hops={s.run.hops} selected={focusHop(s.run)} onSelect={none} showSources={false} />}
           </section>
         ))}
       </div>

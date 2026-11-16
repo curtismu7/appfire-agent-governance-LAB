@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import Working from "./Working";
 import SequenceView from "../evidence/SequenceView";
 import MovieReel from "../evidence/MovieReel";
 import StepDetailPanel from "../evidence/StepDetailPanel";
@@ -7,7 +8,7 @@ import DiagramView from "./DiagramView";
 import TokenView from "./TokenView";
 import { DIAGRAMS, VIEWS, VIEW_LABEL } from "../quickConfig";
 import { appsOf, handoffCarry, routeOf } from "../handoff";
-import { SourceTag, Tag } from "./Bits";
+import { SourceTag, Tag, chipsNeeded, hopSource } from "./Bits";
 import { notRunText, ranCount } from "../lib";
 import { HANDOFF_WHY } from "../chat";
 import { visible } from "../safeText";
@@ -64,6 +65,7 @@ export function HopSources({ run }) {
   const hops = run?.hops || [];
   if (!hops.length) return null;
   const real = run.kind === "real" || run.kind === "live";
+  const show = chipsNeeded(run);
   return (
     <div className="evwhy" data-testid="hop-sources">
       <p className="kicker">Where each hop ran</p>
@@ -72,7 +74,7 @@ export function HopSources({ run }) {
       <ol className="steps">
         {hops.map((h) => (
           <li key={`${h.n}-${h.kind}`} data-testid="hop-source" data-source={h.source || (h.mock ? "mock" : real ? "real" : "mock")}>
-            <span className="steps__n">{h.n}</span> {visible(h.title || h.kind)} <SourceTag source={h.source || (h.mock ? "mock" : real ? "real" : "mock")} />
+            <span className="steps__n">{h.n}</span> {visible(h.title || h.kind)} <SourceTag source={h.source || (h.mock ? "mock" : real ? "real" : "mock")} show={show} />
           </li>
         ))}
       </ol>
@@ -81,7 +83,7 @@ export function HopSources({ run }) {
 }
 
 // `children`: the selected use case's panel (inputs, persona, Run and the raw result), at the bottom of the column (owner, 2026-11-09).
-export default function EvidenceColumn({ run, selHop, onSelect, config, onTab, onFull, vertical, resetSignal, lastRun, uc, catalog, userId, showHandoff, why, children }) {
+export default function EvidenceColumn({ running, run, selHop, onSelect, config, onTab, onFull, vertical, resetSignal, lastRun, uc, catalog, userId, showHandoff, why, children }) {
   const hops = run?.hops || [];
   const tabs = VIEWS.filter((v) => DIAGRAMS.includes(v) || config.views.tokens === "embedded");
   const tab = tabs.includes(config.tab) && (config.tab === "tokens" || config.views[config.tab] === "embedded") ? config.tab : null;
@@ -94,6 +96,12 @@ export default function EvidenceColumn({ run, selHop, onSelect, config, onTab, o
         <button type="button" onClick={() => onFull("compare")} data-testid="open-compare" title="Two runs side by side, in Mock: what is decided differently">Compare</button>
         <button type="button" onClick={() => onFull("sequence")} data-testid="full-sequence" title="The sequence view on a page of its own">Full page</button>
       </header>
+      {running && (
+        <div className="evcol__running" data-testid="evidence-running">
+          <Working label="Running the use case" />
+          <span className="muted">The sequence and the decision are drawn here when the run finishes.</span>
+        </div>
+      )}
       {showHandoff ? <HandoffSummary uc={uc} catalog={catalog} vertical={vertical} userId={userId} /> : (
         <>
           {run && <DecisionCard run={run} />}
@@ -111,15 +119,15 @@ export default function EvidenceColumn({ run, selHop, onSelect, config, onTab, o
           {config.presenter && (tab === "sequence" || tab === "reel") && hops.length > 0 && <HopCaption hops={hops} selected={selHop} onSelect={onSelect} />}
           <div id="evpanel" role="region" aria-label={tab ? `${VIEW_LABEL[tab]} view` : "Evidence view"} className="evcol__panel" data-view={tab || "none"}>
             {!tab && <p className="muted" data-testid="no-view">No evidence view is embedded. Pick a tab, or turn one on in Quick Config.</p>}
-            {tab === "sequence" && <SequenceView hops={hops} selected={selHop} onSelect={onSelect} />}
+            {tab === "sequence" && <SequenceView hops={hops} selected={selHop} onSelect={onSelect} showSources={chipsNeeded(run)} />}
             {tab === "reel" && <MovieReel hops={hops} selected={selHop} onSelect={onSelect} />}
-            {(tab === "sequence" || tab === "reel") && hops.length > 0 && selHop != null && <StepDetailPanel hops={hops} selected={selHop} onSelect={onSelect} onClose={() => onSelect(null)} />}
+            {(tab === "sequence" || tab === "reel") && hops.length > 0 && selHop != null && <StepDetailPanel hops={hops} selected={selHop} onSelect={onSelect} onClose={() => onSelect(null)} showSources={chipsNeeded(run)} />}
             {(tab === "sequence" || tab === "reel") && hops.length > 0 && selHop == null && <p className="muted">Click a step, an actor or a tool-call pill for its full detail.</p>}
             {tab === "topology" && <DiagramView vertical={vertical} resetSignal={resetSignal} lastRun={lastRun} />}
             {tab === "tokens" && (
               <div data-testid="evidence-tokens">
-                <p className="muted">The tokens this run used, raw and decoded. {run?.kind === "real" ? <>Every one is a REAL token <Tag state="ok">REAL</Tag> from your PingOne environment, shown raw for teaching; they expire in minutes. Client secrets and your password are never sent to this page.</> : run?.mode === "live" ? "A live token is shown raw too (education). The client secret is never sent to this page." : <>Every one is a MOCK token <Tag state="info">MOCK</Tag> issued by this lab and signed with a public mock key; showing it raw is the point (education).</>}</p>
-                {run ? <TokenView tokens={run.tokens} /> : <p className="muted">Run a use case to see its tokens.</p>}
+                <p className="muted">The tokens this run used, raw and decoded. {run?.kind === "real" ? <>Every one is a REAL token from your PingOne environment, shown raw for teaching; they expire in minutes. Client secrets and your password are never sent to this page.</> : run?.mode === "live" ? "A live token is shown raw too (education). The client secret is never sent to this page." : <>Every one is a MOCK token <Tag state="info">MOCK</Tag> issued by this lab and signed with a public mock key; showing it raw is the point (education).</>}</p>
+                {run ? <TokenView tokens={run.tokens} showSources={chipsNeeded(run)} /> : <p className="muted">Run a use case to see its tokens.</p>}
               </div>
             )}
           </div>

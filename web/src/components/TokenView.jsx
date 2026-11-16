@@ -9,13 +9,15 @@ import { HOT_CLAIMS } from "../lib";
 // the server's, so the chip never contradicts the reply: an empty object or a blank sub is no act).
 const actOf = (t) => (t.claims && typeof t.claims.act === "object" && t.claims.act !== null && !Array.isArray(t.claims.act) && typeof t.claims.act.sub === "string" && t.claims.act.sub !== "" ? t.claims.act : null);
 
-export default function TokenView({ tokens }) {
+// A MOCK token always keeps its chip (rulebook rule 4: mock-issued tokens are labelled, and the banner says so): a token is the one thing that can be
+// copied out of the page and mistaken for a real credential. The REAL and LIVE chips follow showSources (owner 2026-11-16).
+export default function TokenView({ tokens, showSources = true }) {
   if (!tokens?.length) return <p className="muted" data-testid="no-tokens">This run minted no token.</p>;
   return (
     <div className="tokens" data-testid="tokens">
       {tokens.map((t, i) => (
         <article key={`${t.label}-${i}`} className="panel panel--inner" data-testid="token">
-          <h4 className="panel__sub">{t.label} {t.mock && <MockTag />}{t.live && <LiveTag />}{t.real && <RealTag />}
+          <h4 className="panel__sub">{t.label} {t.mock && <MockTag />}{showSources && t.live && <LiveTag />}{showSources && t.real && <RealTag />}
             {t.expectAct && (actOf(t)
               ? <> <Tag state="ok" testId="token-act" title="The act claim (RFC 8693): the agent that is acting for the user">act.sub = {visible(actOf(t).sub)}</Tag></>
               : <> <Tag state="bad" testId="token-no-act" title="This token should carry an act claim naming the agent, and it does not">NO act claim</Tag></>)}
