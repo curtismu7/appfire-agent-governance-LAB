@@ -13,9 +13,10 @@ const none = () => {};
 // Two runs side by side (#compare). Both are run here, fresh, in Mock (`mode: "mock"` is sent on every call), so this page never reaches a real
 // tenant even while the lab is in Real. The deciding step is highlighted in each Sequence, the five audit facts are lined up, and the rows that
 // differ are marked.
-export default function ComparePage({ vertical, onBack }) {
-  const [presetId, setPresetId] = useState(PRESETS[0].id);
-  const [sides, setSides] = useState(PRESETS[0].sides.map(() => ({ status: "running" })));
+export default function ComparePage({ vertical, onBack, startPreset }) {
+  const first = PRESETS.find((p) => p.id === startPreset) || PRESETS[0]; // the step bar can open the page at a named pair
+  const [presetId, setPresetId] = useState(first.id);
+  const [sides, setSides] = useState(first.sides.map(() => ({ status: "running" })));
   const seq = useRef(0);
 
   const runPreset = useCallback(async (p) => {

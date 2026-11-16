@@ -13,7 +13,7 @@ export default function Turn({ turn, onHop, onPreview, userId, running }) {
   const res = turn.result;
   const run = res?.ok ? res.body.run : null;
   const uc = turn.uc;
-  const handoff = uc && isHandoff(uc) && !turn.preview;
+  const handoff = uc && isHandoff(uc) && !turn.preview && !turn.walkthrough; // a walkthrough run shows the answer here, with no hand-off card
   const guide = uc && routeOf(uc).route === "Guide";
   // A note in the conversation (for example "Back from a2a-lab (UC47)"): no You / AI exchange.
   if (turn.status === "note") return <li className="turn turn--note muted" data-testid="turn-note" data-status="note" role="note">{visible(turn.said)}</li>;

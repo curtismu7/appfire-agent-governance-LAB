@@ -755,6 +755,25 @@ describe("decision card and the session walkthrough (agenda)", () => {
     expect(screen.queryByTestId("agenda-steps")).toBeNull();
   });
 
+  test("step 6 has seven buttons; the two Compare buttons open the Compare page at their pair (and Back returns to the chat)", async () => {
+    await boot();
+    const u = userEvent.setup();
+    await u.keyboard("p");
+    await u.click(screen.getByTestId("agenda-pill-escalate"));
+    expect(screen.getByTestId("agenda-now").querySelectorAll("button.primary")).toHaveLength(7);
+    await u.click(screen.getByTestId("agenda-compare-careful-poisoned"));
+    await screen.findByTestId("page-compare");
+    expect(screen.getByTestId("compare-careful-poisoned").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("agenda-pill-escalate").getAttribute("aria-current")).toBe("step"); // the step bar stays, still on step 6
+    await u.click(screen.getByTestId("agenda-compare-ask-refuse"));
+    await waitFor(() => expect(screen.getByTestId("compare-ask-refuse").getAttribute("aria-pressed")).toBe("true"));
+    await u.click(screen.getByTestId("back-to-chat"));
+    expect(screen.queryByTestId("page-compare")).toBeNull();
+    await u.click(screen.getByTestId("open-compare")); // the plain Compare button starts at the first pair again, not the last one a step button chose
+    await screen.findByTestId("page-compare");
+    expect(screen.getByTestId("compare-allowed-denied").getAttribute("aria-pressed")).toBe("true");
+  });
+
   test("Presenter mode lists the seven timed topics, marks the current one, and says which are in the deck", async () => {
     await boot();
     const u = userEvent.setup();

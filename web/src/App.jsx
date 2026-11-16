@@ -99,6 +99,7 @@ export default function App() {
   // demo on other tabs, until you close the dialog itself. select() opens it; the dialog's own close unopens.
   const [talkOpen, setTalkOpen] = useState(false);
   const [guideRunning, setGuideRunning] = useState(null); // the use case a guide step's Run button started
+  const [comparePreset, setComparePreset] = useState(null); // the pair a guide step's Compare button opened the Compare page at
   const [agendaStep, setAgendaStep] = useState(0); // the walkthrough step shown in presenter mode (demoGuide.js)
   // The mock phone (owner 2026-11-13): opens when a run holds for approval — a REAL_HOLD with the gateway's challenge,
   // or a mock HITL/step-up hold. kind real = the approval is recorded with the SE HITL service and the run is retried
@@ -279,13 +280,27 @@ export default function App() {
     if (!step || !uc) return;
     guideRun({ uc });
   };
+  // A guide step's Compare button: the Compare page (always Mock) at a named pair. The page is keyed by the pair, so a second button remounts it at that pair.
+  const guideCompare = (step) => {
+    if (!step?.preset) return;
+    const at = DEMO_GUIDE.findIndex((g) => g.id === step.stepId);
+    if (at >= 0) setAgendaStep(at);
+    setComparePreset(step.preset);
+    select("compare");
+  };
   const guideRun = (step) => {
     if (!step?.uc) return;
     const at = DEMO_GUIDE.findIndex((g) => g.id === step.stepId);
     if (at >= 0) setAgendaStep(at);
-    pick(step.uc);
-    if (current !== "agent" || page) select("agent"); // a run started from the guide or the talk track shows in the Agent column
     const u = allUc.find((x) => x.id === step.uc);
+    if (current !== "agent" || page) select("agent"); // a run started from the guide or the talk track shows in the Agent column
+    if (u && isHandoff(u)) {
+      // A use case another app handles (the third-party call, for one) still runs here for the walkthrough, answered in the chat, without the hand-off card.
+      setSelectedId(u.id); setSelHop(null); setGuideRunning(u.id);
+      startRun(u, { said: `“${u.title}” (run from the walkthrough)`, how: "picked", walkthrough: true }, personaFor(u) || persona).finally(() => setGuideRunning(null));
+      return;
+    }
+    pick(step.uc);
     if (!u) return;
     setGuideRunning(step.uc);
     startRun(u, null, personaFor(u) || persona).finally(() => setGuideRunning(null));
@@ -326,7 +341,7 @@ export default function App() {
     const m = matchPrompt(said, prompts);
     return answer(said, source, m, `${why} Used the Scripted brain instead.`);
   };
-  const preview = (turn) => { setSelectedId(turn.uc.id); startRun(turn.uc, { said: `Preview ${turn.uc.id} here (mock engine)`, how: "picked", preview: true }); };
+  const preview = (turn) => { setSelectedId(turn.uc.id); startRun(turn.uc, { said: `Preview “${turn.uc.title}” here (mock engine)`, how: "picked", preview: true }); };
   const onHop = (turn, n) => {
     if (turn?.uc && turn.uc.id !== selectedId) setSelectedId(turn.uc.id);
     setSelHop(n ?? (turn?.result?.ok ? focusHop(turn.result.body.run) : null)); // See evidence (no hop): the run's own focus hop
@@ -454,13 +469,13 @@ export default function App() {
       <main className="content" id="main" tabIndex={-1}>
         <div id={`panel-${current}`} role="tabpanel" aria-labelledby={extraKey ? "tab-more" : `tab-${current}`}>
           {error && <p className="app-error" role="alert">Could not load the lab ({error}). Is the server running?</p>}
-          {presenter && <AgendaSteps step={agendaStep} onStep={(i) => setAgendaStep(Math.max(0, Math.min(DEMO_GUIDE.length - 1, i)))} onRun={guideRun} activeUc={guideRunning} />}
+          {presenter && <AgendaSteps step={agendaStep} onStep={(i) => setAgendaStep(Math.max(0, Math.min(DEMO_GUIDE.length - 1, i)))} onRun={guideRun} onCompare={guideCompare} activeUc={guideRunning} />}
           {presenter && sayNotes.length > 0 && (
             <aside className="say" data-testid="presenter-say" aria-label="Talk track">
               {sayNotes.map((t) => <p key={t.id}><strong>{t.title}.</strong> {t.say}</p>)}
             </aside>
           )}
-          {current === "agent" && page === "compare" && <ComparePage vertical={vertical} onBack={() => select("agent")} />}
+          {current === "agent" && page === "compare" && <ComparePage key={comparePreset || "first"} vertical={vertical} startPreset={comparePreset} onBack={() => { setComparePreset(null); select("agent"); }} />}
           {current === "agent" && page && page !== "compare" && (
             <FullPageEvidence page={page} onPage={select} onBack={() => select("agent")} catalog={catalog} selectedId={selectedId} failed={!catalog && !!error}
               onPickRun={(id) => { pick(id); const u = allUc.find((x) => x.id === id); startRun(u, null, personaFor(u) || persona); }}
@@ -480,6 +495,7 @@ export default function App() {
               <div className="work">
                 <AgentColumn agent={cast.castAgent} brand={cast.castBrand} userId={userId} vertical={vertical} verticalLabel={verticalLabel} stub={stub} prompts={prompts} turns={shownTurns}
                   status={busy ? "running" : statusOf(lastTurn)} onSay={say} onHop={onHop} onPreview={preview} running={busy}
+                  step={presenter ? DEMO_GUIDE[agendaStep] || DEMO_GUIDE[0] : null} onNextStep={() => setAgendaStep((i) => Math.max(0, Math.min(DEMO_GUIDE.length - 1, i + 1)))}
                   instructions={<AgentInstructions config={instrConfig} text={instrEdit} onText={setInstrEdit} mode={mode} />} />
                 {qcOpen ? (
                   <QuickConfig id="quick-config" mode={mode} liveReason={liveReason} realTitle={realTitle} hostedOnly={hostedOnly} onMode={chooseMode} config={cfg}
@@ -508,7 +524,7 @@ export default function App() {
         </div>
       </main>
       <SignInDialog isOpen={signOpen} username={signin?.username} onClose={() => { setSignOpen(false); pendingRun.current = null; }} onSignedIn={afterSignIn} />
-      <DemoGuide isOpen={guideOpen} onClose={() => setGuideOpen(false)} onRun={guideRun} activeUc={guideRunning} catalog={catalog} />
+      <DemoGuide isOpen={guideOpen} onClose={() => setGuideOpen(false)} onRun={guideRun} onCompare={(s) => { setGuideOpen(false); guideCompare(s); }} activeUc={guideRunning} catalog={catalog} />
       {phoneApproval && <MockPhone approval={phoneApproval} onDecided={onPhoneDecided} onClose={() => {}} />}
     </div>
   );

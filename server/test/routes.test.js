@@ -48,8 +48,12 @@ test('UC39 offers a second app; `also` is refused off a Hand off row, when not a
   const same = structuredClone(good); same.routes.UC39.also = 'agent-kill-switch'; assert.match(validateRoutes(same).join(), /UC39: also/);
 });
 
-test('banking prompts are the catalog chip text verbatim', () => {
+// The one lab-written prompt (2026-11-16): UC13 (a forged actor) is a staged attack with no chip in the catalog, so the walkthrough's step 6 gets a typed prompt
+// of the lab's own words. Every other banking prompt is the catalog's chip text.
+const LAB_WRITTEN = new Set(['UC13']);
+test('banking prompts are the catalog chip text verbatim (except the lab-written UC13 prompt)', () => {
   for (const e of PROMPTS.verticals.banking) {
+    if (LAB_WRITTEN.has(e.uc)) { assert.equal(findUseCase(e.uc).trigger.type, 'attack', e.uc); continue; }
     const uc = findUseCase(e.uc);
     assert.equal(uc.trigger.type, 'chip', e.uc);
     assert.equal(e.text, uc.trigger.text, e.uc);
