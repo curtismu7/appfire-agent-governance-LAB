@@ -14,7 +14,7 @@ function Step({ step, onRun, activeUc }) {
       <p className="guide__row"><span className="guide__tag guide__tag--say">Say</span>{step.say}</p>
       {step.ucs.map((b) => (
         <button key={b.uc} type="button" className="guide__run" onClick={() => onRun?.({ uc: b.uc, stepId: step.id })} data-testid={`guide-run-${step.id}-${b.uc}`} aria-pressed={activeUc === b.uc}>
-          {activeUc === b.uc ? `Running ${b.uc}…` : b.label}
+          {activeUc === b.uc ? "Running…" : b.label}
         </button>
       ))}
     </article>

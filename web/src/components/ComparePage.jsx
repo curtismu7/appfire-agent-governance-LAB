@@ -74,7 +74,7 @@ export default function ComparePage({ vertical, onBack }) {
         {sides.map((s, i) => (
           <section key={`${preset.id}-${i}`} className="compare__side" aria-label={`${preset.sides[i].label}`} data-testid={`compare-side-${i}`}>
             <h3 className="compare__sidehead">
-              {s.run ? <>{s.run.useCase?.id} {visible(preset.sides[i].label)} <Tag state={outcomeState(s.run.outcome)}>{s.run.outcome}</Tag></> : visible(preset.sides[i].label)}
+              {s.run ? <>{visible(preset.sides[i].label)} <Tag state={outcomeState(s.run.outcome)}>{s.run.outcome}</Tag></> : visible(preset.sides[i].label)}
             </h3>
             {s.status === "running" && <p className="muted" data-testid="compare-running">Running in Mock...</p>}
             {s.status === "error" && <p className="turn__refused" role="alert" data-testid="compare-error">{visible(s.message)}</p>}

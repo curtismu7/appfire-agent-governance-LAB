@@ -44,7 +44,8 @@ const EXTRA_PREFIX = "page-";
 export const FULL_PAGES = ["sequence", "reel", "compare"];
 // The banner is never blank and never claims one mode before it knows: until the story answers it says both, honestly.
 export const BANNER_UNKNOWN = "SIMULATED in MOCK mode, REAL only in REAL mode (loopback only). Mock: an engine produces every token, hop and decision offline. Real: a real sign-in, token exchange and Agent Gateway call to the owner's PingOne and SE, for the use cases SE serves; every hop says REAL or MOCK.";
-const PRESENTER_TALK = { agent: ["say-first", "tracks", "delegation", "live"], runs: ["honesty"], diagram: ["delegation", "obligations", "attacks"], talk: [], extra: ["obligations", "honesty"] };
+// Talk-track entry ids shown under the step bar on the pages other than Agent; on the Agent page the notes are the entries whose `step` is the current walkthrough step.
+const PRESENTER_TALK = { runs: ["audit", "honesty"], diagram: ["say-first"], talk: [], extra: ["honesty"] };
 const THEME_KEY = "cal.theme";
 const THEMES = [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]];
 
@@ -389,7 +390,7 @@ export default function App() {
   const hosted = info?.hosted === true && typeof info.hostedBanner === "string";
   const banner = hosted ? info.hostedBanner : story && mode ? story.banner[mode] : BANNER_UNKNOWN;
   const extraKey = current.startsWith(EXTRA_PREFIX) ? current.slice(EXTRA_PREFIX.length) : null;
-  const sayIds = PRESENTER_TALK[extraKey ? "extra" : current] || [];
+  const sayNotes = (story?.talkTrack || []).filter((t) => (current === "agent" ? t.step === DEMO_GUIDE[agendaStep]?.id : (PRESENTER_TALK[extraKey ? "extra" : current] || []).includes(t.id)));
   const verticalLabel = verticalInfo?.label || vertical;
   const verticalSelect = <VerticalSelect vertical={vertical} verticals={verticals} onChange={setVertical} />;
   const lastTurn = shownTurns[shownTurns.length - 1];
@@ -453,9 +454,9 @@ export default function App() {
         <div id={`panel-${current}`} role="tabpanel" aria-labelledby={extraKey ? "tab-more" : `tab-${current}`}>
           {error && <p className="app-error" role="alert">Could not load the lab ({error}). Is the server running?</p>}
           {presenter && <AgendaSteps step={agendaStep} onStep={(i) => setAgendaStep(Math.max(0, Math.min(DEMO_GUIDE.length - 1, i)))} onRun={guideRun} activeUc={guideRunning} />}
-          {presenter && story && sayIds.length > 0 && (
+          {presenter && sayNotes.length > 0 && (
             <aside className="say" data-testid="presenter-say" aria-label="Talk track">
-              {story.talkTrack.filter((t) => sayIds.includes(t.id)).map((t) => <p key={t.id}><strong>{t.title}.</strong> {t.say}</p>)}
+              {sayNotes.map((t) => <p key={t.id}><strong>{t.title}.</strong> {t.say}</p>)}
             </aside>
           )}
           {current === "agent" && page === "compare" && <ComparePage vertical={vertical} onBack={() => select("agent")} />}

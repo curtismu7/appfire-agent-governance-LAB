@@ -210,6 +210,12 @@ test('step 1 (Agno layout): layout.css follows the CSS standard like app.css (to
   assert.match(read('web/src/App.jsx'), /import "\.\/layout\.css"/);
 });
 
+test('Presenter mode keeps the top menu cluster right-aligned and its labels readable (lab-local layout.css; the vendored top-menu.css stays untouched)', () => {
+  const css = read('web/src/layout.css');
+  assert.match(css, /^\.shell-right \{[^}]*margin-left: auto;/m);
+  assert.match(css, /^\.shell-bar \.top-menu__ctl \{ color: var\(--on-box\); \}/m);
+});
+
 test('step 1: the data files the agent page reads ship in the image (data/ is copied whole)', () => {
   for (const f of ['data/handoff.json', 'data/prompts.json']) assert.ok(fs.existsSync(path.join(root, f)), f);
   assert.match(read('Dockerfile'), /COPY data data/);
