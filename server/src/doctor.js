@@ -31,7 +31,7 @@ export async function runChecks({ env = process.env } = {}) {
   add('node', major >= 26 ? 'pass' : 'fail', `v${process.versions.node} (need >= 26)`);
   try { add('deploy', 'pass', deployModeFrom(env) === 'hosted' ? 'hosted build (AAG_DEPLOY_MODE=hosted): mock only; live, the llama.cpp brain and the settings file are refused or ignored' : 'local (a clone or local Docker)'); }
   catch (e) { add('deploy', 'fail', e.message); }
-  try { add('mode', 'pass', `${modeFrom(env)} is the opening mode (mock is the default). Opening in live does not check or switch on the live guard: selecting Real and every live run still need the PingOne settings and the guards (no AAG_ALLOW_LIVE=0, IDP unset or pingone, loopback, no proxy)`); }
+  try { const m = modeFrom(env); add('mode', 'pass', `${env.AAG_LAB_MODE ? `${m} is the opening mode (AAG_LAB_MODE)` : 'AAG_LAB_MODE is empty: the lab opens in Real when the full Real settings are complete and nothing refuses it, otherwise on its own steps'}. Opening in live does not check or switch on the live guard: selecting Real and every live run still need the PingOne settings and the guards (no AAG_ALLOW_LIVE=0, IDP unset or pingone, loopback, no proxy)`); }
   catch (e) { add('mode', 'fail', e.message); }
   try { add('bind', 'pass', `${assertBindAllowed(bindHost(env), env)}${env.CALAB_BIND ? ' (CALAB_BIND opt-in)' : ' (loopback)'}`); }
   catch (e) { add('bind', 'fail', e.message); }

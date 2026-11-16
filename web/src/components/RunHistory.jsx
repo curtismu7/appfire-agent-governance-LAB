@@ -23,9 +23,9 @@ export default function RunHistory({ refresh }) {
           <thead><tr><th>#</th><th>Use case</th><th>Vertical</th><th>Persona</th><th>Outcome</th><th>Check</th><th>Trace</th></tr></thead>
           <tbody>{data.runs.map((r) => (
             <tr key={r.seq} data-testid="history-row">
-              <td>{r.seq}</td><td>{titleOfUc(r.id)}</td><td>{r.vertical}</td><td>{r.persona ?? "n/a (live)"}</td>
+              <td>{r.seq}</td><td>{titleOfUc(r.id)}</td><td>{r.vertical}</td><td>{r.persona ?? "n/a"}</td>
               <td><Tag state={outcomeState(r.outcome)}>{r.outcome}</Tag></td>
-              <td>{String(r.outcome).startsWith("REAL_") ? "real: sign-in, token exchange, Agent Gateway" : String(r.outcome).startsWith("LIVE_") ? "live, identity provider only" : r.matchesExpected === null ? "guided, not computed" : r.matchesExpected ? "matches the catalog label" : "differs from the catalog label"}</td>
+              <td>{String(r.outcome).startsWith("REAL_") || String(r.outcome).startsWith("LIVE_") ? "not compared with the catalog label" : r.matchesExpected === null ? "guided, not computed" : r.matchesExpected ? "matches the catalog label" : "differs from the catalog label"}</td>
               <td><code>{String(r.traceId).slice(0, 8)}</code></td>
             </tr>
           ))}</tbody>

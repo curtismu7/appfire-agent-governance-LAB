@@ -73,7 +73,7 @@ function RfcColumn({ spec }) {
   );
 }
 
-export default function StepDetailPanel({ hops = [], selected = null, onSelect, onClose, showSources = true }) {
+export default function StepDetailPanel({ hops = [], selected = null, onSelect, onClose }) {
   const [rfc, setRfc] = useState(() => readPref(RFC_KEY, (v) => v === "1" || v === "0", "1") === "1");
   const [zoom, setZoom] = useState(() => Number(readPref(ZOOM_KEY, (v) => { const n = Number(v); return n >= Z_MIN && n <= Z_MAX; }, Z_DEFAULT)));
   const toggleRfc = () => setRfc((on) => { writePref(RFC_KEY, on ? "0" : "1"); return !on; });
@@ -103,7 +103,6 @@ export default function StepDetailPanel({ hops = [], selected = null, onSelect, 
           <h3>{txt(h.title)}</h3>
           <span className="ev-muted">{from.label} → {to.label}</span>{" "}
           <Tag state={verdictState(h.verdict)} testId="sdp-status">{verdictWord(h.verdict)}</Tag>
-          {h.mock && showSources && <> <Tag state="info" title="Produced by this lab's mock engine">MOCK</Tag></>}
         </div>
         <span className="ev-spacer" />
         <span className="sq-grp" role="group" aria-label="Detail text size">

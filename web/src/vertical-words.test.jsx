@@ -4,10 +4,9 @@ import SetupSidebar from "./components/SetupSidebar";
 import AgendaSteps from "./components/AgendaSteps";
 import { Refusal } from "./components/RunPanel";
 import { WhatToType } from "./components/AgentColumn";
-import { REAL_VERTICAL_NOTE } from "./lib";
 import DemoGuide from "./components/DemoGuide";
 
-// The words that name a vertical or a Real limit come from the loaded vertical list and the cast, never from a typed list of names.
+// The words that name a vertical come from the loaded vertical list and the cast, never from a typed list of names.
 const VERTICALS = [
   { id: "software", label: "Appfire Work Suite", pack: "full" }, { id: "banking", label: "Appfire Platform", pack: "full" },
   { id: "healthcare", label: "Appfire Health Suite", pack: "full" }, { id: "retail", label: "Appfire Retail Suite", pack: "full" }, { id: "government", label: "Government", pack: "stub" },
@@ -16,21 +15,14 @@ afterEach(cleanup);
 
 const sidebar = (over) => render(<SetupSidebar onNewChat={() => {}} mode="mock" host="appfire-work" several={false} setSeveral={() => {}} agent="release-assistant" vertical="software" verticals={VERTICALS} onVertical={() => {}} sessions={[]} onSession={() => {}} {...over} />);
 
-describe("the Real note beside the vertical menu", () => {
-  test("in Real mode on a vertical the SE gateway does not serve, one plain line says which verticals Real needs", () => {
-    sidebar({ mode: "live", vertical: "software" });
-    expect(screen.getByTestId("real-vertical-note").textContent).toBe(REAL_VERTICAL_NOTE);
-    expect(screen.getByTestId("real-vertical-note").textContent).toMatch(/Real runs need the Banking, Healthcare or Retail vertical today/);
-  });
-  test("no note in Mock, and none on the Banking vertical itself", () => {
-    sidebar({ mode: "mock", vertical: "software" });
-    expect(screen.queryByTestId("real-vertical-note")).toBeNull();
-    cleanup();
-    sidebar({ mode: "live", vertical: "banking" });
-    expect(screen.queryByTestId("real-vertical-note")).toBeNull();
-    cleanup();
-    sidebar({ mode: "live", vertical: "healthcare" }); // the gateway serves healthcare and retail tools, so the note does not apply
-    expect(screen.queryByTestId("real-vertical-note")).toBeNull();
+describe("the vertical menu", () => {
+  test("no note about which verticals Real needs, in any mode, on any vertical", () => {
+    for (const [mode, vertical] of [["live", "software"], ["live", "banking"], ["mock", "software"]]) {
+      sidebar({ mode, vertical });
+      expect(screen.queryByTestId("real-vertical-note")).toBeNull();
+      expect(screen.getByTestId("setup").textContent).not.toMatch(/Real|mock|simulat|offline/i);
+      cleanup();
+    }
   });
   test("the vertical menu lists the software pack first among the full packs", () => {
     sidebar({});
@@ -62,18 +54,14 @@ describe("the Presenter bar's buttons read naturally for the vertical", () => {
   });
 });
 
-describe("the Demo guide's Real list", () => {
+describe("the Demo guide", () => {
   const catalog = (real) => ({ tracks: [{ track: "foundations", usecases: [{ id: "UC1", title: "Delegated access (consent only)", realGate: { real, reason: "the SE gateway serves no tool of this vertical (banking, healthcare and retail only)" } }] }] });
-  const guide = (c) => render(<DemoGuide isOpen onClose={() => {}} catalog={c} cast={{}} prompts={[]} />);
-  test("a vertical with no use case that runs Real says so, and lists none under a Runs Real heading", () => {
-    guide(catalog(false));
-    expect(screen.getByTestId("guide-real-none").textContent).toMatch(/No use case runs the live chain in this vertical/);
-    expect(screen.queryByTestId("guide-real-list")).toBeNull();
-    expect(screen.getByTestId("guide-blocked-list").textContent).toMatch(/Delegated access/);
-  });
-  test("a vertical with use cases that run Real keeps the count and the list", () => {
-    guide(catalog(true));
-    expect(screen.queryByTestId("guide-real-none")).toBeNull();
-    expect(screen.getByTestId("guide-real-list").textContent).toMatch(/Delegated access/);
+  test("it has no list of what runs Real or Mock, whatever the catalog's gate says", () => {
+    for (const real of [false, true]) {
+      render(<DemoGuide isOpen onClose={() => {}} catalog={catalog(real)} cast={{}} prompts={[]} />);
+      for (const id of ["guide-real-help", "guide-real-none", "guide-real-list", "guide-blocked-list", "guide-real-vertical"]) expect(screen.queryByTestId(id)).toBeNull();
+      expect(screen.getByTestId("demo-guide").textContent).not.toMatch(/Real mode|Runs Real|Runs Mock|mock engine|MOCK/);
+      cleanup();
+    }
   });
 });

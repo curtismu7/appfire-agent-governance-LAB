@@ -81,7 +81,7 @@ describe("demoGuide", () => {
     }
     const soft = DEMO_GUIDE.map((g) => guideStep(g, { cast: SOFTWARE, prompts: SOFT_PROMPTS }));
     for (const t of everyWalkthroughString(soft)) expect(t).not.toMatch(BANK_WORDS);
-    expect(soft[0].prove).toBe("Run “show my open issues”. The sequence opens with the sign-in and prompt hops: maya.chen signs in to Appfire Work Suite and asks release-assistant for something. The simulation banner says what is mock; HIVE is never called.");
+    expect(soft[0].prove).toBe("Run “show my open issues”. The sequence opens with the sign-in and prompt hops: maya.chen signs in to Appfire Work Suite and asks release-assistant for something. HIVE is never called.");
     expect(soft[3].prove).toMatch(/same project/); expect(soft[3].prove).toMatch(/enterprise-tier group/);
     expect(soft[5].prove).toMatch(/“bulk-edit 600 issues in the Billing project and move them to Done” steps up/);
     expect(soft[5].prove).toMatch(/another person's private project/);

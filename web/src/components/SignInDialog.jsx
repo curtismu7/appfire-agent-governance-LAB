@@ -37,7 +37,7 @@ export default function SignInDialog({ isOpen, username, onClose, onSignedIn }) 
   return (
     <FloatingDialog isOpen={isOpen} onClose={() => { setPassword(""); onClose?.(); }} title="Sign in" ariaLabel="Sign in" defaultWidth={420} defaultHeight={null} defaultY={16} footer={actions} testId="signin-dialog" storageKey="aag.signin">
       <form id="signin-form" className="stack" onSubmit={submit} data-testid="signin-form">
-        <p className="muted" data-testid="signin-method">Real sign-in with PingOne, <strong>pi.flow</strong>: this lab's server sends your password once to PingOne's flows API. No redirect, and the password is never stored, logged or shown.</p>
+        <p className="muted" data-testid="signin-method">Sign-in with PingOne, <strong>pi.flow</strong>: this lab's server sends your password once to PingOne's flows API. No redirect, and the password is never stored, logged or shown.</p>
         <label className="field">
           <span className="field-label">Username</span>
           <input type="text" name="username" value={username || ""} readOnly autoComplete="username" data-testid="signin-username" aria-describedby="signin-username-note" />

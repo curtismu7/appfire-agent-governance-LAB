@@ -48,7 +48,7 @@ export default function ComparePage({ vertical, onBack, startPreset, cast, promp
       <header className="compare__head">
         <button type="button" className="primary" onClick={onBack} data-testid="back-to-chat">Back to chat</button>
         <h2 className="compare__title">Compare two runs</h2>
-        <Tag state="info">Mock, side by side</Tag>
+        <Tag state="info">Side by side</Tag>
       </header>
       <div className="seg" role="group" aria-label="Comparison" data-testid="compare-presets">
         {PRESETS.map((p) => <button key={p.id} type="button" aria-pressed={p.id === presetId} onClick={() => runPreset(p)} data-testid={`compare-${p.id}`}>{presetFor(p, ctx).title}</button>)}
@@ -78,7 +78,7 @@ export default function ComparePage({ vertical, onBack, startPreset, cast, promp
             <h3 className="compare__sidehead">
               {s.run ? <>{visible(preset.sides[i].label)} <Tag state={outcomeState(s.run.outcome)}>{s.run.outcome}</Tag></> : visible(preset.sides[i].label)}
             </h3>
-            {s.status === "running" && <p className="muted" data-testid="compare-running">Running in Mock...</p>}
+            {s.status === "running" && <p className="muted" data-testid="compare-running">Running...</p>}
             {s.status === "error" && <p className="turn__refused" role="alert" data-testid="compare-error">{visible(s.message)}</p>}
             {s.run && <DecisionCard run={s.run} />}
             {s.run && <SequenceView hops={s.run.hops} selected={focusHop(s.run)} onSelect={none} showSources={false} />}

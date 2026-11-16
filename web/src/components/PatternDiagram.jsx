@@ -154,7 +154,7 @@ export default function PatternDiagram({ diagram, resetSignal = 0, lastRun = nul
       <ReactFlowProvider>
         <Canvas diagram={diagram} positions={positions} onMove={onMove} stepper={stepper} />
       </ReactFlowProvider>
-      <p className="muted" data-testid="diagram-moved">Drag any box; drag the background to pan. Simulated. Moved: {moved} box(es).</p>
+      <p className="muted" data-testid="diagram-moved">Drag any box; drag the background to pan. Moved: {moved} box(es).</p>
     </section>
   );
 }

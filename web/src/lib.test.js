@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { DEFAULT_VERTICAL, EXTRAS, NEEDS_LABELS, REAL_VERTICAL_NOTE, TRACK_LABELS, extraHops, fullPackNames, haystack, joinOr, newTraceparent, outcomeState, pickFullPack, triggerText, verdictState , holdWords, verticalName } from "./lib";
+import { DEFAULT_VERTICAL, EXTRAS, NEEDS_LABELS, TRACK_LABELS, extraHops, fullPackNames, haystack, joinOr, newTraceparent, outcomeState, pickFullPack, triggerText, verdictState , holdWords, verticalName } from "./lib";
 import { visible } from "./safeText";
 import { USECASES } from "./testFixtures";
 
@@ -50,7 +50,7 @@ describe("lib", () => {
   });
 });
 
-describe("the mock phone's words", () => {
+describe("the phone's words", () => {
   test("say the control that held the call, in the agenda's words, and never a use-case id", () => {
     expect(holdWords("STEP_UP")).toBe("A higher-risk write needs a second factor");
     expect(holdWords("HITL_REQUIRED")).toBe("A higher-risk write needs a person to approve it");
@@ -72,9 +72,10 @@ describe("the mock phone's words", () => {
     expect(joinOr(["a", "b", "c"])).toBe("a, b or c");
     expect(joinOr([])).toBe("");
   });
-  test("the Real note says in one line which verticals Real needs", () => {
-    expect(REAL_VERTICAL_NOTE).toMatch(/Real runs need the Banking, Healthcare or Retail vertical today/);
-    expect(REAL_VERTICAL_NOTE).toMatch(/banking, healthcare and retail tools/);
-    expect(REAL_VERTICAL_NOTE.split("\n")).toHaveLength(1);
+  test("lib.js carries no note about Real runs and no hosted Real note", async () => {
+    const lib = await import("./lib");
+    expect(lib.REAL_VERTICAL_NOTE).toBeUndefined();
+    expect(lib.HOSTED_REAL_NOTE).toBeUndefined();
   });
+
 });

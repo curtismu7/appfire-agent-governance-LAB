@@ -49,6 +49,6 @@ export function instructionsConfig(cast) {
   return {
     schema: 'appfire-agent-instructions/1', max: MAX_INSTRUCTIONS, steerAmount: STEER_AMOUNT, phrases: OVERRIDE_PHRASES,
     default: defaultInstructions(cast), presets: presetsFor(cast),
-    note: 'LAB-INVENTED: the simulated agent obeys these override phrases; a real model would react less predictably. Policy decides from the call, never from the instructions. Real runs do not send them.',
+    note: 'LAB-INVENTED: the agent obeys these override phrases; a real model would react less predictably. Policy decides from the call, never from the instructions. Real runs do not send them.',
   };
 }

@@ -183,8 +183,8 @@ test('step 3: CI has no self-skipping conformance job (it would be a green check
   const ci = read('.github/workflows/ci.yml');
   assert.ok(!/conformance/i.test(ci) && !/SKIPPED/.test(ci)); assert.match(read('README.md'), /CI does not run conformance/);
   const pack = JSON.parse(read('content-pack.json'));
-  assert.ok(pack.glossary.some((g) => g.id === 'live-mode' && /UNVERIFIED/.test(g.definition))); assert.ok(pack.cards.some((c) => c.id === 'concept-live-mode'));
-  assert.match(read('docs/talk-track.md'), /## Real mode: this is live, not slides/); assert.match(read('docs/talk-track.md'), /simulated and labelled/);
+  assert.ok(pack.glossary.some((g) => g.id === 'idp-only-path' && /UNVERIFIED/.test(g.definition))); assert.ok(pack.cards.some((c) => c.id === 'concept-idp-only-path'));
+  assert.match(read('docs/talk-track.md'), /## This is live, not slides/); assert.match(read('docs/talk-track.md'), /## What the lab does not call/); assert.match(read('docs/talk-track.md'), /represented, not run/);
   const compose = read('docker-compose.yml').replace(/^\s*#.*$/gm, '');
   assert.ok(!/STANDALONE_ENV|volumes:|env_file/.test(compose), 'no shared settings file, no mount, no env_file (compose.test.mjs pins the exact name list)');
   assert.ok(!/^\s+IDP:/m.test(compose)); assert.match(compose, /^\s+AAG_ALLOW_LIVE: \$\{AAG_ALLOW_LIVE:-\}$/m); assert.match(compose, /^\s+AAG_DEPLOY_MODE: local$/m);
@@ -230,6 +230,17 @@ test('the hosted k8s manifests: placeholders only, no namespace, mock-only hoste
   assert.match(d, /emptyDir/); assert.equal((d.match(/path: \/api\/health/g) || []).length, 2); assert.match(d, /limits:/);
   assert.match(files[3], /host: __SE_HOST__/); assert.match(files[3], /ingressClassName: __INGRESS_CLASS__/);
   assert.match(read('deploy/k8s/deploy.sh'), /OWNER_APPROVED/);
+});
+
+test('owner 2026-11-16: the hosted banner prefix is pinned the same way in the data, the served-page tests, deploy.sh and the CI image job; the opening mode is derived, not baked into the image', () => {
+  const prefix = 'Hosted copy. HIVE, Appfire';
+  assert.ok(read('server/src/data.js').includes(`HOSTED_BANNER = "${prefix}`) || read('server/src/data.js').includes(`HOSTED_BANNER = '${prefix}`), 'data.js');
+  assert.match(read('server/test/hosted.test.js'), /Hosted copy\\\. HIVE, Appfire/);
+  for (const f of ['deploy/k8s/deploy.sh', '.github/workflows/image.yml']) assert.ok(read(f).includes('data-testid="banner">Hosted copy\\. HIVE'), `${f} greps the neutral hosted banner`);
+  for (const f of ['deploy/k8s/deploy.sh', '.github/workflows/image.yml']) assert.ok(!/HOSTED AND SIMULATED/.test(read(f)), `${f} no longer greps the old banner`);
+  assert.ok(!/AAG_LAB_MODE/.test(read('Dockerfile')), 'the image does not pin the opening mode: the lab derives it (Real when configured)');
+  assert.match(read('docker-compose.yml'), /^\s+AAG_LAB_MODE: \$\{AAG_LAB_MODE:-\}$/m, 'compose passes AAG_LAB_MODE through, empty by default');
+  assert.match(read('.env.example'), /^AAG_LAB_MODE=$/m, '.env.example leaves it empty');
 });
 
 test('owner 2026-11-09: no shipped file reads or points at the retired shared settings file (~/Development/.env, STANDALONE_ENV)', () => {

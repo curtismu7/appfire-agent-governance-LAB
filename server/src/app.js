@@ -50,14 +50,8 @@ export const REAL_LABELS = {
 };
 // Every hop of the mock engine says where it ran (rule 19: REAL or MOCK by what actually ran, never mixed within a hop).
 const withSource = (run) => ({ ...run, hops: run.hops.map((h) => ({ ...h, source: h.verdict === 'skip' ? 'not-run' : 'mock' })) });
-// Real mode, a use case that stays Mock: the mock engine's run, every hop labelled MOCK with the reason.
-const mockInReal = (run, reason) => ({
-  ...run, realGate: { real: false, reason },
-  hops: run.hops.map((h) => ({ ...h, source: h.verdict === 'skip' ? 'not-run' : 'mock', label: `${h.label ?? h.title} [MOCK]`, note: `MOCK in Real mode: ${reason}.${h.note ? ` ${h.note}` : ''}` })),
-});
-
 export function createApp({
-  health = createHealth(), configFile = CONFIG, env = process.env, bind = '127.0.0.1', workspaces = createWorkspaces({ defaultMode: defaultMode() }), webDist = WEB_DIST, live = createLive(), brain = createBrain(), real = createReal(),
+  health = createHealth(), configFile = CONFIG, env = process.env, bind = '127.0.0.1', openingMode = defaultMode(), workspaces = createWorkspaces({ defaultMode: openingMode }), webDist = WEB_DIST, live = createLive(), brain = createBrain(), real = createReal(),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -142,7 +136,7 @@ export function createApp({
     noStore(res);
     const realAvailable = realRefusal(req) === null;
     res.json({
-      mode: defaultMode(), modes: MODES, simulated: true,
+      mode: openingMode, modes: MODES, simulated: true,
       version: (() => { try { return JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || null; } catch { return null; } })(),
       hosted: isHosted(env), hostedBanner: isHosted(env) ? HOSTED_BANNER : null, // the hosted build (mock only) and the banner the page shows for it
       total: MANIFEST.meta.total, counts: MANIFEST.meta.counts, sourceRef: MANIFEST.source, personas: PERSONAS, verticals: verticalList(),
@@ -383,7 +377,7 @@ export function createApp({
         const why = mockSignInRefusal(mockCtx(req));
         if (why) {
           // A use case that cannot run Real is run on the mock engine instead (owner 2026-11-16); if the mock engine is not available here, say so.
-          if (gate) return res.status(403).json({ error: 'mock_in_real_refused', detail: `“${uc.title}” cannot run Real (${gate.reason}) and the mock engine is not available here to run it instead: ${why}`, live: liveNote(uc) });
+          if (gate) return res.status(403).json({ error: 'mock_in_real_refused', detail: `“${uc.title}” cannot run Real (${gate.reason}) and sign-in is not available here to run it on the lab's own steps instead: ${why}`, live: liveNote(uc) });
           return res.status(403).json({ error: 'mock_signin_refused', detail: why });
         }
         const out = await workspaces.write(id, (s) => {
@@ -460,7 +454,7 @@ export function createApp({
   if (fs.existsSync(path.join(webDist, 'index.html'))) {
     if (isHosted(env)) {
       // Hosted: the served HTML already carries the hosted banner inside #root (fixed text, React replaces it on load), so the page says it is
-      // hosted and simulated before any script runs and to a reader without scripts.
+      // hosted before any script runs and to a reader without scripts.
       const html = fs.readFileSync(path.join(webDist, 'index.html'), 'utf8')
         .replace('<div id="root"></div>', `<div id="root"><p class="banner" role="note" data-state="hosted" data-testid="banner">${HOSTED_BANNER.replace(/'/g, '&#39;')}</p></div>`);
       const page = (_req, res) => { res.set('Cache-Control', 'no-store'); res.type('html').send(html); };

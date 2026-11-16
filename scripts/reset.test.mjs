@@ -23,6 +23,14 @@ test('the reset script clears the default workspace and refuses a non-loopback h
   });
 });
 
+test('reset returns the workspace to the opening mode the lab derived (Real when it opens in Real), not always to the lab\'s own steps', async () => {
+  await withLab(async (base, workspaces) => {
+    await workspaces.write('default', (s) => { s.mode = 'mock'; s.seq = 3; });
+    assert.deepEqual(await reset(base), { reset: 'ok', workspace: 'default' });
+    assert.equal(workspaces.peek('default').mode, 'live'); assert.equal(workspaces.peek('default').seq, 0);
+  }, createWorkspaces({ defaultMode: 'live' }));
+});
+
 test('the smoke script passes against a running lab and refuses a non-loopback host', async () => {
   await withLab(async (base) => {
     const results = await smoke(base);

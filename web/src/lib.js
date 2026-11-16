@@ -88,14 +88,14 @@ export const HOT_CALL = ["tool", "action", "name", "method", "obligation", "gran
 // ...and in the decoded tokens: the intent and authentication-methods claims the staged events add.
 export const HOT_CLAIMS = ["intent", "amr"];
 
-// The hosted build (mock only): the note beside its disabled Real button.
-export const HOSTED_REAL_NOTE = "Mock only on the hosted copy. Run the lab locally for Real.";
+// The one neutral line that opens every page (rule 2): what is represented, and whose numbers these are. The hosted copy adds that nothing live is reached.
+// The server serves the same two sentences (the story and the hosted banner); the page shows these when the server has not answered yet.
+export const BANNER_LOCAL = "HIVE, Appfire's platform, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.";
+export const BANNER_HOSTED = "Hosted copy. HIVE, Appfire's platform, is represented and never called. Thresholds, personas and amounts are the lab's own (lab-invented). No tenant or live system is reached.";
 // The vertical the page opens on (owner, 2026-11-16: Appfire's own industry). The server's default (cast.js DEFAULT_VERTICAL) is the same id; the picker starts here.
 export const DEFAULT_VERTICAL = "software";
-// Real runs call the SE gateway, which serves the banking, healthcare and retail tools and none for the software vertical (owner, 2026-11-16): one plain line.
-// MOCK_ONLY_VERTICALS are the full packs with no tool on the gateway (server: the pack's `castMockOnly`); the note shows beside them only.
+// The full packs whose own tool names the lab uses for a held write (server: the pack's `castMockOnly`); the other packs keep the catalog's tool name.
 export const MOCK_ONLY_VERTICALS = ["software"];
-export const REAL_VERTICAL_NOTE = "Real runs need the Banking, Healthcare or Retail vertical today: the SE gateway serves banking, healthcare and retail tools only, so Software runs on the labelled mock engine.";
 
 // Vertical names for prose. "sporting-goods" is "Sporting goods"; the full packs are the ones the server lists with pack "full", so a sentence that names them
 // never goes stale when a pack is added.
@@ -108,7 +108,7 @@ export const pickFullPack = (verticals) => { const n = fullPackNames(verticals);
 // The hop the evidence opens on after a run: the one that decided or stopped it, else none (the visitor clicks).
 export const focusHop = (run) => (run?.hops || []).find((h) => h.decision || (h.verdict && h.verdict !== "ok" && h.verdict !== "skip"))?.n ?? null;
 
-// What the mock phone says it is asking about (owner, 2026-11-16: a use-case id means nothing to an audience): the agenda's words for the control that held
+// What the phone says it is asking about (owner, 2026-11-16: a use-case id means nothing to an audience): the agenda's words for the control that held
 // the call, never the catalog id or title.
 export function holdWords(outcome) {
   if (outcome === "STEP_UP") return "A higher-risk write needs a second factor";

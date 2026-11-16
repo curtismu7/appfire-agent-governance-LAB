@@ -1,7 +1,6 @@
 import { Fragment } from "react";
 import { privilegeOf } from "../privilege";
 import { visible } from "../safeText";
-import { SourceTag, chipsNeeded } from "./Bits";
 
 // The privilege settings that applied to this run, read from its own tokens and hops (privilege.js). Collapsed to one summary line.
 export default function PrivilegePanel({ run }) {
@@ -9,7 +8,7 @@ export default function PrivilegePanel({ run }) {
   if (!p) return null;
   return (
     <details className="priv" data-testid="privilege-panel">
-      <summary className="priv__sum"><span className="kicker">Privilege settings in effect</span> <SourceTag source={p.source} show={chipsNeeded(run)} /> <span className="muted" data-testid="privilege-summary">{visible(p.summary)}</span></summary>
+      <summary className="priv__sum"><span className="kicker">Privilege settings in effect</span> <span className="muted" data-testid="privilege-summary">{visible(p.summary)}</span></summary>
       <dl className="kv" data-testid="privilege-rows">
         {p.rows.map((r) => (
           <Fragment key={r.key}>

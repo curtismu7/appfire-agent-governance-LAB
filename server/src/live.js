@@ -87,7 +87,7 @@ async function readCapped(response, max) {
   return { text: Buffer.concat(chunks).toString('utf8'), truncated: false };
 }
 
-export const NOT_RUN_REASON = 'Live mode in this lab reaches the identity provider only. These steps need a real customer sign-in (pi.flow, which this lab does not drive), the gateway, the policy engine or the tool server: other origins the lab may not call. They are not run and not simulated here; switch to Mock to see them.';
+export const NOT_RUN_REASON = 'This path reaches the identity provider only. These steps need a real customer sign-in (pi.flow, which this lab does not drive), the gateway, the policy engine or the tool server: other origins the lab may not call. They are not run here.';
 
 // config: from liveConfig() (or { problem }). fetchImpl defaults to the global fetch at call time, so the netguard's guarded fetch is the one used.
 // missing: the names (never values) of the required settings that are not set, for the Real button's how-to (index.js passes them).

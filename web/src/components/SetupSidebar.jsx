@@ -1,4 +1,4 @@
-import { MOCK_ONLY_VERTICALS, REAL_VERTICAL_NOTE, outcomeState, titleOfUc } from "../lib";
+import { outcomeState, titleOfUc } from "../lib";
 import { Tag } from "./Bits";
 
 // The vertical selector, shared by the sidebar and the diagram pages.
@@ -17,16 +17,17 @@ export function VerticalSelect({ vertical, verticals, onChange }) {
 export const brainLabel = (b) => (!b?.configured ? "llama.cpp · not configured" : b.available ? "llama.cpp · local model" : "llama.cpp · unavailable");
 
 // The setup sidebar: New chat, gateway status, one agent or several, agent, brain, vertical, the use cases (children) and the sessions.
-export default function SetupSidebar({ onNewChat, mode, host, several, setSeveral, agent, vertical, verticals, onVertical, sessions, onSession, brain = "scripted", brainInfo = null, onBrain = () => {}, children }) {
+export default function SetupSidebar({ onNewChat, host, several, setSeveral, agent, vertical, verticals, onVertical, sessions, onSession, brain = "scripted", brainInfo = null, onBrain = () => {}, children }) {
   return (
     <aside className="setup" aria-label="Setup" data-testid="setup">
       <button type="button" className="primary setup__new" onClick={onNewChat} data-testid="new-chat">+ New chat</button>
-      <p className="kicker">Gateway</p>
-      <p className="setup__gw" data-testid="gateway-status">
-        <Tag state={mode === "live" ? "warn" : "ok"}>{mode === "live" ? "not used" : "simulated"}</Tag>{" "}
-        <span className="mono">{mode === "live" ? "live reaches the identity provider only" : `gateway.${host || "mock"}.example`}</span>
-      </p>
-      <p className="kicker">Mode</p>
+      {host && (
+        <>
+          <p className="kicker">Gateway</p>
+          <p className="setup__gw" data-testid="gateway-status"><span className="mono">{`gateway.${host}.example`}</span></p>
+        </>
+      )}
+      <p className="kicker">Agents</p>
       <div className="seg seg--fill" role="group" aria-label="Agents">
         <button type="button" aria-pressed={!several} onClick={() => setSeveral(false)} data-testid="mode-one">One agent</button>
         <button type="button" aria-pressed={several} onClick={() => setSeveral(true)} data-testid="mode-several" title="Several-agent use cases run in their own apps">Several ↗</button>
@@ -39,13 +40,11 @@ export default function SetupSidebar({ onNewChat, mode, host, several, setSevera
       </label>
       <label className="field">Brain
         <select value={brain} onChange={(e) => onBrain(e.target.value)} data-testid="brain-select">
-          <option value="scripted">Scripted · offline</option>
+          <option value="scripted">Scripted</option>
           <option value="llama" disabled={!brainInfo?.configured}>{brainLabel(brainInfo)}</option>
         </select>
       </label>
       <VerticalSelect vertical={vertical} verticals={verticals} onChange={onVertical} />
-      {/* Real runs call the SE gateway, which serves banking, healthcare and retail tools only; say so beside the menu while Real is on and the pack is one it serves none of. */}
-      {mode === "live" && MOCK_ONLY_VERTICALS.includes(vertical) && <p className="muted" data-testid="real-vertical-note">{REAL_VERTICAL_NOTE}</p>}
       {children}
       <p className="kicker">Sessions · this workspace</p>
       {sessions.length === 0 ? <p className="muted" data-testid="sessions-empty">No runs yet in this workspace.</p> : (

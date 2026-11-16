@@ -17,7 +17,7 @@ fs.writeFileSync(empty, '', { mode: 0o600 });
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 // Starts the lab like the container does (no settings file: AAG_ENV_FILE is an empty one), waits for it, returns its first log line and /api/info.
-async function boot(port, extra) {
+async function boot(port, extra, probe) {
   const env = { ...process.env, PORT: String(port), AAG_ENV_FILE: empty, ALLOW_MOCK_SIGNIN: '1', ...extra };
   for (const k of ['CALAB_BIND', 'AAG_LAB_MODE', 'IDP', 'AAG_ALLOW_LIVE', 'AAG_LIVE_TEST_BASE', 'AAG_DEPLOY_MODE', ...REAL_KEYS]) if (!(k in extra)) delete env[k];
   const child = spawn(process.execPath, [entry], { env, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -27,7 +27,7 @@ async function boot(port, extra) {
       try {
         const info = await (await fetch(`http://127.0.0.1:${port}/api/info`)).json();
         const mode = await (await fetch(`http://127.0.0.1:${port}/api/mode`)).json();
-        return { log: out.split('\n')[0], info, mode };
+        return { log: out.split('\n')[0], info, mode, probe: probe ? await probe(`http://127.0.0.1:${port}`) : undefined };
       } catch { await new Promise((r) => setTimeout(r, 100)); }
     }
     throw new Error('the lab did not start');
@@ -51,6 +51,7 @@ test('Docker with the PingOne settings: Real is available, Mock sign-in too, and
   assert.equal(r.mode.liveReason, null);
   assert.match(r.log, /Real \(identity provider only\) is on: outbound only to https:\/\/auth\.pingone\.com\)/, 'the one host the netguard allows');
   assert.equal(r.info.real.level, 'idp-only', 'no AAG_* settings: the old two-call path, labelled identity provider only');
+  assert.equal(r.info.mode, 'mock'); assert.equal(r.mode.mode, 'mock'); assert.match(r.log, /opens in mock mode/, 'an identity-provider-only worker client keeps opening on the lab\'s own steps');
   assert.doesNotMatch(r.log, new RegExp(settingsFor().PINGONE_ENVIRONMENT_ID), 'the log names the host, never the environment id');
 });
 
@@ -61,6 +62,7 @@ test('Docker with no .env (compose passes empty values): Mock only, Real disable
   assert.match(r.mode.liveReason, /^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME, AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE in this app's \.env/);
   assert.deepEqual(r.info.real.missing, ['PINGONE_ENVIRONMENT_ID', 'AAG_USER_CLIENT_ID', 'AAG_USER_CLIENT_SECRET', 'AAG_AGENT_CLIENT_ID', 'AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME', 'AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE']);
   assert.match(r.log, /no outbound network/);
+  assert.equal(r.info.mode, 'mock'); assert.equal(r.mode.mode, 'mock');
 });
 
 test('takeLiveSettingsFromEnv takes and removes every Real setting, the AAG_* secrets included', () => {
@@ -76,6 +78,29 @@ test('Docker with the full-Real settings (and the old worker client too): full R
   assert.equal(r.info.liveSettings.configured, false, 'the old worker-client path is not built');
   assert.match(r.log, /full Real is on: outbound only to https:\/\/auth\.pingone\.com and https:\/\/gw\.lab-test\.net\)/);
   assert.doesNotMatch(r.log, new RegExp(settingsFor().PINGONE_ENVIRONMENT_ID), 'the log names hosts, never the environment id');
+});
+
+// Owner, 2026-11-16: AAG_LAB_MODE unset or empty opens in Real when the full Real settings are complete and nothing refuses it.
+test('opening mode: empty AAG_LAB_MODE + full Real settings opens in Real (info, /api/mode, the log), and Reset returns to it; an explicit mock wins', async () => {
+  const full = fullSettingsFor('https://gw.lab-test.net/mcp');
+  const reset = async (base) => {
+    const h = { 'content-type': 'application/json', origin: base, 'x-workspace': 'w-open' };
+    const before = await (await fetch(`${base}/api/mode`, { headers: h })).json();
+    await fetch(`${base}/api/mode`, { method: 'POST', headers: h, body: JSON.stringify({ source: 'mock' }) });
+    const switched = await (await fetch(`${base}/api/mode`, { headers: h })).json();
+    const r = await fetch(`${base}/api/reset`, { method: 'POST', headers: h, body: '{}' });
+    const after = await (await fetch(`${base}/api/mode`, { headers: h })).json();
+    return { before: before.mode, switched: switched.mode, reset: r.status, after: after.mode };
+  };
+  const live = await boot(7827, { AAG_LIVE_FROM_ENV: '1', AAG_PUBLISH: 'loopback', AAG_LAB_MODE: '', ...full }, reset);
+  assert.equal(live.info.mode, 'live'); assert.equal(live.info.source, 'real'); assert.equal(live.mode.mode, 'live'); assert.match(live.log, /opens in live mode/);
+  assert.deepEqual(live.probe, { before: 'live', switched: 'mock', reset: 200, after: 'live' }, 'a new workspace opens in Real, can leave it, and Reset returns to the derived mode');
+  const unset = await boot(7828, { AAG_LIVE_FROM_ENV: '1', AAG_PUBLISH: 'loopback', ...full });
+  assert.equal(unset.info.mode, 'live', 'unset is the same as empty');
+  const forced = await boot(7829, { AAG_LIVE_FROM_ENV: '1', AAG_PUBLISH: 'loopback', AAG_LAB_MODE: 'mock', ...full });
+  assert.equal(forced.info.mode, 'mock'); assert.equal(forced.info.source, 'mock'); assert.equal(forced.info.realAvailable, true, 'Real is still there to switch to');
+  const refused = await boot(7830, { AAG_LIVE_FROM_ENV: '1', AAG_PUBLISH: 'loopback', AAG_ALLOW_LIVE: '0', ...full });
+  assert.equal(refused.info.mode, 'mock', 'a refusing guard keeps the opening mode on the lab\'s own steps');
 });
 
 test('Docker with only some full-Real settings: Real disabled, the missing ones named, the worker client ignored', async () => {
@@ -99,4 +124,5 @@ test('a host run ignores PINGONE_* exported in the shell (no AAG_LIVE_FROM_ENV):
 test('the hosted build still refuses Real even with the settings in its environment', async () => {
   const r = await boot(7824, { AAG_DEPLOY_MODE: 'hosted', AAG_LIVE_FROM_ENV: '1', ...settingsFor() });
   assert.equal(r.info.realAvailable, false); assert.match(r.mode.liveReason, /hosted build/); assert.match(r.log, /no outbound network/);
+  assert.equal(r.info.mode, 'mock', 'hosted always opens on the lab\'s own steps, whatever the settings'); assert.equal(r.info.hosted, true);
 });

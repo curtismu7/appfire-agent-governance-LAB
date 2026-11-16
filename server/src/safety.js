@@ -142,11 +142,11 @@ function networkRefusal({ env, bind, headers }) {
 // In the hosted build the proxy and bind checks do not apply: the pod is reached only through the cluster's ingress (so every request carries
 // proxy headers), live is refused, and everything a visitor sees is simulated and labelled so (the hosted banner). IDP and ALLOW_MOCK_SIGNIN still hold.
 export function mockSignInRefusal({ env, bind, headers }) {
-  if (env.IDP && env.IDP !== 'mock') return 'Mock sign-in is off: IDP is not mock.';
-  if (env.ALLOW_MOCK_SIGNIN !== '1') return 'Mock sign-in is off. Start the lab with ALLOW_MOCK_SIGNIN=1 to allow it on this machine.';
+  if (env.IDP && env.IDP !== 'mock') return 'Sign-in is off on this machine: IDP is set to another provider.';
+  if (env.ALLOW_MOCK_SIGNIN !== '1') return 'Sign-in is off on this machine. Start the lab with ALLOW_MOCK_SIGNIN=1 to allow it.';
   if (isHosted(env)) return null;
   const net = networkRefusal({ env, bind, headers });
-  return net ? `Mock sign-in: ${net.charAt(0).toLowerCase()}${net.slice(1)}` : null;
+  return net ? `Sign-in: ${net.charAt(0).toLowerCase()}${net.slice(1)}` : null;
 }
 
 // Real (live) may be selected (the toggle) only when ALL of the following hold, and every live run asks again (AAG_LAB_MODE=live only sets the opening
@@ -155,12 +155,12 @@ export function mockSignInRefusal({ env, bind, headers }) {
 // (any value but unset, empty, 0 or 1 is refused, never guessed). IDP must be unset (per mode) or pingone (the one live provider this lab can reach;
 // mock pins Mock and any other value is not supported), no proxy headers, and a loopback bind (or AAG_PUBLISH=loopback, Docker).
 export const LIVE_IDP = 'pingone';
-export const HOSTED_LIVE_REFUSAL = 'Live mode is not available in the hosted build: it is mock only. Run the lab locally for Real.';
+export const HOSTED_LIVE_REFUSAL = 'This is the hosted build: it reaches no PingOne environment. Run the lab locally to use your own.';
 export function liveRefusal({ env, bind, headers }) {
   if (isHosted(env)) return HOSTED_LIVE_REFUSAL;
   if (env.AAG_ALLOW_LIVE === '0') return 'Real is switched off on this machine (AAG_ALLOW_LIVE=0). Remove it to allow Real.';
   if (![undefined, '', '1'].includes(env.AAG_ALLOW_LIVE)) return 'AAG_ALLOW_LIVE must be 0 (Real off) or unset.';
-  if (env.IDP === 'mock') return 'Real is off: IDP is pinned to mock. Leave IDP unset to switch between Mock and Real.';
+  if (env.IDP === 'mock') return 'Real is off: IDP pins this lab to its own sign-in. Leave IDP unset to allow Real.';
   if (env.IDP && env.IDP !== LIVE_IDP) return `Live mode supports IDP=${LIVE_IDP} only.`;
   const net = networkRefusal({ env, bind, headers });
   return net ? `Live mode: ${net.charAt(0).toLowerCase()}${net.slice(1)}` : null;

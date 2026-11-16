@@ -87,6 +87,21 @@ test('mock runs work behind the ingress in the hosted build and stay refused beh
   }, { env: HOSTED, bind: '0.0.0.0' });
 });
 
+// Owner 2026-11-16: the page says nothing about mock or simulation, so the hosted build must still work, say it is hosted and run a use case.
+test('hosted with no Real settings still runs a use case and reports hosted (banner without a mock or simulation word)', async () => {
+  await withServer(async (url) => {
+    const info = await (await get(url, '/api/info')).json();
+    assert.equal(info.hosted, true); assert.equal(info.mode, 'mock', 'a hosted build opens on the lab\'s own steps'); assert.equal(info.source, 'mock');
+    assert.equal(info.realAvailable, false); assert.doesNotMatch(info.hostedBanner, /mock|simulat/i);
+    assert.match(info.hostedBanner, /^Hosted copy\./);
+    const m = await (await get(url, '/api/mode', W('w-host5'))).json();
+    assert.equal(m.mode, 'mock');
+    const r = await run(url, 'UC1', { vertical: 'banking' }, { ...W('w-host5'), ...INGRESS });
+    assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.run.mode, 'mock'); assert.ok(r.body.run.hops.length > 0);
+    assert.equal(r.body.run.realGate, undefined, 'a plain run of the lab\'s own steps');
+  }, { env: HOSTED, bind: '0.0.0.0' });
+});
+
 test('host check: loopback and LAB_ALLOWED_HOSTS only; writes stay same-origin', async () => {
   await withServer(async (url) => {
     const port = new URL(url).port;
@@ -108,18 +123,18 @@ test('banner: /api/info and the served page carry the hosted banner; the local b
     await withServer(async (url) => {
       const info = await (await get(url, '/api/info')).json();
       assert.equal(info.hosted, true); assert.equal(info.hostedBanner, HOSTED_BANNER);
-      assert.match(HOSTED_BANNER, /^HOSTED AND SIMULATED/);
+      assert.match(HOSTED_BANNER, /^Hosted copy\. HIVE, Appfire's platform, is represented and never called\./);
       for (const p of ['/', '/index.html', '/some/page']) {
         const r = await get(url, p);
         assert.equal(r.status, 200, p);
         const html = await r.text();
-        assert.match(html, /<div id="root"><p class="banner" role="note" data-state="hosted" data-testid="banner">HOSTED AND SIMULATED/, p);
+        assert.match(html, /<div id="root"><p class="banner" role="note" data-state="hosted" data-testid="banner">Hosted copy\. HIVE, Appfire&#39;s platform, is represented and never called\./, p);
       }
     }, { env: HOSTED, bind: '0.0.0.0', webDist: dist });
     await withServer(async (url) => {
       const info = await (await get(url, '/api/info')).json();
       assert.equal(info.hosted, false); assert.equal(info.hostedBanner, null);
-      assert.doesNotMatch(await (await get(url, '/')).text(), /HOSTED AND SIMULATED/);
+      assert.doesNotMatch(await (await get(url, '/')).text(), /Hosted copy\. HIVE/);
     }, { webDist: dist });
   } finally { fs.rmSync(dist, { recursive: true, force: true }); }
 });

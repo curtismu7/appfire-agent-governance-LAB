@@ -91,7 +91,7 @@ test('step 3 (option a): the live check is a pass when Real is not configured or
     assert.equal((await live({})).level, 'pass'); assert.match((await live({})).detail, /Real is not configured \(full Real needs PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID.*\): Mock only/);
     fs.writeFileSync(f, `PINGONE_ENVIRONMENT_ID=11111111-2222-4333-8444-555555555555\nPINGONE_CLIENT_ID=cid\nPINGONE_CLIENT_SECRET=${secret}\n`, { mode: 0o600 });
     const off = await live({ AAG_ALLOW_LIVE: '0' }); assert.equal(off.level, 'pass'); assert.match(off.detail, /switched off \(AAG_ALLOW_LIVE=0\)/);
-    const refused = await live({ IDP: 'mock' }); assert.equal(refused.level, 'info'); assert.match(refused.detail, /Real \(identity provider only\) is configured but refused: Real is off: IDP is pinned to mock/);
+    const refused = await live({ IDP: 'mock' }); assert.equal(refused.level, 'info'); assert.match(refused.detail, /Real \(identity provider only\) is configured but refused: Real is off: IDP pins this lab to its own sign-in/);
     assert.equal((await live({})).level, 'pass', 'complete settings and no opt-in: Real is on');
     const ok = await live({ AAG_ALLOW_LIVE: '1', IDP: 'pingone' });
     assert.equal(ok.level, 'pass'); assert.match(ok.detail, /only to https:\/\/auth\.pingone\.com;/);

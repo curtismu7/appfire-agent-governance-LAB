@@ -2,7 +2,7 @@
   "schema": "diagram-studio/1",
   "id": "gateway-refusals",
   "title": "What the gateway refuses, and with which status",
-  "lede": "Every refusal has its own status and its own reason. A refused call never reaches the tool. Simulated; the staged events and the thresholds are the lab's own.",
+  "lede": "Every refusal has its own status and its own reason. A refused call never reaches the tool. The staged events and the thresholds are the lab's own.",
   "groups": {
     "people": {
       "label": "Customer side",

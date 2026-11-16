@@ -45,7 +45,7 @@ describe("Simulate, speed, Reset", () => {
     render(<PatternDiagram diagram={DIAGRAM.diagram} lastRun={runBody("UC1")} />);
     fireEvent.change(screen.getByTestId("speed"), { target: { value: "800" } });
     fireEvent.click(screen.getByTestId("simulate"));
-    expect(screen.getByTestId("diagram-now").textContent).toMatch(/Step 1: Mock sign-in/);
+    expect(screen.getByTestId("diagram-now").textContent).toMatch(/Step 1: Sign-in/);
     expect(screen.getByTestId("diagram-hop").textContent).toMatch(/In your last run \(UC1\): hop 1/);
     await act(async () => { vi.advanceTimersByTime(850); });
     expect(screen.getByTestId("diagram-now").textContent).toMatch(/Step 2: Consent/);

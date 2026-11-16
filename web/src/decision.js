@@ -87,7 +87,7 @@ export function decisionOf(run) {
     return { verdict: "guided", word: "GUIDED", tone: "info", level: null, steer: null, reason: "A guided page: the lab shows the catalog's label and does not decide anything here.", fields: [] };
   }
   if (run.kind === "live") {
-    return { verdict: "idp", word: "IDENTITY PROVIDER ONLY", tone: "info", level: null, steer: null, reason: "Real, identity provider only: two calls, nothing past the identity provider, so no tool call was decided.", fields: [] };
+    return { verdict: "idp", word: "IDENTITY PROVIDER ONLY", tone: "info", level: null, steer: null, reason: "Identity provider only: two calls, nothing past the identity provider, so no tool call was decided.", fields: [] };
   }
   const { person, agent } = actors(run);
   // The gateway did not list the tool for this token, so the agent never called it. For a tier use case that is the standard tier: not a refusal of a call

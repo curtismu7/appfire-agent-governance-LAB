@@ -19,7 +19,7 @@ export function HandoffCard({ uc, vertical, userId, canPreview, onPreview, previ
       <div className="handoff__actions">
         <OpenApp app={r.app} uc={uc.id} ucTitle={uc.title} vertical={vertical} userId={userId} label={`Open ${r.app}`} testId="handoff-open" />
         {r.also && <OpenApp app={r.also} uc={uc.id} ucTitle={uc.title} vertical={vertical} userId={userId} label={`Or open ${r.also}`} testId="handoff-open-also" />}
-        {canPreview && <button type="button" onClick={previewing ? undefined : onPreview} aria-disabled={previewing ? "true" : undefined} data-testid="handoff-preview">Preview here (mock)</button>}
+        {canPreview && <button type="button" onClick={previewing ? undefined : onPreview} aria-disabled={previewing ? "true" : undefined} data-testid="handoff-preview">Preview here</button>}
       </div>
     </section>
   );

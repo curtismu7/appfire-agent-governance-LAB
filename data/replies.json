@@ -1,6 +1,6 @@
 {
  "schema": "appfire-agent-governance-replies/1",
- "about": "What the agent says in the chat after a MOCK tool call, per vertical and per tool, plus what it says when a write is held for approval. Every value is LAB-INVENTED and fixed per vertical and persona, so a run repeats exactly; nothing here is a real balance, order or record (the simulation banner and the MOCK labels stay on every page). {{name}} is filled from the vertical's cast (server/src/cast.js), the values below (persona first, then common), the run's amount and the tool arguments. A vertical reply wins over a shared one; a tool with neither gets the fallback. A test proves every tool any vertical runs has a reply and every {{name}} is filled.",
+ "about": "What the agent says in the chat after a tool call, per vertical and per tool, plus what it says when a write is held for approval. Every value is LAB-INVENTED and fixed per vertical and persona, so a run repeats exactly; nothing here is a real balance, order or record (the banner on every page says which numbers are the lab's own). {{name}} is filled from the vertical's cast (server/src/cast.js), the values below (persona first, then common), the run's amount and the tool arguments. A vertical reply wins over a shared one; a tool with neither gets the fallback. A test proves every tool any vertical runs has a reply and every {{name}} is filled.",
  "values": {
   "banking": {
    "common": { "defaultAmount": 250, "fee": "$15.00", "mortgageDue": "December 1" },

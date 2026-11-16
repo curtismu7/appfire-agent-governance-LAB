@@ -17,7 +17,7 @@ export async function smoke(base = `http://localhost:${process.env.PORT || 7814}
   check('health is demo-health/1 and ready', health.schema === 'demo-health/1' && health.state === 'ready');
   const list = await get('/api/usecases');
   check('87 use cases in 8 tracks', list.total === 87 && list.tracks.length === 8);
-  const run = await post('/api/run/UC1', { vertical: 'banking' });
+  const run = await post('/api/run/UC1', { vertical: 'banking', mode: 'mock' }); // explicit: a Real-configured lab opens in Real, and this check needs no sign-in
   check('UC1 runs in mock and is permitted', run.status === 200 && run.body.run?.outcome === 'PERMIT' && run.body.run.matchesExpected === true);
   const reset = await post('/api/reset');
   check('reset', reset.status === 200 && reset.body.reset === 'ok');

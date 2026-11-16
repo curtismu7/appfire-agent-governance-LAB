@@ -6,7 +6,8 @@
 # Settings: the app's own .env beside this file (copy .env.example). Compose reads it only to fill the ${...} values below (a missing .env is fine).
 # There is deliberately no env_file (it would copy every .env line into the container): only the names listed below go in, and a test pins that list.
 # Real (owner, 2026-11-10, option a): the four PINGONE_* names are passed by substitution and AAG_LIVE_FROM_ENV=1 tells the server to take them from
-# the environment (the image has no .env, .dockerignore). Real is available when they are complete; with none of them the lab is Mock with Real disabled.
+# the environment (the image has no .env, .dockerignore). Real is available when they are complete; with none of them the lab runs on its own steps with Real disabled.
+# AAG_LAB_MODE is passed through EMPTY by default (owner, 2026-11-16): the lab then opens in Real when the Real settings are complete and nothing refuses it.
 # Full Real (owner, 2026-11-10): the eight AAG_* names (user app, agent app, demo username, Agent Gateway URL, audience, scope) plus
 # PINGONE_ENVIRONMENT_ID and PINGONE_REGION, by the same substitution. When any AAG_* name is set, the old PINGONE_CLIENT_* worker client is ignored.
 # AAG_AGENT_SCOPE (optional, empty = agent:invoke) is the scope of the agent token and exchange 1. AAG_AGENT_TOKEN_AUTH=CLIENT_SECRET_POST (optional)
@@ -54,7 +55,7 @@ services:
       AAG_A2A_INTERMEDIATE_SCOPE: ${AAG_A2A_INTERMEDIATE_SCOPE:-}
       AAG_A2A_GATEWAY_AUDIENCE: ${AAG_A2A_GATEWAY_AUDIENCE:-}
       AAG_A2A_SCOPE: ${AAG_A2A_SCOPE:-}
-      AAG_LAB_MODE: ${AAG_LAB_MODE:-mock}
+      AAG_LAB_MODE: ${AAG_LAB_MODE:-}
       AAG_BRAIN_URL: ${AAG_BRAIN_URL:-}
       LAB_ALLOWED_HOSTS: ${LAB_ALLOWED_HOSTS:-appfire-agent-governance.local.ping-devops.com}
     read_only: true
