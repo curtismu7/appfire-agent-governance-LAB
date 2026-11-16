@@ -195,6 +195,9 @@
 .turn__who { margin: 3px 0 0; }
 .turn__ev { justify-self: start; min-height: 32px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 12px; text-decoration: underline; }
 .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+/* "Where each hop ran": 17+ short rows, so flow them into as many 220px columns as fit (reads down, then across). Owner, 2026-11-16. */
+.steps--cols { display: block; column-width: 220px; column-gap: 20px; }
+.steps--cols li { break-inside: avoid; padding: 2px 0; }
 .steps__n { display: inline-block; margin-right: 6px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
 .approval { display: grid; gap: 6px; }
 .approval__head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
