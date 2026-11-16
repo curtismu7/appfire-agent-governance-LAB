@@ -22,7 +22,9 @@ export function privilegeOf(run) {
   const scopeText = got.length
     ? `${got.join(" ")}${had.length ? ` (narrowed from ${had.length} the person holds to ${got.length})` : ""}`
     : NONE;
-  const groups = Array.isArray(user?.groups) ? user.groups : null;
+  // The person's groups, from the claim a token carries them in: `groups`, or PingOne's `memberOfGroupNames` (an array, or one name).
+  const claim = ["groups", "memberOfGroupNames"].find((k) => Array.isArray(user?.[k]) || (typeof user?.[k] === "string" && user[k].trim()));
+  const groups = claim ? [].concat(user[claim]).filter((g) => typeof g === "string" && g.trim()) : null;
   const life = typeof delegated?.exp === "number" && typeof delegated?.iat === "number" ? delegated.exp - delegated.iat : null;
 
   const gw = ran(run, "gateway-check")?.response?.body;
@@ -35,7 +37,7 @@ export function privilegeOf(run) {
   const rows = [
     { key: "agent", label: "Agent identity that acted", value: agent || NONE },
     { key: "person", label: "Acting for", value: person || NONE },
-    { key: "groups", label: "The person's groups", value: groups ? (groups.length ? groups.join(", ") : "none in the token") : NONE },
+    { key: "groups", label: "The person's groups", value: groups ? (groups.length ? `${groups.join(", ")} (claim ${claim})` : `none (claim ${claim} is empty)`) : "no group claim in the user's token" },
     { key: "scopes", label: "Scopes the agent was given", value: scopeText },
     { key: "audience", label: "Good for one destination", value: text(delegated?.aud) || NONE },
     { key: "lifetime", label: "Token lifetime", value: life != null ? `${life} seconds` : NONE },

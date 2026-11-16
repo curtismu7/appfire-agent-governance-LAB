@@ -180,7 +180,7 @@ describe("privilegeOf", () => {
     expect(p.source).toBe("mock");
     expect(value(p, "agent")).toBe("triage-agent");
     expect(value(p, "person")).toBe("alex.morgan");
-    expect(value(p, "groups")).toBe("wp-a2a-users");
+    expect(value(p, "groups")).toBe("wp-a2a-users (claim groups)");
     expect(value(p, "scopes")).toBe("accounts:read (narrowed from 5 the person holds to 1)");
     expect(value(p, "audience")).toBe("https://mcp.example");
     expect(value(p, "lifetime")).toBe("300 seconds");
@@ -193,7 +193,7 @@ describe("privilegeOf", () => {
     const p = privilegeOf({ ...base, kind: "real", outcome: "REAL_DENY", tokens: [{ claims: { sub: "u-1" } }, { claims: { sub: "u-1", act: { sub: "agent-1" } } }], hops: [gw([{ check: "scope", ok: false, why: "scope not granted" }])] });
     expect(p.source).toBe("real");
     expect(value(p, "gateway")).toBe("stopped at scope: scope not granted");
-    expect(value(p, "groups")).toBe("not in this run");
+    expect(value(p, "groups")).toBe("no group claim in the user's token");
     expect(value(p, "lifetime")).toBe("not in this run");
     expect(value(p, "agent")).toBe("agent-1");
   });
@@ -204,5 +204,26 @@ describe("privilegeOf", () => {
     expect(privilegeOf({ kind: "guided", computed: false })).toBeNull();
     expect(privilegeOf({ kind: "live", outcome: "LIVE_OK" })).toBeNull();
     expect(privilegeOf(null)).toBeNull();
+  });
+});
+
+describe("tier use cases in Real", () => {
+  it("reads the person's groups from PingOne's memberOfGroupNames claim too, and says when the claim is empty", () => {
+    const tok = (claims) => ({ claims });
+    const mk = (userClaims) => ({ kind: "real", computed: true, outcome: "REAL_PERMIT", tokens: [tok({ sub: "u-1", ...userClaims }), tok({ sub: "u-1", act: { sub: "agent-1" } })], hops: [] });
+    const g = (run) => privilegeOf(run).rows.find((r) => r.key === "groups").value;
+    expect(g(mk({ memberOfGroupNames: ["premium-tier", "staff"] }))).toBe("premium-tier, staff (claim memberOfGroupNames)");
+    expect(g(mk({ memberOfGroupNames: "premium-tier" }))).toBe("premium-tier (claim memberOfGroupNames)");
+    expect(g(mk({ groups: [] }))).toBe("none (claim groups is empty)");
+    expect(g(mk({}))).toBe("no group claim in the user's token");
+  });
+
+  it("a tool the gateway does not offer is NOT OFFERED (a standard tier), not a refusal and not a failure", () => {
+    const d = decisionOf({ kind: "real", computed: true, outcome: "REAL_NOT_LISTED", tokens, hops: [] });
+    expect(d).toMatchObject({ verdict: "not-offered", word: "NOT OFFERED", tone: "warn", level: null });
+    expect(d.reason).toMatch(/did not offer the tool to this user, so the agent never called it/);
+    expect(d.fields.find((f) => f.key === "tool").value).toBe("not offered, so never called");
+    expect(d.fields.find((f) => f.key === "decision").value).toBe("REAL_NOT_LISTED");
+    expect(riskLevelOf({ kind: "real", outcome: "REAL_NOT_LISTED" })).toBeNull();
   });
 });

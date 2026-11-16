@@ -20,8 +20,9 @@ export const SE_MCP_TOOLS = new Set([
 export const TOOL_NEEDS = {
   get_portfolio_summary: 'the A2A agent-service, which is scaled to 0 on SE',
 };
-// Trusted-caller features: they need headers a caller must never send (forced actor, rate-limit toggle, TraT, tiers).
-const TRUSTED_FEATURE = { UC13: 'the forced actor', UC18: 'the rate-limit toggle', UC21: 'the entitlement tiers' };
+// Trusted-caller features: they need headers a caller must never send (forced actor, rate-limit toggle, TraT). UC21 (entitlement tiers) is NOT one in Real
+// (owner 2026-11-16): the tier is the signed-in user's own PingOne group, so it runs Real; the owner flips the group in PingOne and signs in again.
+const TRUSTED_FEATURE = { UC13: 'the forced actor', UC18: 'the rate-limit toggle' };
 const A2A = /^a2a-|^verified-trust-issuance$/;
 const PRIVILEGE_LANE = /^(privilege-gateway-leg|credential-swap|enterprise-managed-mode|id-jag-)/;
 const APPROVAL = new Set(['ciba-poll', 'ciba-authorize', 'hitl-receipt']);

@@ -104,7 +104,7 @@ export default function RunPanel({ uc, vertical, verticals, persona, setPersona,
       {uc.live?.status === "needs-build" && <p className="muted">{uc.live.message}</p>}
       {mode !== "live" && <Inputs uc={uc} />}
       <div className="runbar">
-        {mode === "live" && <p className="muted" data-testid="live-persona-note">{uc.realGate?.real ? "A Real run uses the person who signed in; the persona is not used." : "A live run reaches the identity provider only; the persona is not used."}</p>}
+        {mode === "live" && <p className="muted" data-testid="live-persona-note">{uc.realGate?.real ? (uc.id === "UC21" ? "A Real run uses the person who signed in; the persona is not used. Your tier is your PingOne group: add or remove your user from the premium-tier group in PingOne, Sign out, and sign in again, then run this again." : "A Real run uses the person who signed in; the persona is not used.") : "A live run reaches the identity provider only; the persona is not used."}</p>}
         {mode !== "live" && (
           <label className="field">Persona <InventedTag />
             <select value={persona} onChange={(e) => setPersona(e.target.value)} data-testid="persona">

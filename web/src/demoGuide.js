@@ -35,7 +35,7 @@ export const DEMO_GUIDE = [
     short: "Evaluate",
     title: "4 · Ping evaluates the call",
     req: "Ping evaluates the request using agent identity, delegated permissions, the requested action, the resource and risk context.",
-    prove: "The highlighted step in the sequence is the decision. Run “Entitlement-tiered capability” twice, as the premium customer and as the standard customer: same tool, same data, a different person, a different decision. The Decision card names the policy that applied.",
+    prove: "The highlighted step in the sequence is the decision. Run “Entitlement-tiered capability” twice, as the premium customer and as the standard customer: same tool, same data, a different person, a different decision. In Real mode the tier is your PingOne group: flip your user in or out of the premium-tier group in PingOne, Sign out, sign in again and run it again. The Decision card names the policy that applied.",
     say: "Every call gets its own decision: identity, entitlement, action, resource, risk. It is a policy evaluation you can audit, not a prompt the model answers.",
     ucs: [{ uc: "UC21", label: "Run UC21 · tiered capability" }],
   },
