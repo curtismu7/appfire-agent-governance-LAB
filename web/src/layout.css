@@ -77,6 +77,8 @@
 .agenda__title { margin: 0 0 4px; font-weight: 700; }
 .agenda__say { margin: 0 0 8px; line-height: 1.5; }
 .agenda__run { display: flex; flex-wrap: wrap; gap: 8px; }
+.wtt__step { margin: 0 0 6px; }
+.wtt__nav { display: flex; gap: 8px; margin-top: 8px; }
 .cap { margin: 0 0 10px; padding: 10px 14px; border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; background: var(--surface); }
 .cap__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 4px; }
 .cap__chip { padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); font-size: 12px; font-weight: 600; }

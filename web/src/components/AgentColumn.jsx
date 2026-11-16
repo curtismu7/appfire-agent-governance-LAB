@@ -5,6 +5,7 @@ import { Tag } from "./Bits";
 import Turn from "./Turn";
 import { followNewest } from "../follow";
 import { Spin } from "./Working";
+import { DEMO_GUIDE, promptGroups, promptsOfStep } from "../demoGuide";
 
 const STATUS = { idle: ["Ready", "info"], running: ["Running", "info"], waiting: ["Waiting for you", "warn"], handoff: ["Ready to hand off", "info"], done: ["Done", "ok"], refused: ["Refused", "bad"] };
 
@@ -29,20 +30,37 @@ function Chips({ list, typeAndSend, disabled, label, testId }) {
 
 // What to type, per vertical: always visible above the input (owner rule). The prompts that run here come first; the ones whose use case opens
 // its own app sit in their own group. A stub vertical says it has no demo pack yet.
-export function WhatToType({ prompts, vertical, verticalLabel, stub, typeAndSend, disabled }) {
+export function WhatToType({ prompts, vertical, verticalLabel, stub, typeAndSend, disabled, step = null, onNextStep }) {
   const heading = verticalHeading(vertical, verticalLabel);
-  const here = prompts.filter((p) => !opensApp(p));
-  const away = prompts.filter(opensApp);
+  const at = step ? DEMO_GUIDE.findIndex((g) => g.id === step.id) : -1;
+  const mine = step ? promptsOfStep(step.id, prompts) : [];
+  const { groups, more } = promptGroups(prompts);
   return (
     <section className="wtt" aria-label={`What to type, ${heading}`} data-testid="what-to-type">
-      <p className="kicker" data-testid="wtt-heading">What to type · {heading}</p>
-      {stub ? <p className="muted" data-testid="wtt-stub">{heading}: no demo pack yet. Pick Banking, Healthcare or Retail to chat.</p> : prompts.length === 0 ? <p className="muted">Loading the prompts...</p> : (
+      <p className="kicker" data-testid="wtt-heading">What to type · {step ? `Step ${at + 1} · ${step.short} · ${heading}` : heading}</p>
+      {stub ? <p className="muted" data-testid="wtt-stub">{heading}: no demo pack yet. Pick Banking, Healthcare or Retail to chat.</p> : prompts.length === 0 ? <p className="muted">Loading the prompts…</p> : step ? (
+        // Presenter mode: only this step's prompts, then on to the next step (the same Next as the step bar).
+        <div className="wtt__groups" data-testid="wtt-step">
+          {mine.length ? <Chips list={mine} typeAndSend={typeAndSend} disabled={disabled} label={`Prompts for step ${at + 1}`} testId={`wtt-step-${step.id}`} /> : <p className="muted" data-testid="wtt-none">No typed prompt for this step: use its buttons above.</p>}
+          <div className="wtt__nav"><button type="button" onClick={onNextStep} disabled={at >= DEMO_GUIDE.length - 1} data-testid="wtt-next">{at >= DEMO_GUIDE.length - 1 ? "Last step" : `Next step: ${DEMO_GUIDE[at + 1]?.short} ›`}</button></div>
+        </div>
+      ) : (
+        // The full list, grouped under the walkthrough's steps in agenda order; what no step uses is last.
         <div className="wtt__groups">
-          <Chips list={here} typeAndSend={typeAndSend} disabled={disabled} label="Runs here" testId="wtt-here" />
-          {away.length > 0 && <>
+          {groups.map((g) => (
+            <div key={g.id} className="wtt__step">
+              <p className="wtt__group">{g.n} · {g.short}</p>
+              <Chips list={g.items} typeAndSend={typeAndSend} disabled={disabled} label={`Step ${g.n}, ${g.short}`} testId={`wtt-step-${g.id}`} />
+            </div>
+          ))}
+          {more.some((p) => !opensApp(p)) && <div className="wtt__step">
+            <p className="wtt__group">More prompts</p>
+            <Chips list={more.filter((p) => !opensApp(p))} typeAndSend={typeAndSend} disabled={disabled} label="More prompts" testId="wtt-more" />
+          </div>}
+          {more.some(opensApp) && <div className="wtt__step">
             <p className="wtt__group">Opens its own app</p>
-            <Chips list={away} typeAndSend={typeAndSend} disabled={disabled} label="Opens its own app" testId="wtt-away" />
-          </>}
+            <Chips list={more.filter(opensApp)} typeAndSend={typeAndSend} disabled={disabled} label="Opens its own app" testId="wtt-away" />
+          </div>}
         </div>
       )}
     </section>
@@ -50,7 +68,8 @@ export function WhatToType({ prompts, vertical, verticalLabel, stub, typeAndSend
 }
 
 // First open: the agent's name and four starter cards from the vertical's prompts.
-function Starters({ agent, brand, prompts, typeAndSend, stub }) {
+function Starters({ agent, brand, prompts, typeAndSend, stub, step = null }) {
+  const list = step ? promptsOfStep(step.id, prompts) : prompts.filter((p) => !opensApp(p));
   return (
     <div className="starters" data-testid="starters">
       <span className="avatar avatar--agent avatar--big" aria-hidden="true">AI</span>
@@ -58,7 +77,7 @@ function Starters({ agent, brand, prompts, typeAndSend, stub }) {
       <p className="muted">Type what a customer would say. Each prompt runs one use case and the evidence column draws every hop.</p>
       {!stub && (
         <ul className="starters__grid">
-          {prompts.filter((p) => !opensApp(p)).slice(0, 4).map((p) => (
+          {list.slice(0, 4).map((p) => (
             <li key={p.uc}>
               <button type="button" className="starter" onClick={() => typeAndSend(p.text, "starter")} data-testid={`starter-${p.uc}`}>
                 <Tag state={outcomeState(p.expectedOutcome)}>{p.expectedOutcome}</Tag>
@@ -74,7 +93,7 @@ function Starters({ agent, brand, prompts, typeAndSend, stub }) {
   );
 }
 
-export default function AgentColumn({ agent, brand, userId, vertical, verticalLabel, stub, prompts, turns, status, onSay, onHop, onPreview, running, instructions }) {
+export default function AgentColumn({ agent, brand, userId, vertical, verticalLabel, stub, prompts, turns, status, onSay, onHop, onPreview, running, instructions, step = null, onNextStep }) {
   const [text, setText] = useState("");
   const endRef = useRef(null);
   // Keep the newest reply in view: inside the chat box, and the page too when the (twice as tall) column runs below the window (follow.js).
@@ -107,7 +126,7 @@ export default function AgentColumn({ agent, brand, userId, vertical, verticalLa
         <Tag state={state} testId="agent-status">{status === "running" && <Spin small />}{word}</Tag>
       </header>
       <div className="agentcol__scroll">
-        {turns.length === 0 ? <Starters agent={agent} brand={brand} prompts={prompts} typeAndSend={typeAndSend} stub={stub} /> : (
+        {turns.length === 0 ? <Starters agent={agent} brand={brand} prompts={prompts} typeAndSend={typeAndSend} stub={stub} step={step} /> : (
           <ol className="turns" aria-label="Conversation" data-testid="turns">
             {turns.map((t) => <Turn key={t.id} turn={t} onHop={onHop} onPreview={onPreview} userId={userId} running={running} />)}
           </ol>
@@ -116,7 +135,7 @@ export default function AgentColumn({ agent, brand, userId, vertical, verticalLa
       </div>
       <div className="agentcol__foot">
         {instructions}
-        <WhatToType prompts={prompts} vertical={vertical} verticalLabel={verticalLabel} stub={stub} typeAndSend={typeAndSend} disabled={running} />
+        <WhatToType prompts={prompts} vertical={vertical} verticalLabel={verticalLabel} stub={stub} typeAndSend={typeAndSend} disabled={running} step={step} onNextStep={onNextStep} />
       </div>
       <div className="agentcol__compose">
         <form className={`composer${sending ? " composer--sending" : ""}`} onSubmit={send}>

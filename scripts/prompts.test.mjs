@@ -16,21 +16,21 @@ const EXPECT = {
     'transfer $2500 from checking to savings': 'UC6', 'check my sensitive account details for group entitlement': 'UC9',
     'check my sensitive account details for tier access': 'UC21', 'Check for unusual patterns in my recent activity': 'UC34',
     'Explain why my last blocked action was denied and walk me through the token chain': 'UC35', 'What branches are near me?': 'UC24',
-    'hand off to a specialist': 'UC2', 'simulate an agent identity mismatch': 'UC2.6', 'Can you waive the fee on my checking account?': 'UC28',
+    'hand off to a specialist': 'UC2', 'simulate an agent identity mismatch': 'UC2.6', 'simulate a forged agent in the delegation chain': 'UC13', 'Can you waive the fee on my checking account?': 'UC28',
   },
   healthcare: {
     'show my coverage': 'UC1', 'show my dental coverage': 'UC33', 'pay $600 toward my patient bill': 'UC7', 'pay $300 toward my patient bill': 'UC8',
     'pay $2500 toward my patient bill': 'UC6', 'check my sensitive patient records for group entitlement': 'UC9',
     'check my sensitive patient records for tier access': 'UC21', 'Check for unusual patterns in my recent claims': 'UC34',
     'Explain why my last blocked request was denied and walk me through the token chain': 'UC35', 'What clinics are near me?': 'UC24',
-    'hand this off to a care specialist': 'UC2', 'simulate a care agent identity mismatch': 'UC2.6', 'Can you waive the fee on my patient bill?': 'UC28',
+    'hand this off to a care specialist': 'UC2', 'simulate a care agent identity mismatch': 'UC2.6', 'simulate a forged care agent in the delegation chain': 'UC13', 'Can you waive the fee on my patient bill?': 'UC28',
   },
   retail: {
     'show my orders': 'UC1', 'show my gift card balance': 'UC33', 'check out $600 with store credit': 'UC7', 'check out $300 with store credit': 'UC8',
     'check out $2500 with store credit': 'UC6', 'check my sensitive order history for group entitlement': 'UC9',
     'check my sensitive order history for tier access': 'UC21', 'Check for unusual patterns in my recent orders': 'UC34',
     'Explain why my last blocked checkout was denied and walk me through the token chain': 'UC35', 'What stores are near me?': 'UC24',
-    'pass my order question to a specialist': 'UC2', 'simulate a shopping agent identity mismatch': 'UC2.6', 'Can you waive the restocking fee on my order?': 'UC28',
+    'pass my order question to a specialist': 'UC2', 'simulate a shopping agent identity mismatch': 'UC2.6', 'simulate a forged shopping agent in the delegation chain': 'UC13', 'Can you waive the restocking fee on my order?': 'UC28',
   },
 };
 
@@ -60,7 +60,7 @@ test('every prompt text, through the chat matcher, selects exactly its declared 
     assert.ok(away.length >= 1, `${vertical} has an Opens its own app prompt`);
     for (const p of away) assert.equal(routeOf(p.uc).route, 'Hand off', `${vertical} ${p.uc}`);
   }
-  assert.equal(n, 39);
+  assert.equal(n, 42); // 14 prompts in each of the three full verticals
 });
 
 test('mutation: swapping two prompts\' use cases is caught', () => {

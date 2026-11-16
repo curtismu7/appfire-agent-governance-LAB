@@ -5,6 +5,7 @@
 export const DEMO_GUIDE = [
   {
     id: "start",
+    prompts: ["UC1"],
     short: "Start",
     title: "1 · A person or application starts an AI-assisted workflow",
     req: "An authenticated user or application starts an AI-assisted workflow.",
@@ -14,6 +15,7 @@ export const DEMO_GUIDE = [
   },
   {
     id: "identity",
+    prompts: ["UC1"],
     short: "Identity",
     title: "2 · The agent gets its own identity and acts on behalf of the person",
     req: "The agent receives its own identity and acts on behalf of the requesting principal.",
@@ -23,6 +25,7 @@ export const DEMO_GUIDE = [
   },
   {
     id: "call",
+    prompts: ["UC1"],
     short: "Tool call",
     title: "3 · The agent tries to call an MCP tool",
     req: "The agent attempts to call an MCP tool or access a protected resource.",
@@ -32,6 +35,7 @@ export const DEMO_GUIDE = [
   },
   {
     id: "evaluate",
+    prompts: ["UC21", "UC9"],
     short: "Evaluate",
     title: "4 · Ping evaluates the call",
     req: "Ping evaluates the request using agent identity, delegated permissions, the requested action, the resource and risk context.",
@@ -41,6 +45,7 @@ export const DEMO_GUIDE = [
   },
   {
     id: "allow",
+    prompts: ["UC1"],
     short: "Allowed",
     title: "5 · A low-risk read is allowed automatically",
     req: "A low-risk, read-only request is allowed automatically.",
@@ -50,20 +55,26 @@ export const DEMO_GUIDE = [
   },
   {
     id: "escalate",
+    prompts: ["UC7", "UC8", "UC6", "UC13"],
     short: "Risk",
     title: "6 · A higher-risk request is denied, constrained or sent for approval",
     req: "A higher-risk write or sensitive-data request is denied, constrained or routed for approval, based on policy.",
-    prove: "Run the four in order (or press Compare for “Second factor vs a person” and “Asked first vs refused”). $600 steps up (ESCALATED: a second factor). $300 needs a person (ESCALATED: approve it on the mock phone). $2500 is refused (DENIED). The actor-injection attack is refused too: nothing is dispatched. The amounts are the lab's own; Appfire sets the real ones in policy.",
+    prove: "Run the buttons in order. $600 steps up (ESCALATED: a second factor). $300 needs a person (ESCALATED: approve it on the mock phone). $2500 is refused (DENIED), and so is the third-party call outside what the agent may use. The actor-injection attack is refused too: nothing is dispatched. “Poisoned instructions” and “Compare two runs” open the Compare page (always Mock) side by side: a careful agent against one told to ignore its limits, and a held write against a refused one. The amounts are the lab's own; Appfire sets the real ones in policy.",
     say: "Controlled autonomy. A risky write stops for a second factor, a riskier one for a person, and an out-of-bounds one is refused. A manipulated agent still meets the same decision, because the enforcement point is not the model.",
     ucs: [
       { uc: "UC7", label: "Higher risk: needs a second factor" },
       { uc: "UC8", label: "Higher risk: needs a person's approval" },
       { uc: "UC6", label: "Out of bounds: refused" },
+      { uc: "UC31", label: "Out of scope: refused" },
       { uc: "UC13", label: "Manipulated agent: refused" },
+      // These two do not run a use case: they open the Compare page (always Mock) at the named pair.
+      { compare: "careful-poisoned", label: "Poisoned instructions: refused" },
+      { compare: "ask-refuse", label: "Compare two runs" },
     ],
   },
   {
     id: "audit",
+    prompts: ["UC35", "UC34"],
     short: "Audit",
     title: "7 · The decision history is there for audit",
     req: "The full decision history is available for audit and investigation: which agent acted, on whose behalf, which tool or resource, which policy applied, and whether access was allowed, denied or escalated.",
@@ -90,3 +101,21 @@ export function topicOfStep(stepId) {
   if (["escalate", "audit"].includes(stepId)) return TOPICS.find((t) => t.time === "0:40");
   return null;
 }
+
+// A step's button is either a run (`uc`) or the Compare page at a named pair (`compare`). The key and test id name whichever it is.
+export const buttonKey = (b) => b.uc ?? `compare-${b.compare}`;
+
+// The typed prompts (What to type) that belong to a step, in the step's order, from the vertical's own list. `prompts` on a step names use cases; the words
+// come from data/prompts.json, so every vertical (and a future industry pack) follows the same walkthrough.
+export const promptsOfStep = (stepId, list) => {
+  const step = DEMO_GUIDE.find((g) => g.id === stepId);
+  return (step?.prompts || []).map((uc) => (list || []).find((p) => p.uc === uc)).filter(Boolean);
+};
+// The same list grouped by the first step each prompt belongs to, in agenda order, then the prompts no step uses. (A prompt shared by several steps is listed once.)
+export function promptGroups(list) {
+  const placed = new Set();
+  const groups = DEMO_GUIDE.map((g, i) => ({ id: g.id, n: i + 1, short: g.short, items: promptsOfStep(g.id, list).filter((p) => !placed.has(p.uc) && placed.add(p.uc)) })).filter((g) => g.items.length);
+  const more = (list || []).filter((p) => !placed.has(p.uc));
+  return { groups, more };
+}
+

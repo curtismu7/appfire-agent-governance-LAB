@@ -245,7 +245,48 @@ describe("the matcher on the real data: every shown prompt runs its use case", (
   });
 });
 
+describe("What to type follows the agenda", () => {
+  test("the full list is grouped under the walkthrough's steps in agenda order, then More prompts and Opens its own app", async () => {
+    await boot();
+    const heads = [...document.querySelectorAll(".wtt__group")].map((e) => e.textContent);
+    expect(heads[0]).toBe("1 · Start");
+    const order = heads.filter((h) => /^\d · /.test(h)).map((h) => Number(h[0]));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(heads.slice(-2)).toEqual(["More prompts", "Opens its own app"]);
+    expect(screen.getByTestId("wtt-heading").textContent).not.toMatch(/Step \d/);
+  });
+
+  test("Presenter mode shows only the current step's prompts; Next step moves the chips and the step bar together", async () => {
+    await boot();
+    const u = userEvent.setup();
+    await u.click(screen.getByTestId("presenter"));
+    expect(screen.getByTestId("wtt-heading").textContent).toMatch(/^What to type · Step 1 · Start/);
+    expect(screen.getByTestId("wtt-step-start")).toBeTruthy();
+    expect(screen.queryByTestId("wtt-more")).toBeNull();
+    await u.click(screen.getByTestId("wtt-next"));
+    expect(screen.getByTestId("wtt-heading").textContent).toMatch(/^What to type · Step 2 · Identity/);
+    expect(screen.getByTestId("agenda-pill-identity").getAttribute("aria-current")).toBe("step");
+    expect(screen.getByTestId("wtt-next").textContent).toBe("Next step: Tool call ›");
+    await u.click(screen.getByTestId("agenda-pill-audit"));
+    expect(screen.getByTestId("wtt-heading").textContent).toMatch(/Step 7 · Audit/);
+    expect(screen.getByTestId("wtt-next").disabled).toBe(true);
+    expect(screen.getByTestId("wtt-next").textContent).toBe("Last step");
+  });
+});
+
 describe("hand-off and go deeper", () => {
+  test("the walkthrough's third-party refusal button runs a hand-off use case here, in the chat, in words, with no hand-off card", async () => {
+    await boot({ extraUc: [{ ...HANDOFF_UC, id: "UC31", title: "Third-party MCP, out of scope" }] });
+    const u = userEvent.setup();
+    await u.click(screen.getByTestId("presenter"));
+    await u.click(screen.getByTestId("agenda-pill-escalate"));
+    await u.click(screen.getByTestId("agenda-run-UC31"));
+    await waitFor(() => expect(posts("UC31")).toHaveLength(1));
+    const turn = await screen.findByTestId("turn");
+    expect(within(turn).getByTestId("turn-said").textContent).toBe("“Third-party MCP, out of scope” (run from the walkthrough)");
+    expect(within(turn).queryByTestId("handoff-card")).toBeNull();
+  });
+
   test("a hand-off picked in the sidebar answers in one line with Open (or Start from the Shelf) and Preview here; why, the ids and the basis are in the evidence summary", async () => {
     await boot();
     const u = userEvent.setup();
