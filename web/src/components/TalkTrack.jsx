@@ -15,7 +15,7 @@ export default function TalkTrack({ talk, onRun, activeUc, onClose }) {
             {(t.run || []).length > 0 && (
               <p className="talk__runs" data-testid={`talk-runs-${t.id}`}>
                 {t.run.map((r) => (
-                  <button key={r.uc} type="button" className="guide__runlink" onClick={() => run(r.uc)} data-testid={`talk-run-${r.uc}`} aria-pressed={activeUc === r.uc}>{r.label}</button>
+                  <button key={r.uc} type="button" className="talk__run" onClick={() => run(r.uc)} data-testid={`talk-run-${r.uc}`} aria-pressed={activeUc === r.uc}>{r.label}</button>
                 ))}
               </p>
             )}
