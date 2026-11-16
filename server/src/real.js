@@ -397,6 +397,11 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     });
     if (firstBad) { const m = mapped(firstBad); rest(0, `Not run: ${m.note}`); return { outcome: m.outcome, reply: m.reply }; }
     if (!listed.includes(tool)) {
+      // UC21 (entitlement tiers): the product never offers a premium tool to a standard-tier user, so "not listed" IS the standard tier (owner 2026-11-16).
+      if (uc.id === 'UC21') {
+        rest(0, `Not run: the gateway does not offer ${tool} to this user. For the entitlement-tier use case that is the standard tier: the tier (a PingOne group) decides which tools exist.`);
+        return { outcome: 'REAL_NOT_LISTED', reply: { who: 'Gateway', text: `The Agent Gateway does not offer the tool ${tool} to this user, so the agent never called it. For the entitlement-tier use case that is what a standard tier looks like: the tier, a PingOne group, decides which tools exist. Add your user to the premium-tier group in PingOne, sign out, sign in again and run it again to see it offered.` } };
+      }
       rest(0, `Not run: the gateway does not list ${tool}. Switch to Mock to see this use case.`);
       return { outcome: 'REAL_NOT_LISTED', reply: { who: 'Gateway', text: `The Agent Gateway does not list the tool ${tool} for this token, so the agent did not call it. Switch to Mock to see this use case.` } };
     }

@@ -89,8 +89,23 @@ export function decisionOf(run) {
   if (run.kind === "live") {
     return { verdict: "idp", word: "IDENTITY PROVIDER ONLY", tone: "info", level: null, steer: null, reason: "Real, identity provider only: two calls, nothing past the identity provider, so no tool call was decided.", fields: [] };
   }
-  const verdict = verdictOf(outcome);
   const { person, agent } = actors(run);
+  // The gateway did not list the tool for this token, so the agent never called it. For a tier use case that is the standard tier: not a refusal of a call
+  // (there was none) but a tool the user is never offered.
+  if (outcome === "REAL_NOT_LISTED") {
+    return {
+      verdict: "not-offered", word: "NOT OFFERED", tone: "warn", level: null, steer: null,
+      reason: "The gateway did not offer the tool to this user, so the agent never called it. A tier or policy at the gateway decides which tools a user is offered.",
+      fields: [
+        { key: "agent", label: "Which agent acted", value: agent || NOT_REACHED },
+        { key: "principal", label: "On whose behalf", value: person || NOT_REACHED },
+        { key: "tool", label: "Which tool or resource", value: "not offered, so never called" },
+        { key: "policy", label: "Which policy applied", value: "the gateway: the tool is not in its tools/list for this token" },
+        { key: "decision", label: "Decision", value: outcome },
+      ],
+    };
+  }
+  const verdict = verdictOf(outcome);
   const policy = policyOf(run);
   const tool = toolOf(run);
   const held = bodyOf(ran(run, "tool-held")) || bodyOf(ran(run, "step-up"));

@@ -380,9 +380,10 @@ test('use-case gating: only tools served through the SE gateway run Real; the re
   const realIds = MANIFEST.usecases.filter((u) => realGate(u, cast).real).map((u) => u.id);
   // Owner 2026-11-13: UC7/UC8 (HITL with the SE gateway's real challenge pipeline) run Real too. 2026-11-16: UC33 (api-resource-server scaled up on SE)
   // and the third-party tool servers (UC30, UC31, UC41, UC42, UC-TOOL1) run Real; the gateway's own tools/list still decides at run time.
-  assert.deepEqual(realIds, ['UC1', 'UC3', 'UC19', 'UC20', 'UC33', 'UC4', 'UC6', 'UC7', 'UC8', 'UC24', 'UC17', 'UC30', 'UC31', 'UC41', 'UC42', 'UC-TOOL1', 'UC28']);
+  assert.deepEqual(realIds, ['UC1', 'UC3', 'UC19', 'UC20', 'UC33', 'UC4', 'UC6', 'UC7', 'UC8', 'UC21', 'UC24', 'UC17', 'UC30', 'UC31', 'UC41', 'UC42', 'UC-TOOL1', 'UC28']);
   const why = (id) => realGate(findUseCase(id), cast).reason;
-  assert.match(why('UC13'), /trusted-caller/); assert.match(why('UC18'), /trusted-caller/); assert.match(why('UC21'), /tiers/);
+  assert.match(why('UC13'), /trusted-caller/); assert.match(why('UC18'), /trusted-caller/);
+  assert.equal(realGate(findUseCase('UC21'), cast).tool, 'get_sensitive_account_details', 'UC21 runs Real: the tier is the signed-in user\'s own PingOne group');
   assert.match(why('UC22'), /approval/); assert.match(why('UC2'), /A2A/); assert.match(why('UC37'), /A2A/);
   assert.match(why('UC40'), /Privilege|ID-JAG/); assert.match(why('UC9'), /feature flag/);
   assert.deepEqual(['UC33', 'UC30', 'UC41', 'UC-TOOL1'].map((id) => realGate(findUseCase(id), cast).tool), ['show_mortgage', 'get_weather', 'brave_news_search', 'code_search']);
@@ -436,6 +437,27 @@ test('a third-party tool (UC31, get_weather) runs Real with the state the use ca
     assert.equal(r.body.run.outcome, 'REAL_NOT_LISTED'); assert.match(r.body.run.reply.text, /does not list the tool get_weather/);
     assert.equal(gw.seen.filter((c) => c.rpc?.method === 'tools/call').length, 0, 'a tool the gateway does not list is never called');
   }, { gateway: 'no-weather' });
+});
+
+test('UC21 (entitlement tiers) runs Real: a premium user is offered get_sensitive_account_details and it runs; a standard user is never offered it (REAL_NOT_LISTED, never called)', async () => {
+  await withFull(async (url, { gw }) => {
+    await toReal(url); await signIn(url);
+    const r = await run(url, 'UC21', { vertical: 'banking', persona: 'premium' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.run.kind, 'real'); assert.equal(r.body.run.outcome, 'REAL_PERMIT');
+    const call = gw.seen.filter((c) => c.rpc?.method === 'tools/call').find((c) => c.rpc.params.name === 'get_sensitive_account_details');
+    assert.ok(call, 'the sensitive tool was called'); assert.deepEqual(gw.seen.filter((c) => c.headers['x-demo-force-tier']).length, 0, 'no tier header is ever sent');
+  });
+  await withFull(async (url, { gw }) => {
+    await toReal(url); await signIn(url);
+    const r = await run(url, 'UC21', { vertical: 'banking', persona: 'premium' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const x = r.body.run;
+    assert.equal(x.outcome, 'REAL_NOT_LISTED'); assert.equal(x.reply.who, 'Gateway');
+    assert.match(x.reply.text, /does not offer the tool get_sensitive_account_details to this user/); assert.match(x.reply.text, /standard tier/); assert.match(x.reply.text, /premium-tier group/);
+    assert.ok(!/Switch to Mock/.test(x.reply.text), 'the tier case does not tell the visitor to switch to Mock');
+    assert.equal(gw.seen.filter((c) => c.rpc?.method === 'tools/call' && c.rpc.params.name === 'get_sensitive_account_details').length, 0, 'a tool the gateway does not offer is never called');
+  }, { gateway: 'no-sensitive' });
 });
 
 test('in Real mode, a use case that cannot run Real is refused with the reason only when the mock engine is not available here', async () => {
