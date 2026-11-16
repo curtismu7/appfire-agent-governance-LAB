@@ -29,6 +29,15 @@ describe("the calls of a gateway step as cards", () => {
     expect(screen.getByTestId("xch-3").querySelector(".xch__claims")).toBeNull();
     expect(within(screen.getByTestId("xch-3")).getByText("JWT · alex.morgan via triage-agent · 5 min")).toBeTruthy();
   });
+  test("an opened card shows the Form | JSON pane without a click on Raw JSON, and a closed card shows none", () => {
+    panel(hop());
+    const open = screen.getByTestId("xch-3");
+    const details = [...open.querySelectorAll("details")].find((d) => d.textContent.includes("Raw JSON"));
+    expect(details.open).toBe(true);
+    expect(within(open).getAllByRole("button", { name: "Form" }).length).toBeGreaterThan(0); // the pane's own Form | JSON toggle is on screen
+    expect(within(open).getAllByRole("button", { name: "JSON" }).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("xch-1").querySelector(".jsonbox")).toBeNull(); // a closed card draws nothing
+  });
   test("a click on the token chip shows what it says and the whole token", async () => {
     panel(hop());
     await userEvent.click(within(screen.getByTestId("xch-3")).getByRole("button", { name: /Bearer eyJ/ }));
