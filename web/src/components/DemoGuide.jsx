@@ -1,5 +1,6 @@
 import FloatingDialog from "../floating-dialog/FloatingDialog";
-import { DEMO_GUIDE, buttonKey } from "../demoGuide";
+import { DEMO_GUIDE, buttonKey, guideStep } from "../demoGuide";
+import { REAL_VERTICAL_NOTE } from "../lib";
 
 // The step-by-step demo guide (owner request 2026-11-12): a pop-out tooltip beside the demo. One card per requirement in
 // the Appfire brief, each with what was asked (req), how the lab proves it (prove, with a Run button wired to the use case)
@@ -33,16 +34,23 @@ function RealHelp({ catalog, onRun, activeUc }) {
   return (
     <section data-testid="guide-real-help">
       <h3 className="guide__title">Real mode: what runs Real, what runs Mock</h3>
-      <p className="muted">{real.length} use cases run the live chain in Real mode (PingOne sign-in, token exchange, the SE Agent Gateway, PingOne Authorize, the tool); each one asks you to sign in the first time. The other {blocked.length} cannot run Real, each for the reason shown, so in Real mode they run on the mock engine: every hop says MOCK and the card says so.</p>
-      <h4 className="guide__subhead">Runs Real — sign-in required ({real.length})</h4>
-      <ul className="guide__list" data-testid="guide-real-list">
-        {real.map((u) => (
-          <li key={u.id}>
-            <button type="button" className="guide__runlink" onClick={() => run(u.id)} data-testid={`guide-real-${u.id}`} aria-pressed={activeUc === u.id}>{u.title}</button>
-          </li>
-        ))}
-        {real.length === 0 && <li className="muted">Loading the catalog…</li>}
-      </ul>
+      <p className="muted" data-testid="guide-real-vertical">{REAL_VERTICAL_NOTE}</p>
+      {real.length === 0 && blocked.length > 0 ? (
+        <p className="muted" data-testid="guide-real-none">No use case runs the live chain in this vertical. In Real mode all {blocked.length} run on the mock engine, each for the reason shown: every hop says MOCK and the card says so.</p>
+      ) : (
+        <>
+          <p className="muted">{real.length} use cases run the live chain in Real mode (PingOne sign-in, token exchange, the SE Agent Gateway, PingOne Authorize, the tool); each one asks you to sign in the first time. The other {blocked.length} cannot run Real, each for the reason shown, so in Real mode they run on the mock engine: every hop says MOCK and the card says so.</p>
+          <h4 className="guide__subhead">Runs Real — sign-in required ({real.length})</h4>
+          <ul className="guide__list" data-testid="guide-real-list">
+            {real.map((u) => (
+              <li key={u.id}>
+                <button type="button" className="guide__runlink" onClick={() => run(u.id)} data-testid={`guide-real-${u.id}`} aria-pressed={activeUc === u.id}>{u.title}</button>
+              </li>
+            ))}
+            {real.length === 0 && <li className="muted">Loading the catalog…</li>}
+          </ul>
+        </>
+      )}
       <h4 className="guide__subhead">Runs Mock in Real mode ({blocked.length})</h4>
       <ul className="guide__list guide__list--blocked" data-testid="guide-blocked-list">
         {blocked.map((u) => (
@@ -54,13 +62,13 @@ function RealHelp({ catalog, onRun, activeUc }) {
   );
 }
 
-export default function DemoGuide({ isOpen, onClose, onRun, onCompare, activeUc, catalog }) {
+export default function DemoGuide({ isOpen, onClose, onRun, onCompare, activeUc, catalog, cast, prompts }) {
   return (
     <FloatingDialog isOpen={isOpen} onClose={onClose} title="Appfire demo guide" ariaLabel="Step-by-step demo guide"
       defaultWidth={460} defaultHeight={640} placement="right" storageKey="aag.guide" testId="demo-guide">
       <div className="stack">
         <p className="muted" data-testid="guide-intro">Seven steps, the demo walkthrough from the session agenda: one agent workflow from request to audit record. Each has what it is, how the lab shows it, and what to say.</p>
-        {DEMO_GUIDE.map((s) => <Step key={s.id} step={s} onRun={onRun} onCompare={onCompare} activeUc={activeUc} />)}
+        {DEMO_GUIDE.map((s) => <Step key={s.id} step={guideStep(s, { cast, prompts })} onRun={onRun} onCompare={onCompare} activeUc={activeUc} />)}
         <RealHelp catalog={catalog} onRun={onRun} activeUc={activeUc} />
       </div>
     </FloatingDialog>

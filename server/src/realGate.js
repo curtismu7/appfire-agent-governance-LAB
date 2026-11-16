@@ -35,6 +35,9 @@ const APPROVAL = new Set(['ciba-poll', 'ciba-authorize', 'hitl-receipt']);
 // opts.a2a: the AAG_A2A_* settings are complete and the vertical is A2A_VERTICAL; opts.a2aWhy: the fixed words saying why not, when they are not.
 export function realGate(uc, cast, { a2a = false, a2aWhy = null } = {}) {
   if (!isFlow(uc)) return { real: false, reason: 'it is a guided page: the lab shows it and does not compute it' };
+  // A pack the SE gateway serves no tool of (the software pack, owner 2026-11-16): nothing runs Real, whatever its tool is called. Checked before the
+  // tool list because a pass-through tool such as brave_news_search is on it for the other packs.
+  if (cast?.castMockOnly) return { real: false, reason: 'the SE gateway serves no tool of this vertical (banking, healthcare and retail only)' };
   const chain = chainOf(uc);
   // Owner 2026-11-13: UC7/UC8 (the hitl track, tool create_transfer) run REAL — the SE gateway's HITL pipeline
   // (428 + challenge, the HITL service, the receipt retry) is live and this lab drives it with the mock phone.

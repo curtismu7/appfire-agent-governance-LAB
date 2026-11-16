@@ -189,7 +189,10 @@ try {
       await t('nav-agent').click();
       await t('vertical').selectOption('government'); await pick('UC1'); await t('run').click(); await t('refusal').waitFor();
       check((await t('refusal').getAttribute('data-code')) === 'vertical_stub' && (await t('refusal').innerText()).includes('Not built'), `${tag}: a stub vertical shows the honest not built state (HTTP 501)`);
-      await t('vertical').selectOption('banking');
+      // banking stays selectable and unchanged: one UC1 run in it (its own read tool in the evidence), then back to the default
+      await t('vertical').selectOption('banking'); await pick('UC1'); await t('run').click(); await t('result').waitFor();
+      check((await t('outcome').innerText()) === 'PERMIT' && (await page.getByTestId('evidence-column').innerText()).includes('get_account_balance'), `${tag}: banking is still selectable and runs its own read tool`);
+      await t('vertical').selectOption('software');
       await page.waitForFunction(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.disabled === true);
       const realOptionTitle = await page.evaluate(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '');
       check(/^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME, AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE in this app's \.env/.test(realOptionTitle) && (await t('mode').innerText()).includes('mock'), `${tag}: with no .env Real is disabled, its tooltip says what to fill in, and the page stays Mock`);
@@ -285,14 +288,14 @@ try {
       await t('theme-select').selectOption(scheme);
       check(await oneRow(), `${tag}: the shell bar is one row`);
       const wtt = await t('what-to-type').innerText();
-      check((await t('wtt-heading').innerText()).toUpperCase() === 'WHAT TO TYPE · BANKING · APPFIRE PLATFORM' && wtt.includes('show my balance'), `${tag}: What to type names the vertical and lists its prompts`);
+      check((await t('wtt-heading').innerText()).toUpperCase() === 'WHAT TO TYPE · SOFTWARE · APPFIRE WORK SUITE' && wtt.includes('show my open issues'), `${tag}: What to type names the vertical and lists its prompts`);
       check((await t('wtt-away').getByRole('button').count()) >= 1 && wtt.toLowerCase().includes('opens its own app'), `${tag}: What to type has an Opens its own app group`);
 
       await t('wtt-UC1').click(); await t('turn-answer').waitFor(); await sleep(300);
       // a chat turn is the message and one reply (owner 2026-11-09): no reasoning, token cards or hop pills; those stay in the evidence column
       const lastTurn = () => page.getByTestId('turn').last();
       const onlyReply = async () => { const tx = await lastTurn().innerText(); return (await lastTurn().getByRole('button', { name: /^Hop \d/ }).count()) === 0 && !/Reasoning|Tokens used|Step 1|routing table/i.test(tx); };
-      check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AGENT' && (await lastTurn().getByTestId('turn-answer-text').innerText()) === 'Your checking balance is $4,250.00, and your savings balance is $12,800.00.', `${tag}: UC1 is the message and the agent's answer only, a real sentence with lab-invented amounts`);
+      check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AGENT' && (await lastTurn().getByTestId('turn-answer-text').innerText()) === 'You have 7 open issues assigned to you, 2 due this week; the top one is PLAT-412, Fix login timeout on the billing page.', `${tag}: UC1 is the message and the agent's answer only, a real sentence with lab-invented amounts`);
       // go deeper and the use case panel are in the evidence column, not the chat (owner 2026-11-09)
       check((await lastTurn().getByTestId('go-deeper').count()) === 0 && (await t('agent-column').getByTestId('uc-panel').count()) === 0 && (await t('evidence-column').getByTestId('go-deeper').innerText()).toLowerCase().includes('go deeper in') && (await t('evidence-column').getByTestId('uc-panel').count()) === 1, `${tag}: go deeper and the use case panel sit in the evidence column, not the reply`);
       check((await t('evidence-why').innerText()).includes('Matched your words to “Delegated access (consent only)”') && (await t('evidence-count').innerText()).startsWith('Delegated access (consent only) ·'), `${tag}: the reasoning and the hops are in the evidence column`);
@@ -302,7 +305,7 @@ try {
         for (const e of els) { const r = e.getBoundingClientRect(); if (!r.width && !r.height) continue; const own = [...e.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent).join(' ');
           for (const v of [own, e.getAttribute('title'), e.getAttribute('aria-label'), e.getAttribute('placeholder')]) if (v && re.test(v)) hit.push(v.trim().slice(0, 60)); } return hit.slice(0, 3); });
       check(idsShown.length === 0, `${tag}: no use-case id is shown anywhere on the page, only words (${idsShown.join(' | ')})`);
-      check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AUTHORIZE' && (await lastTurn().getByTestId('turn-answer-text').innerText()).startsWith('Authorize refused this request (HTTP 403): amount 2500'), `${tag}: UC6 is Authorize's refusal in plain words`);
+      check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AUTHORIZE' && (await lastTurn().getByTestId('turn-answer-text').innerText()).startsWith('Authorize refused this request (HTTP 403): 2500 issues'), `${tag}: UC6 is Authorize's refusal in plain words`);
       await t('wtt-UC1').click(); await page.getByTestId('turn').nth(2).getByTestId('turn-answer').waitFor(); await sleep(300);
       const [side, agent, ev] = [await rect('.setup'), await rect('.agentcol'), await rect('.evcol')];
       check(Math.abs(side.t - agent.t) < 2 && Math.abs(agent.t - ev.t) < 2 && side.r <= agent.l && agent.r <= ev.l, `${tag}: sidebar | agent | evidence side by side (lefts ${Math.round(side.l)}, ${Math.round(agent.l)}, ${Math.round(ev.l)})`);
@@ -355,7 +358,7 @@ try {
       check((await page.getByRole('dialog').count()) === 0, `${tag}: Escape closes the actor card`);
       await t('wtt-UC7').click(); await t('turn-approval').waitFor();
       check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AUTHORIZE', `${tag}: the step-up hold is labelled Authorize and carries no reasoning or pills`);
-      check((await lastTurn().getByTestId('turn-approval-say').innerText()) === "I'm ready to move $600 from checking to savings.", `${tag}: the held $600 transfer says what the agent is ready to do, with the amount`);
+      check((await lastTurn().getByTestId('turn-approval-say').innerText()) === "I'm ready to move 600 issues in the Billing project to Done.", `${tag}: the held 600-issue bulk edit says what the agent is ready to do, with the count`);
       // The hold opened the mock phone; deny it so the rest of the flow is not behind its backdrop.
       if (await t('mp-deny').isVisible().catch(() => false)) { await t('mp-deny').click(); await t('mp-outcome').waitFor(); }
       check(!/mock result of|Here is what I found/.test(await t('agent-column').innerText()), `${tag}: nothing in the chat says mock result of`);
@@ -407,12 +410,12 @@ try {
     const t = (id) => page.getByTestId(id);
     await page.goto(`${base}/`); await t('wtt-UC1').waitFor();
     check((await t('nav-page-a2a').count()) === 0, `${tag}: no Agent to agent page before a run`);
-    await t('composer-input').fill('hand off to a specialist'); await t('composer-send').click();
+    await t('composer-input').fill('hand off the release summary to the release specialist'); await t('composer-send').click();
     const turn = page.getByTestId('turn').last();
     await turn.getByTestId('turn-answer').waitFor();
-    check((await turn.getAttribute('data-status')) === 'done' && (await turn.getByTestId('handoff-card').count()) === 0, `${tag}: "hand off to a specialist" runs UC2 here (no hand-off card)`);
+    check((await turn.getAttribute('data-status')) === 'done' && (await turn.getByTestId('handoff-card').count()) === 0, `${tag}: "hand off the release summary to the release specialist" runs UC2 here (no hand-off card)`);
     check((await turn.getByTestId('go-deeper').count()) === 0 && (await t('evidence-column').getByTestId('go-deeper').textContent()).includes('Go deeper in a2a-lab'), `${tag}: the evidence column (not the reply) offers going deeper in a2a-lab`);
-    check((await turn.getByTestId('turn-answer-text').innerText()).startsWith('Your portfolio is worth $86,300.00'), `${tag}: UC2's reply is the portfolio summary`);
+    check((await turn.getByTestId('turn-answer-text').innerText()).startsWith('Release 4.18 has 38 issues, 31 merged pull requests and 2 open blockers'), `${tag}: UC2's reply is the release summary`);
     check((await t('nav-page-a2a').innerText()) === 'Agent to agent', `${tag}: the Agent to agent page is in the More menu`);
     await t('nav-more').selectOption('page-a2a');
     const a2a = t('extra-a2a');
@@ -523,6 +526,8 @@ try {
     check((await page.evaluate(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '')).includes('sign-in (pi.flow)'), `${tag}: Real is available and its title says what a run does`);
     await t('mode-select').selectOption('real'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('real: sign-in, token exchange, Agent Gateway'));
     check(await t('sign-in').isVisible(), `${tag}: Real shows the Sign in button`);
+    // Real needs the Banking vertical (the SE gateway serves no software tools): software is the default, so the Real checks pick banking first
+    await t('vertical').selectOption('banking');
     await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
     await t('run').click();
     await t('signin-dialog').waitFor();

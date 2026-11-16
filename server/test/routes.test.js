@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { MANIFEST, findUseCase } from '../src/manifest.js';
 import { HANDOFF, PROMPTS, ROUTE_KINDS, promptsFor, routeOf, validatePrompts, validateRoutes } from '../src/routes.js';
 import { runUseCase } from '../src/flow.js';
-import { loadCast, STUB_VERTICALS, VERTICALS } from '../src/cast.js';
+import { DEFAULT_VERTICAL, loadCast, STUB_VERTICALS, VERTICALS } from '../src/cast.js';
 import { get, withServer } from './helpers.js';
 
 const DATA = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data');
@@ -76,12 +76,20 @@ test('every shown prompt runs here or hands off; either way, in its vertical the
   }
 });
 
-test('healthcare and retail have their own wording for the same use cases as banking, and no vertical repeats a prompt', () => {
-  const ucs = (v) => PROMPTS.verticals[v].map((e) => e.uc).sort();
+// Software (the Appfire Work Suite) lists the 14 core use cases banking lists, in the same order, and five extras after them (lab-written, named here on
+// purpose so a new extra needs a decision): an allowed and a refused third-party tool call, another person's private project, a forged approval and a
+// lower human-approval rung. The other verticals list exactly the 14.
+const SOFTWARE_EXTRAS = ['UC30', 'UC31', 'UC10', 'UC27', 'UC22'];
+test('every full vertical lists the same 14 core use cases as banking in the same order; software adds exactly its five named extras; no vertical repeats a prompt', () => {
+  const ucs = (v) => PROMPTS.verticals[v].map((e) => e.uc);
   assert.deepEqual(Object.keys(PROMPTS.verticals).sort(), Object.keys(VERTICALS).sort());
-  assert.deepEqual(ucs('healthcare'), ucs('banking'));
-  assert.deepEqual(ucs('retail'), ucs('banking'));
-  for (const v of ['healthcare', 'retail']) {
+  const core = ucs('banking');
+  assert.equal(core.length, 14);
+  for (const v of ['healthcare', 'retail']) assert.deepEqual(ucs(v), core, v);
+  assert.deepEqual(ucs('software').slice(0, 14), core, 'software starts with the 14 core use cases in banking order');
+  assert.deepEqual(ucs('software').slice(14), SOFTWARE_EXTRAS, 'software extras, named');
+  assert.equal(new Set(ucs('software')).size, 19, 'one prompt per use case');
+  for (const v of ['healthcare', 'retail', 'software']) {
     const bank = new Set(PROMPTS.verticals.banking.map((e) => e.text));
     assert.ok(PROMPTS.verticals[v].filter((e) => bank.has(e.text)).length === 0, `${v} is not the banking text`);
   }
@@ -91,13 +99,21 @@ test('healthcare and retail have their own wording for the same use cases as ban
   assert.match(validatePrompts(unknown).join(), /banking: unknown use case/);
 });
 
+test('software prompts use work-management words only: no banking vocabulary, no dollar amount, no use case id', () => {
+  const banking = /\b(balance|transfer|checking|savings|mortgage|bank(ing)?|deposit|portfolio|branch(es)?|fee waiver|credit)\b|\$|\bUC\d/i;
+  for (const e of PROMPTS.verticals.software) assert.ok(!banking.test(e.text), e.uc);
+  for (const e of PROMPTS.verticals.software) assert.ok(e.text.length >= 8 && e.text.length <= 160, e.uc);
+  // the extras that hand off to another app (a third-party call outside its scope, a lower approval rung) stay Hand off
+  for (const id of ['UC31', 'UC30', 'UC22', 'UC2.6', 'UC28']) assert.equal(routeOf(id).route, 'Hand off', id);
+});
+
 test('GET /api/prompts gives the vertical prompts with title, outcome and route; a stub vertical has none; a bad vertical is 400 and not echoed', async () => {
   await withServer(async (url) => {
     const r = await get(url, '/api/prompts?vertical=healthcare'); const j = await r.json();
     assert.equal(r.status, 200); assert.equal(j.pack, 'full'); assert.equal(j.prompts.length, PROMPTS.verticals.healthcare.length);
     assert.deepEqual(j.prompts[0], promptsFor('healthcare')[0]);
     assert.deepEqual(Object.keys(j.prompts[0]).sort(), ['expectedOutcome', 'route', 'text', 'title', 'track', 'uc']);
-    assert.equal((await (await get(url, '/api/prompts')).json()).vertical, 'banking');
+    assert.equal((await (await get(url, '/api/prompts')).json()).vertical, DEFAULT_VERTICAL);
     const stub = Object.keys(STUB_VERTICALS)[0];
     const s = await (await get(url, `/api/prompts?vertical=${stub}`)).json();
     assert.equal(s.pack, 'stub'); assert.deepEqual(s.prompts, []);

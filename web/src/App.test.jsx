@@ -129,7 +129,7 @@ describe("run view", () => {
     await u.selectOptions(screen.getByTestId("persona"), "premium");
     await runIt(u);
     const post = api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC1");
-    expect(post.body).toEqual({ vertical: "banking", persona: "premium" });
+    expect(post.body).toEqual({ vertical: "software", persona: "premium" });
     expect(post.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
     expect(screen.getByTestId("outcome").textContent).toBe("PERMIT");
     expect(screen.getByTestId("matches").textContent).toBe("engine result matches the catalog label");
@@ -531,11 +531,11 @@ describe("fix pass 2026-11-01", () => {
     expect(screen.getByTestId("persona").value).toBe("premium");
     expect(screen.getByTestId("lab-inputs").textContent).toMatch(/persona.*premium/);
     await runIt(u);
-    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC21").body).toEqual({ vertical: "banking", persona: "premium" });
+    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC21").body).toEqual({ vertical: "software", persona: "premium" });
     await u.click(screen.getByTestId("uc-UC9"));
     expect(screen.getByTestId("persona").value).toBe("standard");
     await runIt(u);
-    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC9").body).toEqual({ vertical: "banking", persona: "standard" });
+    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC9").body).toEqual({ vertical: "software", persona: "standard" });
     await u.click(screen.getByTestId("uc-UC21"));
     await u.selectOptions(screen.getByTestId("persona"), "standard");
     expect(screen.getByTestId("persona").value).toBe("standard");
@@ -839,6 +839,9 @@ describe("decision card and the session walkthrough (agenda)", () => {
     expect(screen.getByTestId("guide-intro").textContent).toMatch(/session agenda/);
     expect(guide.textContent).not.toMatch(/Doug|Eight steps/);
     expect(screen.getByTestId("guide-run-escalate-UC13")).toBeTruthy();
+    // with no cast or prompts loaded yet the words are neutral: no banking vocabulary, no dollar amount, no leftover token
+    expect(guide.querySelector("[data-testid='guide-step-start']").textContent).not.toMatch(/balance|transfer|checking|alex\.morgan|\$\d|\{\{/i);
+    expect(guide.querySelector("[data-testid='guide-step-escalate']").textContent).not.toMatch(/balance|transfer|checking|\$\d|\{\{/i);
   });
 });
 

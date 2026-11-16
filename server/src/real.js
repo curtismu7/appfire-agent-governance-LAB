@@ -508,7 +508,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       rest(2, 'Not run: the tool was not called.');
       return { outcome: 'REAL_TOOL_ERROR', reply: { who: 'Agent', text: `I could not find ${needTwo ? 'two accounts' : 'an account'} of yours for ${tool}, so I did not call it.` } };
     }
-    const args = toolArgs(tool, { vertical, accounts, amount: situationOf(uc.id).amount, args: situationOf(uc.id).args });
+    const args = toolArgs(tool, { vertical, accounts, amount: situationOf(uc.id, vertical).amount, args: situationOf(uc.id, vertical).args });
     // Owner 2026-11-13: a HITL retry echoes the gateway's challenge id as the control field _hitl_challenge_id
     // (the gateway strips it before dispatch; a verified receipt discharges the consent obligation).
     if (receipt) args._hitl_challenge_id = receipt;

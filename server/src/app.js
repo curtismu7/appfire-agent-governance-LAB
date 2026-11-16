@@ -28,7 +28,7 @@ import { createReal, RealRefused, REDIRECT_URI } from './real.js';
 import { createApprovals } from './approval.js';
 import { A2A_VERTICAL, realGate } from './realGate.js';
 import { shelfInfo } from './shelfLink.js';
-import { promptsFor, routeOf } from './routes.js';
+import { localize, promptsFor, routeOf } from './routes.js';
 import { createBrain, REASONS } from './brain.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -41,7 +41,7 @@ const KEYS = Object.freeze({ run: ['vertical', 'persona', 'mode', 'brain', 'said
 // lab opens the product's page and does not compute the outcome) or computed by the engine. `labInputs` are the lab-invented numbers and events fed to the engine (empty for most).
 // `route` says where the use case runs (data/handoff.json): Here, Here + go deeper, Hand off (another standalone app) or Guide.
 // `realGate`: whether full Real runs this use case (realGate.js), or the fixed reason it stays Mock in Real mode.
-const view = (uc, cast, a2a) => ({ ...uc, tool: uc.primaryTool ? toolFor(cast, uc.primaryTool) : null, live: liveNote(uc), guided: !isFlow(uc), labInputs: { ...situationOf(uc.id) }, route: { ...routeOf(uc.id) }, realGate: realGate(uc, cast, a2a) });
+const view = (catalogUc, cast, a2a, vertical) => { const uc = localize(catalogUc, vertical); return { ...uc, tool: uc.primaryTool ? toolFor(cast, uc.primaryTool) : null, live: liveNote(uc), guided: !isFlow(uc), labInputs: { ...situationOf(uc.id, vertical) }, route: { ...routeOf(uc.id) }, realGate: realGate(uc, cast, a2a) }; };
 
 export const REAL_LABELS = {
   full: 'Real: sign-in (pi.flow), agent token, token exchange and the Agent Gateway',
@@ -190,7 +190,7 @@ export function createApp({
     if (track !== undefined && !(typeof track === 'string' && Object.hasOwn(TRACKS, track))) return res.status(400).json({ error: 'bad_track', detail: 'track is not one of the eight tracks' });
     const cast = loadCast(configFile, isFullVertical(v) ? v : DEFAULT_VERTICAL);
     const tracks = Object.keys(TRACKS).filter((t) => track === undefined || t === track).map((t) => {
-      const items = MANIFEST.usecases.filter((u) => u.track === t).map((u) => view(u, cast, a2aOpts(v)));
+      const items = MANIFEST.usecases.filter((u) => u.track === t).map((u) => view(u, cast, a2aOpts(v), isFullVertical(v) ? v : DEFAULT_VERTICAL));
       return { track: t, count: items.length, usecases: items };
     });
     res.json({ schema: 'appfire-agent-governance-usecases/1', vertical: v, pack: isFullVertical(v) ? 'full' : 'stub', total: tracks.reduce((n, t) => n + t.count, 0), source: MANIFEST.source, meta: MANIFEST.meta, tracks });
@@ -228,7 +228,7 @@ export function createApp({
     const uc = findUseCase(req.params.id);
     if (!uc) return res.status(404).json({ error: 'unknown_use_case' });
     const v = verticalOf(req.query.vertical, res); if (!v) return;
-    res.json({ vertical: v, usecase: view(uc, loadCast(configFile, isFullVertical(v) ? v : DEFAULT_VERTICAL), a2aOpts(v)) });
+    res.json({ vertical: v, usecase: view(uc, loadCast(configFile, isFullVertical(v) ? v : DEFAULT_VERTICAL), a2aOpts(v), isFullVertical(v) ? v : DEFAULT_VERTICAL) });
   });
 
   // The Sign in dialog (full Real). GET: whether sign-in is available, who is signed in, and the username to prefill (from AAG_DEMO_USERNAME).

@@ -90,6 +90,20 @@ export const HOT_CLAIMS = ["intent", "amr"];
 
 // The hosted build (mock only): the note beside its disabled Real button.
 export const HOSTED_REAL_NOTE = "Mock only on the hosted copy. Run the lab locally for Real.";
+// The vertical the page opens on (owner, 2026-11-16: Appfire's own industry). The server's default (cast.js DEFAULT_VERTICAL) is the same id; the picker starts here.
+export const DEFAULT_VERTICAL = "software";
+// Real runs call the SE gateway, which serves the banking, healthcare and retail tools and none for the software vertical (owner, 2026-11-16): one plain line.
+// MOCK_ONLY_VERTICALS are the full packs with no tool on the gateway (server: the pack's `castMockOnly`); the note shows beside them only.
+export const MOCK_ONLY_VERTICALS = ["software"];
+export const REAL_VERTICAL_NOTE = "Real runs need the Banking, Healthcare or Retail vertical today: the SE gateway serves banking, healthcare and retail tools only, so Software runs on the labelled mock engine.";
+
+// Vertical names for prose. "sporting-goods" is "Sporting goods"; the full packs are the ones the server lists with pack "full", so a sentence that names them
+// never goes stale when a pack is added.
+export const verticalName = (id) => String(id || "").replace(/-/g, " ").replace(/^./, (c) => c.toUpperCase());
+export const joinOr = (names) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`);
+export const fullPackNames = (verticals) => (verticals || []).filter((v) => v.pack === "full").map((v) => verticalName(v.id));
+// "Pick Software, Banking, Healthcare or Retail", from the loaded list; before it loads, a generic line.
+export const pickFullPack = (verticals) => { const n = fullPackNames(verticals); return n.length ? `Pick ${joinOr(n)}` : "Pick one of the full-pack verticals"; };
 
 // The hop the evidence opens on after a run: the one that decided or stopped it, else none (the visitor clicks).
 export const focusHop = (run) => (run?.hops || []).find((h) => h.decision || (h.verdict && h.verdict !== "ok" && h.verdict !== "skip"))?.n ?? null;

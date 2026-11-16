@@ -32,7 +32,7 @@ test('prototype keys are refused at every level: as ids, vertical, persona, mode
     }
     const raw = await fetch(`${url}/api/run/UC1`, { method: 'POST', headers: { 'content-type': 'application/json', origin: url }, body: '{"__proto__":{"vertical":"retail"},"constructor":{"prototype":{"x":1}}}' });
     assert.equal(raw.status, 400); assert.equal(({}).vertical, undefined, 'no pollution');
-    const ok = await run(url, 'UC1'); assert.equal(ok.body.run.vertical, 'banking');
+    const ok = await run(url, 'UC1'); assert.equal(ok.body.run.vertical, 'software', 'an absent vertical is the default (the Appfire Work Suite)');
   });
 });
 

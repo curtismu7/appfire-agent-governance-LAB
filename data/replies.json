@@ -16,6 +16,11 @@
    "common": { "defaultAmount": 85, "fee": "$12.00" },
    "standard": { "orderNo": "#48213", "order1": "#48213, running shoes for $129.00, shipped November 6", "order2": "#48190, a rain jacket for $89.00, delivered", "order3": "#48102, two pairs of socks for $18.00, delivered", "giftCard": "$75.00", "storeCredit": "$320.00", "orderCount": "42", "cardLast4": "7730" },
    "premium": { "orderNo": "#51877", "order1": "#51877, a road bike helmet for $149.00, shipped November 7", "order2": "#51802, a duffel bag for $96.00, delivered", "order3": "#51760, a water bottle for $24.00, delivered", "giftCard": "$150.00", "storeCredit": "$1,240.00", "orderCount": "118", "cardLast4": "3318" }
+  },
+  "software": {
+   "common": { "defaultAmount": 25, "project": "Billing", "appCount": "12", "topApp": "JSU Automation Suite", "deployRelease": "4.18.2", "deployEnv": "production", "deployTime": "10:42 am", "checks": "126", "release": "4.18", "deployDay": "Thursday", "requestId": "ADM-231" },
+   "standard": { "openIssues": "7", "dueSoon": "2", "topIssue": "PLAT-412, Fix login timeout on the billing page", "members": "14", "admins": "2", "deployKeys": "3", "releaseIssues": "38", "mergedPrs": "31", "blockers": "2", "scanFindings": "9", "scanHigh": "1", "scanDeps": "212" },
+   "premium": { "openIssues": "12", "dueSoon": "4", "topIssue": "PLAT-377, Upgrade the build runner image", "members": "22", "admins": "4", "deployKeys": "6", "releaseIssues": "52", "mergedPrs": "44", "blockers": "1", "scanFindings": "4", "scanHigh": "0", "scanDeps": "318" }
   }
  },
  "replies": {
@@ -50,15 +55,30 @@
    "sensitive_order_history": "Your order history has {{orderCount}} orders since 2023, and the card on file ends {{cardLast4}}. Full card numbers stay masked in chat.",
    "get_branch_hours": "The nearest store, Downtown, is open 10 am to 9 pm every day.",
    "request_fee_waiver": "Done: the {{fee}} restocking fee on order {{orderNo}} is waived."
+  },
+  "software": {
+   "get_my_issues": "You have {{openIssues}} open issues assigned to you, {{dueSoon}} due this week; the top one is {{topIssue}}.",
+   "bulk_update_issues": "Done: {{amount}} in the {{project}} project moved to Done.",
+   "get_project_security_settings": "The {{project}} project is restricted: {{members}} members, {{admins}} admins and {{deployKeys}} deploy keys that stay masked here. Full details are in project settings.",
+   "get_release_summary": "Release {{release}} has {{releaseIssues}} issues, {{mergedPrs}} merged pull requests and {{blockers}} open blockers, and it is on track for {{deployDay}}'s deployment.",
+   "list_marketplace_apps": "I found {{appCount}} public Marketplace apps for Jira Cloud; the closest match for workflow automation is {{topApp}}.",
+   "get_deployment_status": "Your last deployment, release {{deployRelease}} to {{deployEnv}}, finished at {{deployTime}} with all {{checks}} checks green, and no rollback is pending.",
+   "request_admin_access": "I've filed request {{requestId}} for site admin access on your Jira site. I can't grant it myself; a Jira admin will review it.",
+   "scan_repository": "The code scanner checked {{scanDeps}} dependencies in the {{repo}} repository and found {{scanFindings}} findings, {{scanHigh}} of them high severity.",
+   "brave_news_search": "I found three recent pages on \"{{query}}\"; the newest one is from this morning.",
+   "code_search": "I found 3 matches in the code base; the closest one is in the billing service.",
+   "redeem_miles": "Done: 25,000 points redeemed for a 12-month Marketplace app licence.",
+   "book_airline_flight": "Booked: your trip to the Boston team offsite leaves Friday at 8:15 am, and the confirmation code is LAB7Q2."
   }
  },
  "proposals": {
   "banking": { "create_transfer": "I'm ready to move {{amount}} from checking to savings." },
   "healthcare": { "pay_bill": "I'm ready to pay {{amount}} toward your patient bill." },
-  "retail": { "checkout": "I'm ready to check out {{amount}} with store credit." }
+  "retail": { "checkout": "I'm ready to check out {{amount}} with store credit." },
+  "software": { "bulk_update_issues": "I'm ready to move {{amount}} in the {{project}} project to Done." }
  },
  "fallback": "Done: I checked your {{castAsset}} and everything is in order.",
  "proposalFallback": "I have this request ready to go.",
  "probeDenied": "A different agent then tried the same call for you and was refused, so it got nothing.",
- "defaults": { "state": "your area", "query": "that topic" }
+ "defaults": { "state": "your area", "query": "that topic", "repo": "platform" }
 }

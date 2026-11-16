@@ -2,6 +2,7 @@
 // fixed per vertical and persona (a run repeats exactly). Pure: no clock, no random, no I/O beyond the import. Refusals are not here: their text
 // comes from the run's own refusal hop.
 import { fill } from './cast.js';
+import { countText, unitFor } from './policy.js';
 import REPLIES from '../../data/replies.json' with { type: 'json' };
 
 export { REPLIES };
@@ -9,12 +10,15 @@ const own = (o, k) => (o && typeof o === 'object' && Object.hasOwn(o, k) ? o[k] 
 export const money = (n) => `$${Number(n).toLocaleString('en-US', Number.isInteger(n) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // The values one template is filled with: the cast, the defaults, the vertical's values (persona over common), the tool arguments and the amount.
-export function valuesFor({ cast, vertical, persona, amount, args }) {
+export function valuesFor(input) {
+  const { cast, vertical, persona, amount, args } = input;
   const v = own(REPLIES.values, vertical) || {};
   const base = { ...cast, ...REPLIES.defaults, ...(v.common || {}), ...(own(v, persona) || {}) };
   for (const [k, x] of Object.entries(args || {})) if (typeof x === 'string' || typeof x === 'number') base[k] = String(x);
   const n = typeof amount === 'number' ? amount : base.defaultAmount;
-  base.amount = typeof n === 'number' ? money(n) : 'the amount';
+  // A pack whose amount is a count (software: issues) names its unit; every other pack prints dollars.
+  const unit = unitFor(cast, input.tool);
+  base.amount = typeof n === 'number' ? (unit ? countText(n, unit) : money(n)) : 'the amount';
   return base;
 }
 

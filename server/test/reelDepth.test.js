@@ -109,7 +109,7 @@ test('every flow use case in every full vertical keeps the AI-DEMO2 shape', () =
       assert.deepEqual(validateHop(h, CATALOG, { tokens: 'raw' }), [], `${at} hop ${h.n} ${h.kind}`);
     }
   }
-  assert.equal(runs, 54 * 3);
+  assert.equal(runs, 54 * 4);
 });
 
 test('skip notes never contradict the hops that ran', () => {

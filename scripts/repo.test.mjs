@@ -161,9 +161,9 @@ test('step 2: the Dockerfile builds the web app in its own stage and copies only
   assert.equal((d.match(/^FROM node:26-alpine/gm) || []).length, 2); assert.match(d, /^USER node$/m);
 });
 
-test('review fix: package.json counts ten verticals (three full, seven stubs), not eleven', () => {
+test('package.json counts eleven verticals (four full, seven stubs)', () => {
   const d = JSON.parse(read('package.json')).description;
-  assert.match(d, /ten verticals \(three full packs and seven stubs\)/); assert.ok(!/eleven/i.test(d));
+  assert.match(d, /eleven verticals \(four full packs and seven stubs\)/); assert.ok(!/ten verticals/i.test(d));
 });
 
 test('review fix: the README names the UC28 title change, the guided matchesExpected null, and that a restart frees workspace slots', () => {
@@ -247,4 +247,11 @@ test('owner 2026-11-09: no shipped file reads or points at the retired shared se
   };
   walk(root);
   assert.deepEqual(hits, []);
+});
+
+test('the default vertical is one value in two places: the server (cast.js) and the page (web lib.js)', () => {
+  const server = read('server/src/cast.js').match(/export const DEFAULT_VERTICAL = '([a-z-]+)'/)?.[1];
+  const web = read('web/src/lib.js').match(/export const DEFAULT_VERTICAL = "([a-z-]+)"/)?.[1];
+  assert.ok(server && web, 'both literals are found');
+  assert.equal(web, server);
 });

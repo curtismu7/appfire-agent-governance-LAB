@@ -67,12 +67,15 @@ export async function runChecks({ env = process.env } = {}) {
   const missing = [...steps].filter((s) => !KNOWN_STEPS.includes(s));
   add('steps', missing.length ? 'fail' : 'pass', missing.length ? `evidence steps with no builder: ${missing.join(', ')}` : `${steps.size} distinct evidence steps, each has a mock builder`);
 
+  // Every full pack, so a broken pack fails preflight (the flow count is one pack's: the same use cases are flows in each).
   const wrong = [];
   let flows = 0;
-  for (const uc of MANIFEST.usecases) {
-    const r = runUseCase(uc, { cast: VERTICALS.banking, vertical: 'banking', seed: 'doctor' });
-    if (r.kind === 'flow') flows += 1;
-    if (r.computed && !r.matchesExpected) wrong.push(uc.id);
+  for (const [v, cast] of Object.entries(VERTICALS)) {
+    for (const uc of MANIFEST.usecases) {
+      const r = runUseCase(uc, { cast, vertical: v, seed: 'doctor' });
+      if (v === 'banking' && r.kind === 'flow') flows += 1;
+      if (r.computed && !r.matchesExpected) wrong.push(v === 'banking' ? uc.id : `${uc.id} (${v})`);
+    }
   }
   add('engine', wrong.length ? 'fail' : 'pass', wrong.length ? `use cases whose computed outcome differs from the catalog: ${wrong.slice(0, 6).join(', ')}` : `all 87 run in mock and each of the ${flows} computed ones equals the catalog's outcome; the other ${87 - flows} are guided pages that show the catalog's label and are not checked`);
 

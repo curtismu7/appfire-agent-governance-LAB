@@ -12,7 +12,7 @@ import QuickConfig from "./components/QuickConfig";
 import SetupSidebar, { VerticalSelect } from "./components/SetupSidebar";
 import Rail from "./rail/Rail";
 import { getJson, postJson, resetWorkspace } from "./api";
-import { EXTRAS, HOSTED_REAL_NOTE, focusHop, holdWords, newTraceparent, setUseCaseTitles, titleOfUc } from "./lib";
+import { DEFAULT_VERTICAL, EXTRAS, HOSTED_REAL_NOTE, MOCK_ONLY_VERTICALS, focusHop, holdWords, newTraceparent, setUseCaseTitles, titleOfUc } from "./lib";
 import { matchPrompt, reasoningOf } from "./chat";
 import { isHandoff } from "./handoff";
 import { chooseTab, cleanConfig, loadConfig, saveConfig, setView } from "./quickConfig";
@@ -66,7 +66,7 @@ export default function App() {
   const [liveReason, setLiveReason] = useState(null);
   const [modeMsg, setModeMsg] = useState("");
   const [modeFailed, setModeFailed] = useState(false);
-  const [vertical, setVertical] = useState(resumed?.vertical || "banking");
+  const [vertical, setVertical] = useState(resumed?.vertical || DEFAULT_VERTICAL);
   const [persona, setPersona] = useState(resumed?.persona || "standard");
   const [catalog, setCatalog] = useState(null);
   const [prompts, setPrompts] = useState([]);
@@ -257,7 +257,7 @@ export default function App() {
         : ["HITL_REQUIRED", "STEP_UP", "REAL_HOLD"].includes(run.outcome) ? "mock" : null;
       if (hold) {
         postJson("/api/approval/start", {
-          kind: hold, tool: run.real?.tool || u.primaryTool || null,
+          kind: hold, tool: run.real?.tool || (MOCK_ONLY_VERTICALS.includes(vertical) ? u.tool : null) || u.primaryTool || null, // the pack's own tool name only where its pack is not the catalog's (software); the other three keep the catalog name
           amount: run.real?.tool === "create_transfer" ? 300 : null,
           description: holdWords(run.outcome),
           ...(hold === "real" ? { challengeId: run.challenge } : {}),
@@ -469,13 +469,13 @@ export default function App() {
       <main className="content" id="main" tabIndex={-1}>
         <div id={`panel-${current}`} role="tabpanel" aria-labelledby={extraKey ? "tab-more" : `tab-${current}`}>
           {error && <p className="app-error" role="alert">Could not load the lab ({error}). Is the server running?</p>}
-          {presenter && <AgendaSteps step={agendaStep} onStep={(i) => setAgendaStep(Math.max(0, Math.min(DEMO_GUIDE.length - 1, i)))} onRun={guideRun} onCompare={guideCompare} activeUc={guideRunning} />}
+          {presenter && <AgendaSteps step={agendaStep} onStep={(i) => setAgendaStep(Math.max(0, Math.min(DEMO_GUIDE.length - 1, i)))} onRun={guideRun} onCompare={guideCompare} activeUc={guideRunning} cast={cast} prompts={prompts} />}
           {presenter && sayNotes.length > 0 && (
             <aside className="say" data-testid="presenter-say" aria-label="Talk track">
               {sayNotes.map((t) => <p key={t.id}><strong>{t.title}.</strong> {t.say}</p>)}
             </aside>
           )}
-          {current === "agent" && page === "compare" && <ComparePage key={comparePreset || "first"} vertical={vertical} startPreset={comparePreset} onBack={() => { setComparePreset(null); select("agent"); }} />}
+          {current === "agent" && page === "compare" && <ComparePage key={comparePreset || "first"} vertical={vertical} startPreset={comparePreset} cast={cast} prompts={prompts} onBack={() => { setComparePreset(null); select("agent"); }} />}
           {current === "agent" && page && page !== "compare" && (
             <FullPageEvidence page={page} onPage={select} onBack={() => select("agent")} catalog={catalog} selectedId={selectedId} failed={!catalog && !!error}
               onPickRun={(id) => { pick(id); const u = allUc.find((x) => x.id === id); startRun(u, null, personaFor(u) || persona); }}
@@ -493,7 +493,7 @@ export default function App() {
                 </Rail>
               )}
               <div className="work">
-                <AgentColumn agent={cast.castAgent} brand={cast.castBrand} userId={userId} vertical={vertical} verticalLabel={verticalLabel} stub={stub} prompts={prompts} turns={shownTurns}
+                <AgentColumn agent={cast.castAgent} brand={cast.castBrand} userId={userId} vertical={vertical} verticalLabel={verticalLabel} verticals={verticals} stub={stub} prompts={prompts} turns={shownTurns}
                   status={busy ? "running" : statusOf(lastTurn)} onSay={say} onHop={onHop} onPreview={preview} running={busy}
                   step={presenter ? DEMO_GUIDE[agendaStep] || DEMO_GUIDE[0] : null} onNextStep={() => setAgendaStep((i) => Math.max(0, Math.min(DEMO_GUIDE.length - 1, i + 1)))}
                   instructions={<AgentInstructions config={instrConfig} text={instrEdit} onText={setInstrEdit} mode={mode} />} />
@@ -524,7 +524,7 @@ export default function App() {
         </div>
       </main>
       <SignInDialog isOpen={signOpen} username={signin?.username} onClose={() => { setSignOpen(false); pendingRun.current = null; }} onSignedIn={afterSignIn} />
-      <DemoGuide isOpen={guideOpen} onClose={() => setGuideOpen(false)} onRun={guideRun} onCompare={(s) => { setGuideOpen(false); guideCompare(s); }} activeUc={guideRunning} catalog={catalog} />
+      <DemoGuide isOpen={guideOpen} onClose={() => setGuideOpen(false)} onRun={guideRun} onCompare={(s) => { setGuideOpen(false); guideCompare(s); }} activeUc={guideRunning} catalog={catalog} cast={cast} prompts={prompts} />
       {phoneApproval && <MockPhone approval={phoneApproval} onDecided={onPhoneDecided} onClose={() => {}} />}
     </div>
   );
