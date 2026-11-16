@@ -571,7 +571,7 @@ try {
     fullGw.state.behaviour = 'down';
     await t('run').click();
     await page.waitForFunction(() => document.querySelector('[data-testid="outcome"]')?.textContent === 'REAL_UNREACHABLE', null, { timeout: 20000 });
-    check((await t('turn-answer-text').last().innerText()).includes('SE is down or scaled down'), `${tag}: a 503 says SE is down or scaled down; switch to Mock`);
+    check((await t('turn-answer-text').last().innerText()).includes('answered HTTP 503 and did not complete the call'), `${tag}: a 503 says SE is down or scaled down; switch to Mock`);
     // A use case that cannot run Real (UC2, agent-to-agent) runs on the labelled mock engine inside Real mode: the gateway is not called, every hop is MOCK, and the run says why.
     const gwFallback = fullGw.seen.length;
     await t('search').fill('UC2'); await page.locator('[data-testid="uc-UC2"]').click(); await t('search').fill('');

@@ -120,7 +120,7 @@ test('error mapping: 403 DENY with the audit trail, 401 token problem with WWW-A
     ['deny', 'REAL_DENY', 'Authorize', /denied this request \(HTTP 403.*decision DENY/],
     ['token', 'REAL_TOKEN_PROBLEM', 'Gateway', /HTTP 401.*invalid_token/],
     ['hold', 'REAL_HOLD', 'Authorize', null],
-    ['down', 'REAL_UNREACHABLE', 'Gateway', /SE is down or scaled down/],
+    ['down', 'REAL_UNREACHABLE', 'Gateway', /answered HTTP 503 and did not complete the call/],
     ['tool-error', 'REAL_TOOL_ERROR', 'Agent', /answered with an error: fake: the account was not found/],
     ['no-tool', 'REAL_NOT_LISTED', 'Gateway', /does not list the tool get_account_balance/],
   ];
@@ -153,7 +153,7 @@ test('a gateway that does not answer at all (connect error) is SE down, with one
     await withServer(async (url) => {
       await toReal(url); await signIn(url);
       const r = await run(url, 'UC1', { vertical: 'banking' });
-      assert.equal(r.body.run.outcome, 'REAL_UNREACHABLE'); assert.match(r.body.run.reply.text, /SE is down or scaled down.*did not answer.*Switch to Mock/);
+      assert.equal(r.body.run.outcome, 'REAL_UNREACHABLE'); assert.match(r.body.run.reply.text, /No decision.*could not be reached: the connection failed before any response.*Switch to Mock/);
     }, { env: ENV, real });
   } finally { await p1.close(); }
 });
@@ -692,3 +692,41 @@ test('A2A Real: in a vertical other than the one the settings name, UC2 stays mo
     assert.equal(gw.seen.length, 0);
   }, { settings: a2aSettings() });
 });
+
+// ---- "no response" is not a malformed request (owner 2026-11-16): the gateway's no-decision answers are told apart and shown whole ---------------------------
+test('a gateway 5xx on tools/call is NO DECISION (not DENIED): the hop says it answered HTTP 502 with its own text, the raw answer is shown, and nothing claims SE is down', async () => {
+  await withFull(async (url) => {
+    await toReal(url); await signIn(url);
+    const r = await run(url, 'UC1', { vertical: 'banking' });
+    assert.equal(r.status, 200); const x = r.body.run;
+    assert.equal(x.outcome, 'REAL_UNREACHABLE');
+    assert.match(x.reply.text, /^No decision: the Agent Gateway answered HTTP 502 and did not complete the call.*unable to get a decision from Authorize/);
+    assert.doesNotMatch(x.reply.text, /SE is down/);
+    const az = x.hops.find((h) => h.kind === 'authorize-decision');
+    assert.match(az.label, /NO DECISION/); assert.equal(az.verdict, 'error'); assert.equal(az.fact, 'no decision');
+    assert.match(JSON.stringify(az.response), /decision request was malformed/, 'the gateway\'s own text is on the hop');
+    const tool = x.hops.find((h) => h.kind === 'tool-refused');
+    assert.equal(tool.verdict, 'error'); assert.match(JSON.stringify(tool.response.calls.at(-1).body), /decision request was malformed/);
+    assert.ok(!x.hops.some((h) => h.verdict === 'deny'), 'nothing is marked denied: there was no decision');
+  }, { gateway: 'authz-502' });
+});
+
+test('no HTTP response at all is a timeout or a failed connection, said as such: tools/call waits 30 s, and the hop never says denied', async () => {
+  const p1 = await startFakePingOne({}); const gw = await startFakeGateway({ isDelegated: (t) => p1.issued.delegated.has(t) });
+  const seen = [];
+  const gatewayFetch = (u, init) => { const m = JSON.parse(init.body).method; seen.push(m); return m === 'tools/call' ? Promise.reject(Object.assign(new Error('aborted'), { name: 'TimeoutError' })) : fetch(u, init); };
+  const real = createReal({ config: realConfig(fullSettingsFor(gw.url, {}), { AAG_LIVE_TEST_BASE: p1.base }), missing: [], wanted: true, gatewayFetch });
+  try {
+    await withServer(async (url) => {
+      await toReal(url); await signIn(url);
+      const x = (await run(url, 'UC1', { vertical: 'banking' })).body.run;
+      assert.equal(x.outcome, 'REAL_UNREACHABLE');
+      assert.match(x.reply.text, /sent no HTTP response within 30 s, so the lab stopped waiting.*A timeout is not an error answer/);
+      const az = x.hops.find((h) => h.kind === 'authorize-decision');
+      assert.equal(az.verdict, 'error'); assert.match(az.response.no_response, /no HTTP response within 30 s/); assert.equal(az.response.status, 0);
+      assert.ok(!x.hops.some((h) => h.verdict === 'deny'));
+    }, { env: ENV, real });
+  } finally { await p1.close(); await gw.close(); }
+  assert.ok(seen.includes('initialize') && seen.includes('tools/list') && seen.includes('tools/call'));
+});
+

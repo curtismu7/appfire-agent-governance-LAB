@@ -51,8 +51,8 @@ export const touches = (hop, id) => Boolean(hop) && (hop.from === id || hop.to =
 export const isNote = (hop) => hop.from === hop.to;
 
 // Verdict words: every status carries a word, never colour alone. State maps onto the app's .tag[data-state].
-export const VERDICT_WORD = { ok: "done", deny: "denied", held: "held", obligation: "needs approval", skip: "not in this path" };
-export const VERDICT_STATE = { ok: "ok", deny: "bad", held: "warn", obligation: "warn", skip: "info" };
+export const VERDICT_WORD = { ok: "done", deny: "denied", held: "held", obligation: "needs approval", error: "no decision", skip: "not in this path" };
+export const VERDICT_STATE = { ok: "ok", deny: "bad", held: "warn", obligation: "warn", error: "warn", skip: "info" };
 export const verdictWord = (v) => VERDICT_WORD[v || "ok"] || String(v);
 export const verdictState = (v) => VERDICT_STATE[v || "ok"] || "info";
 export const STAGE_STATE = { pass: "ok", fail: "bad", skip: "info" };

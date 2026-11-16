@@ -6,6 +6,8 @@ import { isLoopbackHost } from './safety.js';
 
 export const MCP_PROTOCOL_VERSION = '2025-06-18';
 export const GATEWAY_TIMEOUT_MS = 10_000;
+// tools/call waits longer (owner 2026-11-16): the gateway asks Authorize for its decision before it answers, and a slow evaluation must not look like no answer.
+export const CALL_TIMEOUT_MS = 30_000;
 export const GATEWAY_MAX_BYTES = 256 * 1024;
 // Never sent (lower-case). These let a trusted service assert things a caller must not assert about itself.
 export const TRUSTED_HEADERS = ['x-internal-gateway-secret', 'x-authz-simulated', 'x-act-client-id', 'x-may-act-sub', 'x-demo-force-actor'];
@@ -114,7 +116,7 @@ export function createGatewaySession({ url, token, vertical, nextTraceparent, fe
   const target = new URL(url).toString();
   let sessionId = null; let protocol = null; let seq = 0;
 
-  async function send(method, params, { notification = false } = {}) {
+  async function send(method, params, { notification = false, waitMs = timeoutMs } = {}) {
     const traceparent = nextTraceparent();
     const id = notification ? undefined : ++seq;
     const headers = gatewayHeaders({ token, traceparent, vertical, sessionId, protocol });
@@ -125,9 +127,12 @@ export function createGatewaySession({ url, token, vertical, nextTraceparent, fe
     const sent = { at, sentBody, sessionId, protocol };
     let response; let read = { text: '', truncated: false };
     try {
-      response = await fetchImpl(target, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
+      response = await fetchImpl(target, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(waitMs) });
       read = await readCapped(response, maxBytes);
-    } catch { return { method, traceparent, status: 0, kind: 'unreachable', headers: {}, rpc: null, sentHeaders: Object.keys(headers), ...sent }; }
+    } catch (e) {
+      // No HTTP response at all. Say which: the lab gave up waiting (a timeout) or the connection failed. Neither is a malformed request (that gets a 4xx).
+      return { method, traceparent, status: 0, kind: 'unreachable', timedOut: e?.name === 'TimeoutError' || e?.name === 'AbortError', waitedMs: waitMs, headers: {}, rpc: null, sentHeaders: Object.keys(headers), ...sent };
+    }
     const sid = response.headers.get('mcp-session-id');
     if (method === 'initialize' && sid && /^[\x21-\x7e]{1,200}$/.test(sid)) sessionId = sid;
     const shown = {};
@@ -136,14 +141,14 @@ export function createGatewaySession({ url, token, vertical, nextTraceparent, fe
     if (method === 'initialize' && rpc?.result && typeof rpc.result.protocolVersion === 'string' && /^[0-9-]{4,20}$/.test(rpc.result.protocolVersion)) protocol = rpc.result.protocolVersion;
     // A redirect is never followed: it is shown as an answer of its own ("other").
     // rawText: the answer's text when it was not a JSON object (an error page, say), short; the trace panel shows it as it came.
-    return { method, traceparent, status: response.status, kind: response.status >= 300 && response.status < 400 ? 'other' : classify(response.status), headers: shown, rpc, truncated: read.truncated, rawText: rpc || read.truncated ? null : read.text.slice(0, 2000), sentHeaders: Object.keys(headers), ...sent };
+    return { method, traceparent, status: response.status, kind: response.status >= 300 && response.status < 400 ? 'other' : classify(response.status), headers: shown, rpc, truncated: read.truncated, rawText: read.truncated || (rpc && response.status >= 200 && response.status < 300) ? null : read.text.slice(0, 2000), sentHeaders: Object.keys(headers), ...sent };
   }
 
   return {
     initialize: () => send('initialize', { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {}, clientInfo: { name: 'appfire-agent-governance-lab', version: '1' } }),
     initialized: () => send('notifications/initialized', null, { notification: true }),
     listTools: () => send('tools/list', {}),
-    callTool: (name, args) => send('tools/call', { name, arguments: args }),
+    callTool: (name, args) => send('tools/call', { name, arguments: args }, { waitMs: timeoutMs === GATEWAY_TIMEOUT_MS ? CALL_TIMEOUT_MS : timeoutMs }),
     sessionId: () => sessionId,
   };
 }
