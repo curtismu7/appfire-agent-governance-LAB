@@ -45,6 +45,32 @@
 .card--warn { border-top-color: var(--status-warn); }
 .card--neutral { border-top-color: var(--border); }
 .card h3 { margin: 0 0 4px; font-size: 1rem; }
+/* ===== decision card: the verdict of a run in plain words, above the evidence ===== */
+.decision { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--border); border-left: 6px solid var(--border); border-radius: 10px; background: var(--surface); }
+.decision[data-tone="ok"] { border-left-color: var(--status-ok); }
+.decision[data-tone="warn"] { border-left-color: var(--status-warn); }
+.decision[data-tone="bad"] { border-left-color: var(--danger-text); }
+.decision[data-tone="info"] { border-left-color: var(--status-info); }
+.decision__word { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: 0.03em; }
+.decision[data-tone="ok"] .decision__word { color: var(--status-ok); }
+.decision[data-tone="warn"] .decision__word { color: var(--status-warn); }
+.decision[data-tone="bad"] .decision__word { color: var(--danger-text); }
+.decision[data-tone="info"] .decision__word { color: var(--status-info); }
+.decision__reason { margin: 4px 0 10px; line-height: 1.45; }
+.decision .kv { grid-template-columns: minmax(10rem, max-content) minmax(0, 1fr); font-size: 14px; }
+@media (max-width: 600px) { .decision .kv { grid-template-columns: 1fr; } }
+.app[data-presenter] .decision__word { font-size: 2.25rem; }
+
+/* ===== the walkthrough bar (presenter mode): seven steps, the current one's words and Run buttons ===== */
+.agenda { margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--border); border-top: 4px solid var(--accent); border-radius: 10px; background: var(--surface); }
+.agenda__pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+.agenda__pill { padding: 4px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; cursor: pointer; }
+.agenda__pill[aria-current="step"] { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.agenda__n { font-weight: 700; }
+.agenda__title { margin: 0 0 4px; font-weight: 700; }
+.agenda__say { margin: 0 0 8px; line-height: 1.5; }
+.agenda__run { display: flex; flex-wrap: wrap; gap: 8px; }
+
 .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: 0.75rem; margin: 0; padding: 0; list-style: none; }
 .card-grid > * { min-width: 0; }
 .kv { display: grid; grid-template-columns: minmax(5rem, max-content) minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 13px; }

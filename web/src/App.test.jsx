@@ -675,3 +675,69 @@ describe("fix pass 2026-11-01", () => {
     expect(await screen.findByTestId("uc-UC21")).toBeTruthy();
   });
 });
+
+describe("decision card and the session walkthrough (agenda)", () => {
+  const answer = (over) => () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true, run: { ...runBody().run, ...over } }) });
+
+  test("a run shows the decision card first in the evidence column: ALLOWED for a permit, with the five audit facts", async () => {
+    await boot();
+    const u = await pick("UC1");
+    await runIt(u);
+    const card = await screen.findByTestId("decision-card");
+    expect(card.getAttribute("data-verdict")).toBe("allowed");
+    expect(screen.getByTestId("decision-word").textContent).toBe("ALLOWED");
+    expect(screen.getByTestId("decision-fields").querySelectorAll("dt")).toHaveLength(5);
+    expect(card.compareDocumentPosition(screen.getByTestId("hop-sources")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test("a denied run says DENIED and that nothing was dispatched; a guided run says it decided nothing", async () => {
+    await boot({ runAnswer: answer({ outcome: "DENY", matchesExpected: false }) });
+    const u = await pick("UC1");
+    await runIt(u);
+    expect((await screen.findByTestId("decision-word")).textContent).toBe("DENIED");
+    expect(screen.getByTestId("decision-reason").textContent).toMatch(/Nothing was dispatched to the tool/);
+    cleanup(); vi.unstubAllGlobals();
+    await boot({ runAnswer: answer({ kind: "guided", computed: false, matchesExpected: null, outcome: "PERMIT" }) });
+    const u2 = await pick("UC1");
+    await runIt(u2);
+    expect((await screen.findByTestId("decision-word")).textContent).toBe("GUIDED");
+  });
+
+  test("an escalated run says ESCALATED", async () => {
+    await boot({ runAnswer: answer({ outcome: "STEP_UP", matchesExpected: true }) });
+    const u = await pick("UC1");
+    await runIt(u);
+    expect((await screen.findByTestId("decision-word")).textContent).toBe("ESCALATED");
+  });
+
+  test("Presenter mode shows the seven-step walkthrough bar; a pill picks the step; its Run button starts that use case; leaving presenter mode hides it", async () => {
+    await boot();
+    expect(screen.queryByTestId("agenda-steps")).toBeNull();
+    const u = userEvent.setup();
+    await u.keyboard("p");
+    const bar = screen.getByTestId("agenda-steps");
+    expect(bar.querySelectorAll(".agenda__pill")).toHaveLength(7);
+    expect(screen.getByTestId("agenda-pill-start").getAttribute("aria-current")).toBe("step");
+    await u.click(screen.getByTestId("agenda-pill-escalate"));
+    expect(screen.getByTestId("agenda-pill-escalate").getAttribute("aria-current")).toBe("step");
+    expect(screen.getByTestId("agenda-now").textContent).toMatch(/denied, constrained or sent for approval/);
+    expect(["UC7", "UC8", "UC6", "UC13"].every((id) => screen.getByTestId(`agenda-run-${id}`))).toBe(true);
+    await u.click(screen.getByTestId("agenda-run-UC7"));
+    await waitFor(() => expect(api.calls.some((c) => c.path === "/api/run/UC7" && c.method === "POST")).toBe(true));
+    await u.click(screen.getByTestId("agenda-pill-audit"));
+    expect(screen.getByTestId("agenda-next").disabled).toBe(true);
+    await u.keyboard("{Escape}");
+    expect(screen.queryByTestId("agenda-steps")).toBeNull();
+  });
+
+  test("the demo guide follows the agenda: seven steps, one Run button per use case, no mention of the old brief", async () => {
+    await boot();
+    const u = userEvent.setup();
+    await u.click(screen.getByTestId("help-link"));
+    const guide = await screen.findByTestId("demo-guide");
+    expect(guide.querySelectorAll(".guide__step")).toHaveLength(7);
+    expect(screen.getByTestId("guide-intro").textContent).toMatch(/session agenda/);
+    expect(guide.textContent).not.toMatch(/Doug|Eight steps/);
+    expect(screen.getByTestId("guide-run-escalate-UC13")).toBeTruthy();
+  });
+});

@@ -25,6 +25,6 @@ export function buildDiagram(cast, name = DIAGRAM_NAMES[0]) {
     name: d.id, title: d.title, intro: d.lede, groups: d.groups,
     nodes: d.nodes.map((n) => ({ id: n.id, label: n.label, kind: n.group, x: n.x, y: n.y })),
     edges: d.edges.map((e, i) => ({ n: i, source: e.source, target: e.target, label: e.label || '' })),
-    steps: d.steps.map((s) => { const e = d.edges[s.edges[0]]; return { from: e.source, to: e.target, label: s.title, say: s.what, hop: s.hop, edge: s.edges[0] }; }),
+    steps: d.steps.map((s) => { const e = d.edges[s.edges[0]]; return { from: e.source, to: e.target, label: s.title, say: s.what, hop: s.hop, edge: s.edges[0], dashed: e.dashed === true }; }),
   };
 }

@@ -2,7 +2,7 @@
   "schema": "diagram-studio/1",
   "id": "delegation-chain",
   "title": "Delegation: from sign-in to a dispatched tool call",
-  "lede": "The customer signs in (mock), consents, and the BFF exchanges the user token and the agent token for a delegated token whose act claim names the agent. The gateway checks it, Authorize decides, and only then does the tool run. Simulated: every token is a labelled MOCK.",
+  "lede": "The customer signs in (mock), consents, and the BFF exchanges the user token and the agent token for a delegated token whose act claim names the agent. The gateway checks it, Authorize decides, and only then does the tool run. Simulated: every token is a labelled MOCK. HIVE, Appfire's own platform, is drawn dashed: its side is represented, not run.",
   "groups": {
     "people": {
       "label": "Customer side",
@@ -18,6 +18,10 @@
     },
     "tool": {
       "label": "Tools",
+      "color": "grey"
+    },
+    "appfire": {
+      "label": "Appfire (represented, not called)",
       "color": "grey"
     }
   },
@@ -63,6 +67,13 @@
       "group": "tool",
       "x": 500,
       "y": 600
+    },
+    {
+      "id": "hive",
+      "label": "HIVE: Appfire's back-end policy (represented, not called)",
+      "group": "appfire",
+      "x": 1000,
+      "y": 600
     }
   ],
   "edges": [
@@ -95,6 +106,12 @@
       "source": "gw",
       "target": "mcp",
       "label": "dispatch, only after a permit"
+    },
+    {
+      "source": "hive",
+      "target": "mcp",
+      "label": "governs which MCP servers may be used (represented, not called)",
+      "dashed": true
     }
   ],
   "steps": [
@@ -144,6 +161,13 @@
       "hop": "tool-dispatched",
       "edges": [
         5
+      ]
+    },
+    {
+      "title": "HIVE (represented, not called)",
+      "what": "HIVE is Appfire's platform. It manages back-end data policy and which MCP servers may be used. The lab never calls it: this dashed arrow only shows where its job sits, beside the tool, behind the gateway.",
+      "edges": [
+        6
       ]
     }
   ]

@@ -21,6 +21,8 @@ import { loadResume, saveResume, takeReturn } from "./resume";
 import ShelfLink from "./components/ShelfLink.jsx";
 import VerifyMark from "./components/VerifyMark.jsx";
 import DemoGuide from "./components/DemoGuide";
+import AgendaSteps from "./components/AgendaSteps";
+import { DEMO_GUIDE } from "./demoGuide";
 import MockPhone from "./components/MockPhone";
 import SignInDialog from "./components/SignInDialog";
 import TopMenu, { applyFontSize } from "./top-menu/TopMenu.jsx";
@@ -94,6 +96,7 @@ export default function App() {
   // demo on other tabs, until you close the dialog itself. select() opens it; the dialog's own close unopens.
   const [talkOpen, setTalkOpen] = useState(false);
   const [guideRunning, setGuideRunning] = useState(null); // the use case a guide step's Run button started
+  const [agendaStep, setAgendaStep] = useState(0); // the walkthrough step shown in presenter mode (demoGuide.js)
   // The mock phone (owner 2026-11-13): opens when a run holds for approval — a REAL_HOLD with the gateway's challenge,
   // or a mock HITL/step-up hold. kind real = the approval is recorded with the SE HITL service and the run is retried
   // with the verified receipt; kind mock = the approval discharges the lab's simulated obligation.
@@ -268,6 +271,8 @@ export default function App() {
   };
   const guideRun = (step) => {
     if (!step?.uc) return;
+    const at = DEMO_GUIDE.findIndex((g) => g.id === step.stepId);
+    if (at >= 0) setAgendaStep(at);
     pick(step.uc);
     if (current !== "agent" || page) select("agent"); // a run started from the guide or the talk track shows in the Agent column
     const u = allUc.find((x) => x.id === step.uc);
@@ -439,6 +444,7 @@ export default function App() {
       <main className="content" id="main" tabIndex={-1}>
         <div id={`panel-${current}`} role="tabpanel" aria-labelledby={extraKey ? "tab-more" : `tab-${current}`}>
           {error && <p className="app-error" role="alert">Could not load the lab ({error}). Is the server running?</p>}
+          {presenter && <AgendaSteps step={agendaStep} onStep={(i) => setAgendaStep(Math.max(0, Math.min(DEMO_GUIDE.length - 1, i)))} onRun={guideRun} activeUc={guideRunning} />}
           {presenter && story && sayIds.length > 0 && (
             <aside className="say" data-testid="presenter-say" aria-label="Talk track">
               {story.talkTrack.filter((t) => sayIds.includes(t.id)).map((t) => <p key={t.id}><strong>{t.title}.</strong> {t.say}</p>)}
