@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Verification mark in the header, 2026-11-15: the shared `VerifyMark` (vendored byte for byte from AI-DEMO-Standalone `shared/verify-mark`, pinned by `VerifyMark.sha256` / `VerifyMark.css.sha256` and `web/src/verify-mark.pin.test.js`) shows this lab's own Verified / In progress mark from the demo shelf, inside the top menu beside the Shelf link (so it keeps its own pill and stays readable on the dark shell bar in both themes). It makes the same `GET /api/shelf` call the Shelf link would, with the `x-workspace` header every other call carries, finds the entry `appfire-agent-governance-lab`, and shows nothing when the lab is opened on its own port (its `/api/shelf` has only `{ shelfUrl }`), when the shelf has no mark for it, or when the shelf is unreachable. Tests: `web/src/verify-mark-header.test.jsx`.
+
 ## 0.1.0 (local, not pushed)
 
 - Step 1: manifest of the 87 use cases, mock engine, Express API, workspaces, netguard, doctor, reset, talk track, content pack, Docker, CI.

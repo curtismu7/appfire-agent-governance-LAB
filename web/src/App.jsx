@@ -19,6 +19,7 @@ import { chooseTab, cleanConfig, loadConfig, saveConfig, setView } from "./quick
 import { workspaceId } from "./workspace";
 import { loadResume, saveResume, takeReturn } from "./resume";
 import ShelfLink from "./components/ShelfLink.jsx";
+import VerifyMark from "./components/VerifyMark.jsx";
 import DemoGuide from "./components/DemoGuide";
 import MockPhone from "./components/MockPhone";
 import SignInDialog from "./components/SignInDialog";
@@ -421,6 +422,7 @@ export default function App() {
             extra={<button type="button" aria-expanded={qcOpen} aria-controls={qcOpen && current === "agent" && !page ? "quick-config" : undefined} onClick={() => { setQcOpen((v) => !v); if (page || current !== "agent") select("agent"); }} data-testid="qc-open">Quick Config</button>}
           >
             <ShelfLink url={info?.shelfUrl} headers={() => ({ "x-workspace": workspaceId() })} />
+            <VerifyMark id="appfire-agent-governance-lab" headers={() => ({ "x-workspace": workspaceId() })} />
           </TopMenu>
           {hostedOnly && <span className="seg__note" id="real-hosted-note" data-testid="real-hosted-note">{HOSTED_REAL_NOTE}</span>}
           {/* rule 19 (2026-11-03): the conformance gate greps for a mode-real testid in the UI; this hidden marker aliases the Real button. */}
