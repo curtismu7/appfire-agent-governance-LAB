@@ -8,7 +8,7 @@ import { exchangesOf, openByDefault, tokenSummary } from "../exchanges";
 // The calls of a gateway step, one card each (owner, 2026-11-16: the generic Form view nested a box per item and repeated the whole token and every
 // header on every call). A card's line says what was asked and what came back; the detail opens on a click. The token is one chip, collapsed: what it
 // says is shown on a click, the whole token under that. A header the same as the call before is stated once; an empty argument list has no row.
-// Raw JSON of the call stays one click away, so nothing is hidden. Reads the hop only; decides nothing.
+// The call's raw JSON is the shared Form | JSON pane (Rule 24), open under every opened card (owner, 2026-11-16: the pane must be on the page, not behind a click). Reads the hop only; decides nothing.
 const flip = (set, n) => { const s = new Set(set); if (s.has(n)) s.delete(n); else s.add(n); return s; };
 const CLAIM_ROWS = [["sub", (c) => c.sub], ["act.sub", (c) => c.act?.sub], ["aud", (c) => c.aud], ["scope", (c) => c.scope], ["client_id", (c) => c.client_id]];
 const show = (v) => (Array.isArray(v) ? v.join(" ") : v);
@@ -62,7 +62,7 @@ function Detail({ e, tokOpen, onTok }) {
         <h5 className="xch__h">Response{e.status !== null ? ` · ${e.status}` : ""}</h5>
         <div className="xch__kv"><span className="xch__muted">Result</span><span>{visible(e.result)}</span></div>
         {e.items.length > 0 && <div className="xch__kv"><span className="xch__muted">{e.items.length > 3 ? "Listed" : "Items"}</span><span className="xch__items">{e.items.map((i) => <span key={i} className="xch__chip xch__mono">{visible(i)}</span>)}</span></div>}
-        <details className="xch__more">
+        <details className="xch__more" open>
           <summary>Raw JSON</summary>
           <Json value={e.raw} label={`Call ${e.n} raw`} hot={HOT_CALL} />
         </details>
