@@ -369,6 +369,26 @@ export function createApp({
       const requested = body.mode === undefined ? workspaces.peek(id).mode : modeOf(body.mode);
       if (!requested) return res.status(400).json({ error: 'bad_mode', detail: 'mode must be mock or live' });
       if (!isFullVertical(vertical)) return res.status(501).json({ error: 'vertical_stub', detail: 'this vertical is a data stub: it has a name and no pack yet' });
+      // The mock engine's run. `gate` is set when this is a Real-mode request for a use case that cannot run Real: it runs here, labelled.
+      const runMock = async (gate) => {
+        const why = mockSignInRefusal(mockCtx(req));
+        if (why) {
+          // A use case that cannot run Real is run on the mock engine instead (owner 2026-11-16); if the mock engine is not available here, say so.
+          if (gate) return res.status(403).json({ error: 'mock_in_real_refused', detail: `${uc.id} cannot run Real (${gate.reason}) and the mock engine is not available here to run it instead: ${why}`, live: liveNote(uc) });
+          return res.status(403).json({ error: 'mock_signin_refused', detail: why });
+        }
+        const out = await workspaces.write(id, (s) => {
+          if (s.runs.length >= MAX_RUNS) throw refuse('workspace_full', `this workspace already holds ${MAX_RUNS} runs; Reset it to continue`, 409);
+          const run = withSource(runUseCase(uc, { cast: loadCast(configFile, vertical), vertical, persona: body.persona, brain: body.brain, said: body.said === undefined ? undefined : cleanFree(body.said, 400), instructions: body.instructions === undefined ? undefined : cleanFree(body.instructions, MAX_INSTRUCTIONS), traceparent: parseTraceparent(req.headers.traceparent) ? req.headers.traceparent : randomTraceparent(), seed: 'run' }));
+          // Run in Real mode on the mock engine: the run says why (the same realGate the picker shows), and every hop is already labelled MOCK.
+          if (gate) { run.realGate = { real: false, reason: gate.reason }; run.live = liveNote(uc); }
+          s.seq += 1;
+          s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: run.persona, outcome: run.outcome, matchesExpected: run.matchesExpected, traceId: run.traceId });
+          return { seq: s.seq, run };
+        });
+        res.set('traceparent', out.run.traceparent);
+        return res.json({ ok: true, workspace: id, seq: out.seq, run: out.run });
+      };
       if (requested === 'live') {
         const why = liveRefusal(realCtx(req));
         if (why) return res.status(403).json({ error: 'live_not_allowed', detail: why, live: liveNote(uc) });
@@ -380,9 +400,9 @@ export function createApp({
         if (level === 'full') {
           const gate = realGate(uc, cast);
           if (!gate.real) {
-            // Owner 2026-11-13: in Real mode nothing runs Mock. A use case that cannot run Real is refused, with the
-            // fixed reason and the way out (switch that run to Mock). The mock engine never silently substitutes.
-            return res.status(403).json({ error: 'mock_in_real_refused', detail: `Real mode runs real only: ${uc.id} cannot run Real (${gate.reason}). Switch the lab to Mock to run it, or pick a Real use case (the help lists them).`, live: liveNote(uc) });
+            // Owner 2026-11-16 (reversing 2026-11-13): a use case that cannot run Real runs on the labelled mock engine instead. Every hop says MOCK and
+            // the run carries the reason (the same one the picker shows), so it is never mistaken for a real run.
+            return await runMock(gate);
           }
           const session = real.session(id);
           if (!session) return res.status(401).json({ error: 'sign_in_required', detail: 'Sign in first: Real runs as you. Use Sign in (pi.flow, the username is filled in for you).' });
@@ -407,17 +427,7 @@ export function createApp({
         }
         return recordLive(id, uc, vertical, run, res);
       }
-      const why = mockSignInRefusal(mockCtx(req));
-      if (why) return res.status(403).json({ error: 'mock_signin_refused', detail: why });
-      const out = await workspaces.write(id, (s) => {
-        if (s.runs.length >= MAX_RUNS) throw refuse('workspace_full', `this workspace already holds ${MAX_RUNS} runs; Reset it to continue`, 409);
-        const run = withSource(runUseCase(uc, { cast: loadCast(configFile, vertical), vertical, persona: body.persona, brain: body.brain, said: body.said === undefined ? undefined : cleanFree(body.said, 400), instructions: body.instructions === undefined ? undefined : cleanFree(body.instructions, MAX_INSTRUCTIONS), traceparent: parseTraceparent(req.headers.traceparent) ? req.headers.traceparent : randomTraceparent(), seed: 'run' }));
-        s.seq += 1;
-        s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: run.persona, outcome: run.outcome, matchesExpected: run.matchesExpected, traceId: run.traceId });
-        return { seq: s.seq, run };
-      });
-      res.set('traceparent', out.run.traceparent);
-      return res.json({ ok: true, workspace: id, seq: out.seq, run: out.run });
+      return await runMock(null);
     } catch (e) { return next(e); }
   });
 

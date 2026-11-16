@@ -54,7 +54,7 @@ export default function Turn({ turn, onHop, onPreview, userId, running }) {
           {reply && !reply.approval && (
             <div className="turn__answer" data-testid="turn-answer">
               <p data-testid="turn-answer-text">{visible(reply.text)}</p>
-              <span><Tag state={outcomeState(run.outcome)} testId="turn-outcome">{run.outcome}</Tag>{turn.preview && <> <Tag state="info">preview, mock engine</Tag></>}</span>
+              <span><Tag state={outcomeState(run.outcome)} testId="turn-outcome">{run.outcome}</Tag>{turn.preview && <> <Tag state="info">preview, mock engine</Tag></>}{run.realGate?.real === false && <> <Tag state="info" testId="turn-mock-in-real">mock engine: cannot run Real</Tag></>}</span>
             </div>
           )}
           {run && <button type="button" className="turn__ev" onClick={() => onHop?.(turn, null)} data-testid="turn-evidence">See evidence →</button>}

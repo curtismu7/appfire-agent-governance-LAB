@@ -239,7 +239,7 @@ export default function App() {
     setRunning(false);
     // Real runs as the person: no sign-in yet opens the Sign in dialog, and the run goes again once it succeeds.
     if (res.status === 401 && res.body?.error === "sign_in_required") { pendingRun.current = { u, turn: turn ? { said: turn.said, how: turn.how, source: turn.source } : null, who }; setSignOpen(true); }
-    // Real mode runs real only: a mock-only use case is refused with the reason (owner 2026-11-13).
+    // A use case that cannot run Real runs on the labelled mock engine (owner 2026-11-16); this refusal only happens when the mock engine is not available here.
     if (res.status === 403 && res.body?.error === "mock_in_real_refused") setModeMsg(res.body.detail);
     setResults((r) => ({ ...r, [key]: res }));
     setRunCount((n) => n + 1);
@@ -342,7 +342,7 @@ export default function App() {
     if (res.ok) {
       setMode(res.body.source === "real" ? "live" : "mock");
       setModeMsg(res.body.source !== "real" ? "Mock selected." : realLevel === "full"
-        ? "Real selected. Sign in (pi.flow), then a run calls PingOne (agent token, token exchange) and the Agent Gateway for the use cases SE serves; the others are refused with the reason (Real runs real only — the Demo guide lists both lists)."
+        ? "Real selected. Sign in (pi.flow), then a run calls PingOne (agent token, token exchange) and the Agent Gateway for the use cases SE serves; the others run on the labelled mock engine, and every hop says MOCK (the Demo guide lists both lists)."
         : "Real selected, identity provider only. A run makes two real calls to your PingOne environment (its discovery document and the worker client's token) and runs nothing else.");
       if (res.body.source === "real" && realLevel === "full") loadSignin();
     }

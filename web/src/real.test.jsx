@@ -161,7 +161,20 @@ describe("REAL / MOCK labels and the replies", () => {
     await runIt(u);
     expect(screen.getByTestId("hop-sources-why").textContent).toMatch(/cannot run Real \(agent-to-agent/);
     expect(within(screen.getByTestId("hop-sources")).getAllByTestId("hop-source").every((x) => x.getAttribute("data-source") === "mock")).toBe(true);
-    expect(screen.getByTestId("mock-in-real").textContent).toMatch(/cannot run Real/);
+    expect(screen.getByTestId("mock-in-real").textContent).toMatch(/cannot run Real.*the mock engine ran it: every hop is MOCK/);
+    expect(screen.getByTestId("hop-sources-why").textContent).toMatch(/so the mock engine ran it: every hop below is MOCK/);
+    expect(screen.getByTestId("turn-mock-in-real").textContent).toBe("mock engine: cannot run Real");
     expect(within(screen.getByTestId("hop-sources")).queryByTestId("real-tag")).toBeNull();
+  });
+});
+
+describe("the demo guide's Real help", () => {
+  test("says what runs Real and that the rest run on the labelled mock engine in Real mode, not that they are blocked", async () => {
+    const u = await boot({ signedIn: true });
+    await u.click(screen.getByTestId("help-link"));
+    const help = await screen.findByTestId("guide-real-help");
+    expect(help.textContent).toMatch(/run on the mock engine: every hop says MOCK/);
+    expect(help.textContent).toMatch(/Runs Mock in Real mode/);
+    expect(help.textContent).not.toMatch(/blocked|nothing falls back/i);
   });
 });

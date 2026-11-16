@@ -572,6 +572,14 @@ try {
     await t('run').click();
     await page.waitForFunction(() => document.querySelector('[data-testid="outcome"]')?.textContent === 'REAL_UNREACHABLE', null, { timeout: 20000 });
     check((await t('turn-answer-text').last().innerText()).includes('SE is down or scaled down'), `${tag}: a 503 says SE is down or scaled down; switch to Mock`);
+    // A use case that cannot run Real (UC2, agent-to-agent) runs on the labelled mock engine inside Real mode: the gateway is not called, every hop is MOCK, and the run says why.
+    const gwFallback = fullGw.seen.length;
+    await t('search').fill('UC2'); await page.locator('[data-testid="uc-UC2"]').click(); await t('search').fill('');
+    await t('run').click();
+    await t('mock-in-real').waitFor({ timeout: 20000 });
+    const fsrc = await t('hop-source').evaluateAll((els) => els.map((e) => e.getAttribute('data-source')));
+    check(fullGw.seen.length === gwFallback && fsrc.length > 0 && fsrc.every((x) => x === 'mock' || x === 'not-run'), `${tag}: in Real mode a use case that cannot run Real runs on the mock engine: no gateway call, every hop MOCK (${new Set(fsrc).size} source kinds)`);
+    check(/cannot run Real.*every hop is MOCK/.test(await t('mock-in-real').innerText()), `${tag}: the run says why it cannot run Real and that every hop is MOCK`);
     const seen = fullGw.seen.length;
     await t('mode-select').selectOption('mock'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: mock'));
     await t('run').click();
