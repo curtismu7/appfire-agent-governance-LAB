@@ -3,6 +3,7 @@ import { outcomeState } from "../lib";
 import { routeOf } from "../handoff";
 import { Tag } from "./Bits";
 import Turn from "./Turn";
+import { Spin } from "./Working";
 
 const STATUS = { idle: ["Ready", "info"], running: ["Running", "info"], waiting: ["Waiting for you", "warn"], handoff: ["Ready to hand off", "info"], done: ["Done", "ok"], refused: ["Refused", "bad"] };
 
@@ -108,7 +109,7 @@ export default function AgentColumn({ agent, brand, userId, vertical, verticalLa
       <header className="agentcol__head">
         <span className="avatar avatar--agent" aria-hidden="true">AI</span>
         <p className="agentcol__who"><b>{agent || "agent"}</b> acting for {userId || "the customer"} · {brand || verticalLabel}</p>
-        <Tag state={state} testId="agent-status">{word}</Tag>
+        <Tag state={state} testId="agent-status">{status === "running" && <Spin small />}{word}</Tag>
       </header>
       <div className="agentcol__scroll">
         {turns.length === 0 ? <Starters agent={agent} brand={brand} prompts={prompts} typeAndSend={typeAndSend} stub={stub} /> : (

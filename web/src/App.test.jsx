@@ -589,6 +589,23 @@ describe("fix pass 2026-11-01", () => {
     expect(screen.getByTestId("presenter").getAttribute("aria-pressed")).toBe("true");
   });
 
+  test("while a run is in flight the evidence column and the status pill show it is working, and both clear when it finishes", async () => {
+    let release;
+    await boot({ runAnswer: (id) => new Promise((r) => { release = () => r({ ok: true, status: 200, json: () => Promise.resolve(runBody(id)) }); }) });
+    const u = await pick("UC1");
+    await u.click(screen.getByTestId("run"));
+    const ev = await screen.findByTestId("evidence-running");
+    expect(ev.querySelector(".spin")).not.toBeNull();
+    expect(ev.textContent).toMatch(/Running the use case/);
+    const pill = screen.getByTestId("agent-status");
+    expect(pill.querySelector(".spin")).not.toBeNull();
+    expect(pill.textContent).toBe("Running"); // the pill's words are unchanged: the ring adds no text
+    release();
+    await screen.findByTestId("result");
+    await waitFor(() => expect(screen.queryByTestId("evidence-running")).toBeNull());
+    expect(screen.getByTestId("agent-status").querySelector(".spin")).toBeNull();
+  });
+
   test("keyboard focus stays on the Run button while the run is in flight and after it, and a second press does nothing", async () => {
     let release;
     await boot({ runAnswer: (id) => new Promise((r) => { release = () => r({ ok: true, status: 200, json: () => Promise.resolve(runBody(id)) }); }) });

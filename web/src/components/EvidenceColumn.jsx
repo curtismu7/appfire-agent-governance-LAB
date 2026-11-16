@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import Working from "./Working";
 import SequenceView from "../evidence/SequenceView";
 import MovieReel from "../evidence/MovieReel";
 import StepDetailPanel from "../evidence/StepDetailPanel";
@@ -80,7 +81,7 @@ export function HopSources({ run }) {
 }
 
 // `children`: the selected use case's panel (inputs, persona, Run and the raw result), at the bottom of the column (owner, 2026-11-09).
-export default function EvidenceColumn({ run, selHop, onSelect, config, onTab, onFull, vertical, resetSignal, lastRun, uc, catalog, userId, showHandoff, why, children }) {
+export default function EvidenceColumn({ running, run, selHop, onSelect, config, onTab, onFull, vertical, resetSignal, lastRun, uc, catalog, userId, showHandoff, why, children }) {
   const hops = run?.hops || [];
   const tabs = VIEWS.filter((v) => DIAGRAMS.includes(v) || config.views.tokens === "embedded");
   const tab = tabs.includes(config.tab) && (config.tab === "tokens" || config.views[config.tab] === "embedded") ? config.tab : null;
@@ -93,6 +94,12 @@ export default function EvidenceColumn({ run, selHop, onSelect, config, onTab, o
         <button type="button" onClick={() => onFull("compare")} data-testid="open-compare" title="Two runs side by side, in Mock: what is decided differently">Compare</button>
         <button type="button" onClick={() => onFull("sequence")} data-testid="full-sequence" title="The sequence view on a page of its own">Full page</button>
       </header>
+      {running && (
+        <div className="evcol__running" data-testid="evidence-running">
+          <Working label="Running the use case" />
+          <span className="muted">The sequence and the decision are drawn here when the run finishes.</span>
+        </div>
+      )}
       {showHandoff ? <HandoffSummary uc={uc} catalog={catalog} vertical={vertical} userId={userId} /> : (
         <>
           {run && <DecisionCard run={run} />}

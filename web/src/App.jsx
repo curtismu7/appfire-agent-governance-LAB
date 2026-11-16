@@ -486,7 +486,7 @@ export default function App() {
                     onView={(v, s) => setCfg((c) => setView(c, v, s))} onText={(t) => setCfg((c) => ({ ...c, text: t }))} onPresenter={setPresenter}
                     onReset={() => setCfg(cleanConfig(null))} onClose={() => { setQcOpen(false); document.querySelector('[data-testid="qc-open"]')?.focus(); }} />
                 ) : (
-                  <EvidenceColumn run={evRun} selHop={selHop} onSelect={setSelHop} config={cfg} onTab={(v) => setCfg((c) => chooseTab(c, v))} onFull={select}
+                  <EvidenceColumn running={running} run={evRun} selHop={selHop} onSelect={setSelHop} config={cfg} onTab={(v) => setCfg((c) => chooseTab(c, v))} onFull={select}
                     vertical={vertical} resetSignal={resetSignal} lastRun={last} uc={uc} catalog={catalog} userId={userId} showHandoff={showHandoff} why={why}>
                     {uc && (
                       <details className="ucpanel" open ref={runRef} data-testid="uc-panel">
