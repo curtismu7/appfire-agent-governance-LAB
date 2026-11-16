@@ -71,6 +71,14 @@
 .agenda__title { margin: 0 0 4px; font-weight: 700; }
 .agenda__say { margin: 0 0 8px; line-height: 1.5; }
 .agenda__run { display: flex; flex-wrap: wrap; gap: 8px; }
+.cap { margin: 0 0 10px; padding: 10px 14px; border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 10px; background: var(--surface); }
+.cap__head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 4px; }
+.cap__chip { padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); font-size: 12px; font-weight: 600; }
+.cap__chip[data-state="ok"] { border-color: var(--status-ok); color: var(--status-ok); }
+.cap__chip[data-state="info"] { border-color: var(--status-info); color: var(--status-info); }
+.cap__say { margin: 0 0 4px; font-size: 1.1em; line-height: 1.5; }
+.cap__point { margin: 0 0 8px; color: var(--muted); }
+.cap__nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
 /* ===== risk strip (inside the decision card): which of the four controls this run landed on ===== */
 .risk { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; }
