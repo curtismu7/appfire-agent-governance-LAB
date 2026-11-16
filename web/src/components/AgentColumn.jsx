@@ -3,6 +3,7 @@ import { outcomeState } from "../lib";
 import { routeOf } from "../handoff";
 import { Tag } from "./Bits";
 import Turn from "./Turn";
+import { followNewest } from "../follow";
 import { Spin } from "./Working";
 
 const STATUS = { idle: ["Ready", "info"], running: ["Running", "info"], waiting: ["Waiting for you", "warn"], handoff: ["Ready to hand off", "info"], done: ["Done", "ok"], refused: ["Refused", "bad"] };
@@ -76,16 +77,10 @@ function Starters({ agent, brand, prompts, typeAndSend, stub }) {
 export default function AgentColumn({ agent, brand, userId, vertical, verticalLabel, stub, prompts, turns, status, onSay, onHop, onPreview, running, instructions }) {
   const [text, setText] = useState("");
   const endRef = useRef(null);
-  // Keep the newest reply in view inside the column's own scroller (never scrollIntoView, which would also scroll the page).
+  // Keep the newest reply in view: inside the chat box, and the page too when the (twice as tall) column runs below the window (follow.js).
   useEffect(() => {
     const box = endRef.current?.parentElement;
-    const last = box?.querySelector(".turn:last-child");
-    if (!box || !last || box.scrollHeight <= box.clientHeight) return;
-    let top = last.offsetTop - box.offsetTop - 8;
-    // A hand-off reply taller than the column: keep its card whole in view.
-    const card = last.querySelector('[data-testid="handoff-card"]');
-    if (card) { const b = box.getBoundingClientRect(); const bottom = card.getBoundingClientRect().bottom - b.top + box.scrollTop + 8; top = Math.max(top, bottom - box.clientHeight); }
-    box.scrollTop = Math.max(0, top);
+    followNewest(box, box?.querySelector(".turn:last-child"));
   }, [turns.length, turns[turns.length - 1]?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const [word, state] = STATUS[status] || STATUS.idle;
   const [sending, setSending] = useState(false);
@@ -122,6 +117,8 @@ export default function AgentColumn({ agent, brand, userId, vertical, verticalLa
       <div className="agentcol__foot">
         {instructions}
         <WhatToType prompts={prompts} vertical={vertical} verticalLabel={verticalLabel} stub={stub} typeAndSend={typeAndSend} disabled={running} />
+      </div>
+      <div className="agentcol__compose">
         <form className={`composer${sending ? " composer--sending" : ""}`} onSubmit={send}>
           <label className="sr-only" htmlFor="composer-input">Message the agent</label>
           <input id="composer-input" type="text" value={text} maxLength={400} onChange={(e) => setText(e.target.value)} placeholder={stub ? "No demo pack for this vertical yet" : "Type what a customer would say"} autoComplete="off" data-testid="composer-input" />
