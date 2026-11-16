@@ -178,7 +178,7 @@ try {
       check((await page.evaluate(() => [...document.querySelectorAll('[aria-controls]')].filter((e) => !document.getElementById(e.getAttribute('aria-controls'))).length)) === 0, `${tag}: no aria-controls points at a missing element`);
       await page.keyboard.press('Control+p'); await page.keyboard.press('Meta+p');
       check((await t('presenter').getAttribute('aria-pressed')) === 'false', `${tag}: Ctrl+P and Cmd+P do not toggle presenter mode`);
-      check((await t('run-announce').innerText()).startsWith('UC9 finished: DENY_403'), `${tag}: the live region holds the outcome line only`);
+      check((await t('run-announce').innerText()).startsWith('Group / entitlement check finished: DENY_403'), `${tag}: the live region holds the outcome line only`);
       await pick('UC-LEARN2'); await t('run').click(); await t('guided-note').waitFor();
       check((await t('guided-note').innerText()) === 'guided, not computed' && (await t('matches').count()) === 0, `${tag}: a guided run says guided, not computed`);
       check((await t('gateway-trace').count()) === 0, `${tag}: a guided run reaches no gateway, so no trace panel is drawn`);
@@ -295,8 +295,13 @@ try {
       check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AGENT' && (await lastTurn().getByTestId('turn-answer-text').innerText()) === 'Your checking balance is $4,250.00, and your savings balance is $12,800.00.', `${tag}: UC1 is the message and the agent's answer only, a real sentence with lab-invented amounts`);
       // go deeper and the use case panel are in the evidence column, not the chat (owner 2026-11-09)
       check((await lastTurn().getByTestId('go-deeper').count()) === 0 && (await t('agent-column').getByTestId('uc-panel').count()) === 0 && (await t('evidence-column').getByTestId('go-deeper').innerText()).toLowerCase().includes('go deeper in') && (await t('evidence-column').getByTestId('uc-panel').count()) === 1, `${tag}: go deeper and the use case panel sit in the evidence column, not the reply`);
-      check((await t('evidence-why').innerText()).includes('Matched your words to UC1') && (await t('evidence-count').innerText()).startsWith('UC1 ·'), `${tag}: the reasoning and the hops are in the evidence column`);
+      check((await t('evidence-why').innerText()).includes('Matched your words to “Delegated access (consent only)”') && (await t('evidence-count').innerText()).startsWith('Delegated access (consent only) ·'), `${tag}: the reasoning and the hops are in the evidence column`);
       await t('wtt-UC6').click(); await page.getByTestId('turn').nth(1).getByTestId('turn-answer').waitFor();
+      // Owner 2026-11-16: use-case ids mean nothing in the demo; the page says each use case in words. After two runs, nothing visible (text, tooltips, labels) names one by id.
+      const idsShown = await page.evaluate(() => { const re = /\bUC[-\w.]*\d\w*/; const hit = []; const els = document.body.querySelectorAll('*');
+        for (const e of els) { const r = e.getBoundingClientRect(); if (!r.width && !r.height) continue; const own = [...e.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent).join(' ');
+          for (const v of [own, e.getAttribute('title'), e.getAttribute('aria-label'), e.getAttribute('placeholder')]) if (v && re.test(v)) hit.push(v.trim().slice(0, 60)); } return hit.slice(0, 3); });
+      check(idsShown.length === 0, `${tag}: no use-case id is shown anywhere on the page, only words (${idsShown.join(' | ')})`);
       check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AUTHORIZE' && (await lastTurn().getByTestId('turn-answer-text').innerText()).startsWith('Authorize refused this request (HTTP 403): amount 2500'), `${tag}: UC6 is Authorize's refusal in plain words`);
       await t('wtt-UC1').click(); await page.getByTestId('turn').nth(2).getByTestId('turn-answer').waitFor(); await sleep(300);
       const [side, agent, ev] = [await rect('.setup'), await rect('.agentcol'), await rect('.evcol')];
@@ -372,14 +377,14 @@ try {
       check((await t('agent-status').innerText()) === 'Ready to hand off', `${tag}: the agent status reads Ready to hand off`);
       await t('search').fill('UC2.6'); await t('uc-UC2.6').click(); await t('search').fill(''); await sleep(300);
       v = await visibleCard();
-      check(v.ok && (await page.getByTestId('turn').last().getByTestId('turn-said').innerText()).startsWith('UC2.6'), `${tag}: a hand-off picked in the sidebar answers in the conversation with the card in view`);
+      check(v.ok && (await page.getByTestId('turn').last().getByTestId('turn-said').innerText()).startsWith('A2A generalist mismatch'), `${tag}: a hand-off picked in the sidebar answers in the conversation with the card in view`);
       if (scheme === 'light') await page.screenshot({ path: path.join(shots, `agent-${width}-handoff.png`) });
       check((await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)) <= 0, `${tag}: the agent page does not scroll sideways`);
 
       // resume: the tab leaves for the other app and comes Back with ?returned=: the chat is restored (words and outcomes, no run), a note says so, the query is gone
       const turnsBefore = await page.getByTestId('turn').count();
       await page.goto(`${base}/?returned=a2a-lab&uc=UC2.6`); await t('turn-note').waitFor();
-      check((await page.getByTestId('turn').count()) === turnsBefore && (await t('turn-note').innerText()) === 'Back from a2a-lab (UC2.6)' && (await page.evaluate(() => window.location.search)) === '', `${tag}: Back from a2a-lab restores ${turnsBefore} turns, adds the note and cleans the address bar`);
+      check((await page.getByTestId('turn').count()) === turnsBefore && (await t('turn-note').innerText()) === 'Back from a2a-lab' && (await page.evaluate(() => window.location.search)) === '', `${tag}: Back from a2a-lab restores ${turnsBefore} turns, adds the note and cleans the address bar`);
       check((await t('turn-restored').first().innerText()).includes('run it again') && (await page.getByTestId('turn-tokens').count()) === 0 && !(await page.evaluate(() => Object.values(sessionStorage).join(''))).includes('eyJ'), `${tag}: restored runs say run it again; no token on the page or in sessionStorage`);
 
       await t('full-sequence').click(); await t('page-sequence').waitFor();
@@ -413,8 +418,8 @@ try {
     const a2a = t('extra-a2a');
     await a2a.waitFor();
     const text = async () => a2a.textContent(); // textContent: headings are styled
-    const pageOk = async () => { const x = await text(); return x.includes('Agent to agent') && x.includes('Opened by UC2: A2A delegation') && x.includes('agent-card, delegation and trust hops') && x.includes('PERMIT') && x.includes('Hops for this page') && (await a2a.getByTestId(/^row-\d+$/).count()) === 4; }; // the same Sequence as the Agent page, drawn from the page's four hops only
-    check((await page.evaluate(() => window.location.hash)) === '#page-a2a' && (await pageOk()), `${tag}: the page shows its label, what it is, the outcome and only UC2's four delegation hops`);
+    const pageOk = async () => { const x = await text(); return x.includes('Agent to agent') && x.includes('Opened by “A2A delegation”') && x.includes('agent-card, delegation and trust hops') && x.includes('PERMIT') && x.includes('Hops for this page') && (await a2a.getByTestId(/^row-\d+$/).count()) === 4; }; // the same Sequence as the Agent page, drawn from the page's four hops only
+    check((await page.evaluate(() => window.location.hash)) === '#page-a2a' && (await pageOk()), `${tag}: the page shows its label, what it is, the outcome and only the four delegation hops of “A2A delegation”`);
     // the More menu shows the selected page's whole label (it was cut to "Agent to a"), and the shell bar still fits at 1280 and 375 px
     const moreLabel = () => page.evaluate(() => {
       const sel = document.querySelector('[data-testid="nav-more"]'); const cs = getComputedStyle(sel);

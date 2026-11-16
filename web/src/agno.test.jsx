@@ -129,8 +129,8 @@ describe("What to type and the Scripted brain", () => {
     expect(within(turn).getByTestId("turn-who").textContent).toBe("Agent");
     expect(within(turn).getByTestId("turn-outcome").textContent).toBe("PERMIT");
     // the reasoning, the hops and the tokens are still in the evidence column
-    expect(screen.getByTestId("evidence-why").textContent).toMatch(/Matched your words to UC1 Delegated access/);
-    expect(screen.getByTestId("evidence-count").textContent).toMatch(/UC1 · 4 hops/);
+    expect(screen.getByTestId("evidence-why").textContent).toMatch(/Matched your words to “Delegated access/); expect(screen.getByTestId("evidence-why").textContent).not.toMatch(/\bUC\d/);
+    expect(screen.getByTestId("evidence-count").textContent).toMatch(/t · 4 hops/);
     await u.click(screen.getByTestId("evtab-tokens"));
     expect(screen.getByTestId("evidence-tokens").textContent).toMatch(/user token \(MOCK\)/);
     expect(screen.getByTestId("agent-status").textContent).toBe("Done");
@@ -210,7 +210,7 @@ describe("What to type and the Scripted brain", () => {
     expect(screen.getByTestId("evtab-sequence").getAttribute("aria-pressed")).toBe("false");
     await u.click(screen.getByTestId("turn-evidence"));
     expect(screen.getByTestId("evtab-sequence").getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("evidence-count").textContent).toMatch(/^UC1 · 4 hops/);
+    expect(screen.getByTestId("evidence-count").textContent).toMatch(/^t · 4 hops/);
   });
 
   test("New chat clears the conversation and brings the starter cards back; sessions list this workspace's runs", async () => {
@@ -219,7 +219,7 @@ describe("What to type and the Scripted brain", () => {
     await u.click(screen.getByTestId("wtt-UC1"));
     await screen.findByTestId("turn-answer");
     await waitFor(() => expect(screen.getAllByTestId("session-row")).toHaveLength(1));
-    expect(screen.getByTestId("session-row").textContent).toMatch(/#1 UC1.*PERMIT/);
+    expect(screen.getByTestId("session-row").textContent).toMatch(/#1 Delegated access.*PERMIT/);
     await u.click(screen.getByTestId("new-chat"));
     expect(screen.queryByTestId("turn")).toBeNull();
     expect(screen.getByTestId("starters")).toBeTruthy();
@@ -251,11 +251,11 @@ describe("hand-off and go deeper", () => {
     const u = userEvent.setup();
     await u.click(screen.getByTestId("uc-UC2.6"));
     const turn = screen.getByTestId("turn");
-    expect(within(turn).getByTestId("turn-said").textContent).toBe("UC2.6 A2A generalist mismatch (picked from the list)");
+    expect(within(turn).getByTestId("turn-said").textContent).toBe("A2A generalist mismatch (picked from the list)");
     onlyReply(turn);
     expect(within(turn).getByTestId("turn-handoff-say").textContent).toBe("This is handled in a2a-lab, its own app.");
     const why = screen.getByTestId("handoff-why").textContent;
-    expect(why).toMatch(/UC2\.6 needs several agents or the product's own pages, so it runs in its own app/);
+    expect(why).toMatch(/“A2A generalist mismatch” needs several agents or the product's own pages, so it runs in its own app/);
     expect(why).toMatch(/Its home is a2a-lab \(routing table: named in lab entry\)/);
     expect(screen.getByTestId("agent-status").textContent).toBe("Ready to hand off");
     expect(screen.getAllByTestId("handoff-card")).toHaveLength(1); // in the reply, not repeated in the use case panel
@@ -430,7 +430,7 @@ describe("the llama.cpp brain (Step 2)", () => {
     await screen.findByTestId("turn-answer");
     onlyReply(screen.getByTestId("turn"));
     expect(screen.getByTestId("evidence-why").textContent).toMatch(/llama\.cpp brain unavailable: The local model did not answer\. Is llama\.cpp running\? Used the Scripted brain instead\./);
-    expect(screen.getByTestId("evidence-why").textContent).toMatch(/Matched your words to UC1/);
+    expect(screen.getByTestId("evidence-why").textContent).toMatch(/Matched your words to “/);
   });
 
   test("model down with Routing = LLM only: it says so and nothing runs", async () => {
@@ -514,7 +514,7 @@ describe("Agent to agent page (owner, 2026-11-09: keep it)", () => {
     expect(window.location.hash).toBe("#page-a2a");
     const page = await screen.findByTestId("extra-a2a");
     expect(within(page).getByRole("heading", { level: 2 }).textContent).toBe("Agent to agent");
-    expect(page.textContent).toMatch(/Opened by UC2: A2A delegation/);
+    expect(page.textContent).toMatch(/Opened by “A2A delegation”/);
     expect(page.textContent).toMatch(/agent-card, delegation and trust hops/);
     expect(page.textContent).toMatch(/PERMIT/);
     expect(page.textContent).toMatch(/Hops for this page/); expect(within(page).getAllByTestId(/^row-\d+$/)).toHaveLength(4);
@@ -529,7 +529,7 @@ describe("Agent to agent page (owner, 2026-11-09: keep it)", () => {
     render(<ExtraPage opens="a2a" entry={{ uc, run: { ...runBody("UC2").run, hops } }} />);
     const page = screen.getByTestId("extra-a2a");
     expect(within(page).getByRole("heading", { level: 2 }).textContent).toBe("Agent to agent");
-    expect(page.textContent).toMatch(/Opened by UC2: A2A delegation/);
+    expect(page.textContent).toMatch(/Opened by “A2A delegation”/);
     expect(page.textContent).toMatch(/agent-card, delegation and trust hops/);
     expect(page.textContent).toMatch(/PERMIT/);
     expect(page.textContent).toMatch(/Hops for this page/); expect(within(page).getAllByTestId(/^row-\d+$/)).toHaveLength(2);
@@ -665,7 +665,7 @@ describe("resume after a hand-off", () => {
     expect(within(turns[0]).getByTestId("turn-restored").textContent).toMatch(/From before you left: PERMIT\. The evidence is not kept: run it again to see it\./);
     expect(within(turns[0]).queryByTestId("turn-tokens")).toBeNull();
     expect(within(turns[1]).getByTestId("handoff-card")).toBeTruthy();
-    expect(screen.getByTestId("turn-note").textContent).toBe("Back from a2a-lab (UC2.6)");
+    expect(screen.getByTestId("turn-note").textContent).toBe("Back from a2a-lab");
     expect(window.location.search).toBe("");
     expect(screen.getByTestId("uc-UC2.6").getAttribute("aria-pressed")).toBe("true");
     expect(A.calls.filter((c) => c.method === "POST" && c.path.startsWith("/api/run/"))).toHaveLength(0); // nothing re-ran by itself
@@ -726,7 +726,7 @@ describe("a chat turn is the message and one reply (owner, 2026-11-09)", () => {
     expect(within(turn).getByTestId("turn-outcome").textContent).toBe("PERMIT");
     expect(within(turn).queryByTestId("go-deeper")).toBeNull();
     expect(within(screen.getByTestId("evidence-column")).getByTestId("go-deeper")).toBeTruthy();
-    expect(screen.getByTestId("evidence-count").textContent).toMatch(/^UC1 · 5 hops/);
+    expect(screen.getByTestId("evidence-count").textContent).toMatch(/^t · 5 hops/);
   });
 
   test("DENY (UC6 transfer $2500): the reply is Authorize's refusal in plain words, with the run's own reason and amount", async () => {
@@ -742,7 +742,7 @@ describe("a chat turn is the message and one reply (owner, 2026-11-09)", () => {
     expect(within(turn).getByTestId("turn-answer-text").textContent).toBe("Authorize refused this request (HTTP 403): amount 2500 is in the DENY band (lab-invented threshold 2000). Nothing was sent to the tool.");
     expect(within(turn).getByTestId("turn-outcome").textContent).toBe("DENY");
     expect(screen.getByTestId("agent-status").textContent).toBe("Done");
-    expect(screen.getByTestId("evidence-why").textContent).toMatch(/Matched your words to UC6/);
+    expect(screen.getByTestId("evidence-why").textContent).toMatch(/Matched your words to “/);
   });
 
   test("a gateway refusal (UC5 wrong scope) is labelled Gateway and says why in plain words", async () => {
@@ -811,7 +811,7 @@ describe("a chat turn is the message and one reply (owner, 2026-11-09)", () => {
     const ev = screen.getByTestId("evidence-column");
     const panel = within(ev).getByTestId("uc-panel");
     expect(panel.tagName).toBe("DETAILS");
-    expect(panel.querySelector("summary").textContent).toBe("Use case UC1: inputs, persona, Run and the raw result");
+    expect(panel.querySelector("summary").textContent).toBe("Delegated access (consent only): inputs, persona, Run and the raw result");
     expect(within(screen.getByTestId("agent-column")).queryByTestId("uc-panel")).toBeNull();
     expect(within(screen.getByTestId("agent-column")).queryByTestId("run-panel")).toBeNull();
     for (const id of ["run-title", "lab-inputs", "persona", "run"]) expect(within(panel).getByTestId(id)).toBeTruthy();

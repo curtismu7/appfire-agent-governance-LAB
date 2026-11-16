@@ -402,7 +402,7 @@ function frameBefore(ctx) {
 }
 
 // What the visitor typed (`said`) appears on the prompt hop only; every other hop refers to it. The brain is the one the browser actually used.
-const routingOf = (ctx) => (ctx.brain === 'llama' ? `llama.cpp picked ${ctx.uc.id} (local model, mock run)` : 'Scripted intent match');
+const routingOf = (ctx) => (ctx.brain === 'llama' ? `llama.cpp picked “${ctx.uc.title}” (local model, mock run)` : 'Scripted intent match');
 function frameAfterSignIn(ctx) {
   const pub = ctx.sit.public;
   const chip = promptOf(ctx.uc);
@@ -412,8 +412,8 @@ function frameAfterSignIn(ctx) {
   });
   hop(ctx, 'agent-receive', {
     from: 'bff', to: 'agent', url: `${ctx.urls.agent}/run`, body: { message: '[the message on the prompt hop]' },
-    resBody: { routing: routingOf(ctx), matched: ctx.uc.id },
-    detail: { kv: [['routing', routingOf(ctx)], ['matched use case', ctx.uc.id]] },
+    resBody: { routing: routingOf(ctx), matched: ctx.uc.title },
+    detail: { kv: [['routing', routingOf(ctx)], ['matched use case', ctx.uc.title]] },
   });
   // Only a run whose agent plans a tool call lists its tools and plans (AI-DEMO2's 'tools-list' and 'llm' steps); the rest go straight to the chain.
   if (!PLANS.has(ctx.uc.id)) return;

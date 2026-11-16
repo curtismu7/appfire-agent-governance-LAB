@@ -20,7 +20,7 @@ function Chips({ list, typeAndSend, disabled, label, testId }) {
     <ul className="wtt__list" aria-label={label} data-testid={testId}>
       {list.map((p) => (
         <li key={p.uc}>
-          <button type="button" className="wtt__chip" onClick={() => typeAndSend(p.text, "chip")} aria-disabled={disabled ? "true" : undefined} title={`${opensApp(p) ? "Hands off" : "Runs"} ${p.uc} ${p.title}`} data-testid={`wtt-${p.uc}`}>{p.text}</button>
+          <button type="button" className="wtt__chip" onClick={() => typeAndSend(p.text, "chip")} aria-disabled={disabled ? "true" : undefined} title={`${opensApp(p) ? "Hands off" : "Runs"} “${p.title}”`} data-testid={`wtt-${p.uc}`}>{p.text}</button>
         </li>
       ))}
     </ul>
@@ -61,7 +61,7 @@ function Starters({ agent, brand, prompts, typeAndSend, stub }) {
           {prompts.filter((p) => !opensApp(p)).slice(0, 4).map((p) => (
             <li key={p.uc}>
               <button type="button" className="starter" onClick={() => typeAndSend(p.text, "starter")} data-testid={`starter-${p.uc}`}>
-                <Tag state={outcomeState(p.expectedOutcome)}>{p.uc} · {p.expectedOutcome}</Tag>
+                <Tag state={outcomeState(p.expectedOutcome)}>{p.expectedOutcome}</Tag>
                 <b>{p.text}</b>
                 <span className="muted">{p.title}</span>
               </button>

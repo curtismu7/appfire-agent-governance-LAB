@@ -45,9 +45,9 @@ export function reasoningOf(turn, run) {
   const steps = [];
   const uc = turn.uc;
   if (turn.brainNote) steps.push(turn.brainNote);
-  if (turn.how === "picked") steps.push(`You picked ${uc.id} ${uc.title} from the list`);
+  if (turn.how === "picked") steps.push(`You picked “${uc.title}” from the list`);
   else if (turn.how === "llm") steps.push(`llama.cpp picked ${uc.id} ${uc.title} from this vertical's list (the server checked the id against the list)`);
-  else steps.push(`Matched your words to ${uc.id} ${uc.title}${turn.how === "close" ? " (close match)" : ""}`);
+  else steps.push(`Matched your words to “${uc.title}”${turn.how === "close" ? " (close match)" : ""}`);
   if (!run) return steps;
   if (run.kind === "guided") { steps.push("This use case is a guided page: the lab shows it and does not compute the outcome"); return steps; }
   if (run.kind === "live") { steps.push("Live mode: only the identity provider was called"); return steps; }
@@ -73,7 +73,7 @@ export function reasoningOf(turn, run) {
 export const HANDOFF_WHY = (uc) => {
   const r = uc?.route || {};
   return [
-    `${uc.id} needs several agents or the product's own pages, so it runs in its own app`,
+    `“${uc.title}” needs several agents or the product's own pages, so it runs in its own app`,
     `${r.also ? `It can open ${r.app} or ${r.also}` : `Its home is ${r.app}`}${r.basis ? ` (routing table: ${r.basis})` : ""}`,
   ];
 };

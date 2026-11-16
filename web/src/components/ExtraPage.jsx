@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { EXTRAS, extraHops, outcomeState, triggerText } from "../lib";
+import { EXTRAS, extraHops, noIds, outcomeState, triggerText } from "../lib";
 import { Tag } from "./Bits";
 import SequenceView from "../evidence/SequenceView";
 import StepDetailPanel from "../evidence/StepDetailPanel";
@@ -14,10 +14,10 @@ export default function ExtraPage({ opens, entry }) {
   return (
     <section className="panel" aria-label={spec.label} data-testid={`extra-${opens}`}>
       <h2 className="panel__title">{spec.label}</h2>
-      <p className="muted">Opened by {uc.id}: {uc.title}. It goes away when you press Reset.</p>
+      <p className="muted">Opened by “{uc.title}”. It goes away when you press Reset.</p>
       <p>{spec.about}</p>
       <p><Tag state={outcomeState(run.outcome)}>{run.outcome}</Tag> {run.kind === "guided" && <Tag state="warn">guided, not computed</Tag>} <Tag state="info">persona: {run.persona}</Tag></p>
-      <p className="muted" data-testid="extra-label">Product page (a label, not a link): <code>{triggerText(uc.trigger)}</code></p>
+      <p className="muted" data-testid="extra-label">Product page (a label, not a link): <code>{noIds(triggerText(uc.trigger))}</code></p>
       {uc.linkOut && <p className="muted" data-testid="extra-linkout">A sibling standalone covers the same ground: <code>{uc.linkOut}</code> (lab reading, a name only)</p>}
       {/* The same Sequence and step detail as the Agent page, drawn from this page's hops only. */}
       <h3 className="panel__sub">Hops for this page</h3>

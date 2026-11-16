@@ -1,4 +1,4 @@
-import { outcomeState } from "../lib";
+import { outcomeState, titleOfUc } from "../lib";
 import { Tag } from "./Bits";
 
 // The vertical selector, shared by the sidebar and the diagram pages.
@@ -51,7 +51,7 @@ export default function SetupSidebar({ onNewChat, mode, host, several, setSevera
           {sessions.map((r) => (
             <li key={r.seq}>
               <button type="button" className="sessions__item" onClick={() => onSession(r.id)} data-testid="session-row">
-                <span className="mono">#{r.seq} {r.id}</span> <Tag state={outcomeState(r.outcome)}>{r.outcome}</Tag>
+                <span className="mono">#{r.seq} {titleOfUc(r.id)}</span> <Tag state={outcomeState(r.outcome)}>{r.outcome}</Tag>
               </button>
             </li>
           ))}

@@ -408,7 +408,7 @@ test('reel depth: the run API takes brain and said; bad types are refused; a hos
     assert.deepEqual(hops.filter((h) => JSON.stringify(h).includes('<script>')).map((h) => h.kind), ['prompt']);
     const { narration, tokens } = r.body.run;
     assert.ok(!JSON.stringify({ narration, tokens }).includes('<script>'));
-    assert.equal(hops.find((h) => h.kind === 'agent-receive').response.body.routing, 'llama.cpp picked UC1 (local model, mock run)');
+    assert.equal(hops.find((h) => h.kind === 'agent-receive').response.body.routing, 'llama.cpp picked “Delegated access (consent only)” (local model, mock run)');
     const ok = await run(url, 'UC1', { said: 'x'.repeat(400), brain: 'scripted' });
     assert.equal(ok.status, 200);
   });
