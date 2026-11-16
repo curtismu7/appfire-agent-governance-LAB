@@ -8,7 +8,7 @@ import { MANIFEST } from '../src/manifest.js';
 import { VERTICALS } from '../src/cast.js';
 import { createReal, realConfig } from '../src/real.js';
 import { assertTrace } from '../src/gatewayTrace.js';
-import { mockGatewayUrl, realExchange } from '../src/gatewayExchanges.js';
+import { mockExchange, mockGatewayUrl, realExchange } from '../src/gatewayExchanges.js';
 import { post, run, withServer } from './helpers.js';
 import { AGENT_CLIENT_SECRET, CLIENT_SECRET, DEMO_PASSWORD, USER_CLIENT_SECRET, fullSettingsFor, startFakePingOne } from './fakePingone.js';
 import { SESSION_ID, startFakeGateway } from './fakeGateway.js';
@@ -244,4 +244,21 @@ test('realExchange: the delegated token, the session id, the approval receipt an
   assert.equal(ex.trace.request.body.params.arguments._hitl_challenge_id, '<approval receipt, kept on the server>');
   assert.deepEqual(ex.trace.decisions.map((d) => [d.outcome, d.basis]), [['info', 'observed']]);
   assert.match(ex.trace.decisions[0].evidence, /held the call for a person/);
+});
+
+// ---- The request headers the lab really sent, through the shared builder's requestHeaders option ---------------------------------------
+test('requestHeaders: a simulated hop shows the headers it sent (an accept of its own replaces the default, whatever its case); the real hop shows traceparent and session', () => {
+  const hop = { n: 5, request: { url: 'https://gw.mock.example/mcp', headers: { authorization: 'Bearer abc', 'content-type': 'application/json', Accept: 'application/json', 'x-edge': 'edge-1', 'x-empty': undefined }, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } }, response: { status: 200, body: { jsonrpc: '2.0', id: 1, result: { tools: [] } } } };
+  const mock = mockExchange(hop, { title: 'Gateway check: tools/list', decisions: [{ id: 'edge', label: 'Edge', outcome: 'pass', evidence: 'the simulation ran it' }] }).trace;
+  assert.deepEqual(assertTrace(mock), []);
+  assert.equal(mock.request.headers.Accept, 'application/json');
+  assert.ok(!('accept' in mock.request.headers), 'the default accept is replaced, not repeated');
+  assert.equal(mock.request.headers['x-edge'], 'edge-1');
+  assert.ok(!('x-empty' in mock.request.headers));
+  const c = { method: 'tools/list', traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', status: 200, kind: 'ok', headers: { 'content-type': 'application/json' }, rpc: { jsonrpc: '2.0', id: 1, result: { tools: [] } }, truncated: false, rawText: null, at: '2026-01-01T00:00:00.000Z', sessionId: 'abcdef0123456789', protocol: '2025-06-18', sentBody: { jsonrpc: '2.0', id: 1, method: 'tools/list' } };
+  const real = realExchange(c, { step: 1, title: 'tools/list', url: 'http://127.0.0.1:1/mcp', token: 'typed-value', vertical: 'banking' }).trace;
+  assert.deepEqual(assertTrace(real), []);
+  assert.equal(real.request.headers.traceparent, c.traceparent);
+  assert.equal(real.request.headers['mcp-session-id'], 'abcdef01… (shortened)');
+  assert.equal(real.request.headers.accept, 'application/json, text/event-stream');
 });

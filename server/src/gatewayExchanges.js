@@ -21,17 +21,15 @@ export const mockGatewayUrl = (url) => String(url).replace(/\.example(?=[/:]|$)/
 const NO_AUTH = '(none: the request carries no Authorization header)';
 const shortSession = (v) => (String(v).length > 8 ? `${String(v).slice(0, 8)}… (shortened)` : String(v));
 
-// Headers the shared builder does not carry (it shows authorization, content-type, accept): the rest of what was really sent.
-function withHeaders(trace, extra) {
-  for (const [k, v] of Object.entries(extra)) if (v !== undefined && v !== null && !(k in trace.request.headers)) trace.request.headers[k] = v;
-  return trace;
-}
+// The request headers the lab really sent beyond the shared builder's defaults, as its `requestHeaders` option (an empty value is not a header).
+const sent = (extra) => Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== undefined && v !== null));
 
 // ---- Mock -----------------------------------------------------------------------------------------------------------------------------
 // hop: the engine's own hop object (its request and response are what the page already shows); decisions: what the simulation computed or observed.
 export function mockExchange(hop, { title, decisions, record = null }) {
   const req = hop.request || {};
   const auth = typeof req.headers?.authorization === 'string' ? req.headers.authorization.replace(/^Bearer /, '') : null;
+  const { authorization: _auth, 'content-type': _type, ...rest } = req.headers || {};
   const trace = mockTrace({
     url: mockGatewayUrl(req.url),
     authorization: auth ? bearerForDisplay(auth) : NO_AUTH,
@@ -39,11 +37,10 @@ export function mockExchange(hop, { title, decisions, record = null }) {
     status: hop.response.status,
     body: hop.response.body ?? null,
     headers: { 'content-type': 'application/json', ...(hop.response.headers || {}) },
+    requestHeaders: sent(rest),
     decisions,
     record,
   });
-  const { authorization, 'content-type': contentType, ...rest } = req.headers || {};
-  withHeaders(trace, rest);
   return { step: hop.n, title, status: hop.response.status, trace };
 }
 
@@ -89,13 +86,12 @@ export function realExchange(c, { step, title, url, token, vertical, setup, rece
   };
   let trace;
   if (c.status === 0) {
-    trace = failureTrace({ url, authorization, rpc, error: 'no answer: the connection failed or timed out, so there is no response and nothing to decide from' });
+    trace = failureTrace({ url, authorization, rpc, requestHeaders: sent(extra), error: 'no answer: the connection failed or timed out, so there is no response and nothing to decide from' });
   } else {
     const detail = c.status === 428 ? HOLD_TEXT : c.kind === 'other' && c.status >= 300 && c.status < 400 ? `HTTP ${c.status}: a redirect, which the lab never follows` : undefined;
-    trace = realTrace({ url, authorization, rpc, status: c.status, headers, body: c.rpc ?? (c.rawText || null), detail, at: c.at, setup });
+    trace = realTrace({ url, authorization, rpc, requestHeaders: sent(extra), status: c.status, headers, body: c.rpc ?? (c.rawText || null), detail, at: c.at, setup });
     const audit = auditDecision(c.headers);
     if (audit) trace.decisions.push(audit);
   }
-  withHeaders(trace, extra);
   return { step, title, status: c.status || null, trace: scrubDeep(trace, secrets) };
 }
