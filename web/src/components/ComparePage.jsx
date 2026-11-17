@@ -3,7 +3,7 @@ import SequenceView from "../evidence/SequenceView";
 import DecisionCard from "./DecisionCard";
 import { Tag } from "./Bits";
 import { getJson, postJson } from "../api";
-import { PRESETS, presetFor } from "../compare";
+import { presetFor, presetsFor } from "../compare";
 import { compareRows } from "../decision";
 import { focusHop, newTraceparent, outcomeState } from "../lib";
 import { visible } from "../safeText";
@@ -14,7 +14,8 @@ const none = () => {};
 // tenant even while the lab is in Real. The deciding step is highlighted in each Sequence, the five audit facts are lined up, and the rows that
 // differ are marked.
 export default function ComparePage({ vertical, onBack, startPreset, cast, prompts }) {
-  const first = PRESETS.find((p) => p.id === startPreset) || PRESETS[0]; // the step bar can open the page at a named pair
+  const presets = presetsFor(cast); // the pairs this vertical shows (the airline pack has two of its own and hides two)
+  const first = presets.find((p) => p.id === startPreset) || presets[0]; // the step bar can open the page at a named pair
   const [presetId, setPresetId] = useState(first.id);
   const [sides, setSides] = useState(first.sides.map(() => ({ status: "running" })));
   const seq = useRef(0);
@@ -36,10 +37,10 @@ export default function ComparePage({ vertical, onBack, startPreset, cast, promp
     setSides(answers.map((r) => (r.ok ? { status: "done", run: r.body.run } : { status: "error", message: r.body?.detail || r.body?.message || `The server refused this run${r.status ? ` (HTTP ${r.status})` : ""}.` })));
   }, [vertical]);
 
-  useEffect(() => { runPreset(PRESETS.find((p) => p.id === presetId) || PRESETS[0]); }, [vertical]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { runPreset(presets.find((p) => p.id === presetId) || presets[0]); }, [vertical]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const ctx = { cast, prompts }; // the words (the action, the person, the typed prompts) come from the vertical on screen
-  const preset = presetFor(PRESETS.find((p) => p.id === presetId) || PRESETS[0], ctx);
+  const preset = presetFor(presets.find((p) => p.id === presetId) || presets[0], ctx);
   const [left, right] = sides;
   const rows = left?.run && right?.run ? compareRows(left.run, right.run) : [];
 
@@ -51,7 +52,7 @@ export default function ComparePage({ vertical, onBack, startPreset, cast, promp
         <Tag state="info">Side by side</Tag>
       </header>
       <div className="seg" role="group" aria-label="Comparison" data-testid="compare-presets">
-        {PRESETS.map((p) => <button key={p.id} type="button" aria-pressed={p.id === presetId} onClick={() => runPreset(p)} data-testid={`compare-${p.id}`}>{presetFor(p, ctx).title}</button>)}
+        {presets.map((p) => <button key={p.id} type="button" aria-pressed={p.id === presetId} onClick={() => runPreset(p)} data-testid={`compare-${p.id}`}>{presetFor(p, ctx).title}</button>)}
       </div>
       <p className="muted compare__why" data-testid="compare-why">{preset.why}</p>
 

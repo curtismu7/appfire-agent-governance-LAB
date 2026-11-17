@@ -1,6 +1,8 @@
 // The Scripted brain: it matches what the visitor typed to one use case from the vertical's "What to type" list, and the engine runs that use case.
 // It never writes an answer of its own: the reply is built from the run the server returns. Text is matched, never evaluated or echoed into HTML.
 
+import { approverOf, narrowedOf, plainThousands, refuseClose } from "./fare.js"; // fare: the airline pack's own logic
+
 const MAX_INPUT = 400;
 export const normalize = (s) => String(s ?? "")
   .slice(0, MAX_INPUT)
@@ -13,8 +15,11 @@ const words = (s) => normalize(s).split(" ").filter(Boolean);
 
 // Exact (normalised) match first. Otherwise the prompt that shares the most words, when at least 80% of that prompt's words are present and no
 // other prompt ties with it. Returns { uc, text, how } or null.
-export function matchPrompt(input, prompts = []) {
-  const said = normalize(input);
+// `strictNumbers` (the airline pack, where the staged fare IS the rule): a CLOSE match is refused when the typed text carries a number the matched prompt does
+// not and whenever the matched prompt carries a number (fare.js refuseClose), so "book a business seat to Denver for $500", "... for five hundred dollars" or
+// "book a first class seat to Denver for $380" never run the staged $380 booking; only the exact prompt does ("$2,400" counts as "$2400"). Off, nothing changes.
+export function matchPrompt(input, prompts = [], { strictNumbers = false } = {}) {
+  const said = normalize(strictNumbers ? plainThousands(String(input ?? "").slice(0, MAX_INPUT)) : input);
   if (!said) return null;
   const exact = prompts.find((p) => normalize(p.text) === said);
   if (exact) return { uc: exact.uc, text: exact.text, how: "exact" };
@@ -26,7 +31,17 @@ export function matchPrompt(input, prompts = []) {
     const score = w.filter((x) => have.has(x)).length / w.length;
     if (score > bestScore) { best = p; bestScore = score; tie = false; } else if (score === bestScore) tie = true;
   }
-  return best && bestScore >= 0.8 && !tie ? { uc: best.uc, text: best.text, how: "close" } : null;
+  if (!best || bestScore < 0.8 || tie) return null;
+  if (strictNumbers && refuseClose(words(said), words(best.text))) return null;
+  return { uc: best.uc, text: best.text, how: "close" };
+}
+
+// The llama.cpp brain returns a use case directly, so the same number guard applies to its pick: on the airline pack a pick of a prompt that carries a number
+// stands only when the typed text is that prompt (or carries its number and no other). Off, every pick stands as before.
+export function pickStands(input, promptText, { strictNumbers = false } = {}) {
+  if (!strictNumbers) return true;
+  const said = normalize(plainThousands(String(input ?? "").slice(0, MAX_INPUT)));
+  return said === normalize(promptText) || !refuseClose(words(said), words(promptText));
 }
 
 // Hop verdict -> the word and the state a tool-call pill shows (never colour alone).
@@ -93,7 +108,7 @@ export function replyOf(run) {
   if (run.kind === "real") {
     const r = run.reply || {};
     if (r.approval) return { who: r.who || "Authorize", approval: { head: String(r.approval.head || ""), body: String(r.approval.body || "") } };
-    return { who: typeof r.who === "string" ? r.who : "Agent", text: typeof r.text === "string" ? r.text : run.narration };
+    return { who: typeof r.who === "string" ? r.who : "Agent", text: typeof r.text === "string" ? r.text : run.narration, ...narrowedPart(run) };
   }
   if (run.kind === "guided") return { who: "Agent", text: `This is a guided page: the lab opens the page the product would open and does not compute the outcome (catalog label ${run.outcome}).` };
   const refused = body("tool-refused");
@@ -105,8 +120,14 @@ export function replyOf(run) {
   if (Object.hasOwn(APPROVAL, run.outcome)) {
     // What the agent is ready to do (the held hop's own words, lab-invented amount), then the hold.
     const said = body("tool-held")?.proposed;
-    return { who: "Authorize", approval: { ...APPROVAL[run.outcome], ...(typeof said === "string" && said ? { say: said } : {}) } };
+    return { who: approverOf(run), approval: { ...APPROVAL[run.outcome], ...(typeof said === "string" && said ? { say: said } : {}) } };
   }
   const said = body("agent-reply")?.reply;
-  return { who: "Agent", text: typeof said === "string" && said ? said : run.narration };
+  return { who: "Agent", text: typeof said === "string" && said ? said : run.narration, ...narrowedPart(run) };
+}
+
+// fare: a narrowed booking says so in the reply object too ({ asked, granted }); the chat shows one chip from it. Absent for every other run.
+function narrowedPart(run) {
+  const n = narrowedOf(run);
+  return n ? { constrained: { asked: n.asked, granted: n.granted } } : {};
 }

@@ -25,7 +25,7 @@
     {
       "id": "appfire-agent-governance",
       "term": "Customer-facing agent",
-      "definition": "An AI agent that acts for a customer: it asks for an open-issue list, a bulk edit, an order. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
+      "definition": "An AI agent that acts for a customer: it asks for a list of trips, a flight booking, a flight status. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "customer agent"
       ]
@@ -48,9 +48,18 @@
       ]
     },
     {
+      "id": "constrained-booking",
+      "term": "Constrained booking",
+      "definition": "A permitted call whose arguments the rule narrows (here the cabin, business to economy). The outcome word CONSTRAINED is the lab's own: the lab's fare rule decides it, not a PingOne Authorize outcome. The two fare limits and the international flag are lab-invented. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
+      "aliases": [
+        "allowed with a limit",
+        "narrowed booking"
+      ]
+    },
+    {
       "id": "authorize-decision",
       "term": "Authorize decision",
-      "definition": "A policy decision on every call: PERMIT, DENY, or an obligation (step-up, human approval, CIBA). The lab's thresholds are lab-invented, fitted to the catalog's example amounts. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
+      "definition": "A policy decision on every call: PERMIT, DENY, or an obligation (step-up, human approval, CIBA). The airline pack adds one outcome of the lab's own, CONSTRAINED. The lab's thresholds are lab-invented, fitted to the catalog's example amounts. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "PDP"
       ]
@@ -58,7 +67,7 @@
     {
       "id": "step-up-hitl",
       "term": "Step-up and human approval",
-      "definition": "A risky write returns an obligation instead of running: MFA step-up, or a verified human approval receipt. A boolean \"approved\" flag from the client does not count. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
+      "definition": "A risky write returns an obligation instead of running: a second factor first, or a verified human approval receipt. A boolean \"approved\" flag from the client does not count. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "HITL",
         "step up"
@@ -243,13 +252,27 @@
       ]
     },
     {
-      "id": "try-step-up",
-      "label": "Run the step-up use case (UC7)",
-      "description": "A larger transfer returns a step-up obligation and the write is held. Thresholds are lab-invented.",
+      "id": "try-constrained",
+      "label": "Run the international booking next to the domestic one",
+      "description": "Run the international booking next to the domestic one: same fare, the second is booked in economy. The agent asked for business and the answer says what was narrowed. The limits and the flag are lab-invented.",
       "group": "try-it",
       "action": {
         "type": "route",
-        "href": "/#run-UC7"
+        "href": "/#run-UC8"
+      },
+      "terms": [
+        "constrained-booking",
+        "authorize-decision"
+      ]
+    },
+    {
+      "id": "try-step-up",
+      "label": "Run the booking over the higher limit",
+      "description": "A booking over the second limit returns an approval obligation and the write is held until a person approves. Thresholds are lab-invented.",
+      "group": "try-it",
+      "action": {
+        "type": "route",
+        "href": "/#run-UC6"
       },
       "terms": [
         "authorize-decision",

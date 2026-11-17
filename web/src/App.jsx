@@ -13,8 +13,9 @@ import SetupSidebar, { VerticalSelect } from "./components/SetupSidebar";
 import Rail from "./rail/Rail";
 import { getJson, postJson, resetWorkspace } from "./api";
 import { BANNER_HOSTED, BANNER_LOCAL, DEFAULT_VERTICAL, EXTRAS, OWN_TOOL_VERTICALS, focusHop, holdWords, newTraceparent, setUseCaseTitles, titleOfUc } from "./lib";
-import { matchPrompt, reasoningOf } from "./chat";
+import { matchPrompt, pickStands, reasoningOf } from "./chat";
 import { isHandoff } from "./handoff";
+import { FARE_PHONE_APPROVED } from "./fare";
 import { chooseTab, cleanConfig, loadConfig, saveConfig, setView } from "./quickConfig";
 import { workspaceId } from "./workspace";
 import { loadResume, saveResume, takeReturn } from "./resume";
@@ -51,6 +52,9 @@ const FONT_KEY = "aag-font-step";
 const savedTheme = () => { try { const t = window.localStorage.getItem(THEME_KEY); return THEMES.some(([id]) => id === t) ? t : "auto"; } catch { return "auto"; } };
 const applyTheme = (t) => { const root = document.documentElement; if (t === "light" || t === "dark") root.setAttribute("data-theme", t); else root.removeAttribute("data-theme"); };
 const viewFromHash = () => window.location.hash.replace("#", "");
+// fare: the Human approval page tells how a risky write is held and released; on the airline pack it opens only for a run that actually held (a booking that was
+// allowed or narrowed has nothing held to show).
+const askedAPerson = (run) => (run.hops || []).some((h) => ["step-up", "tool-held", "ciba-authorize"].includes(h.kind) && h.verdict !== "skip");
 const resultKey = (id, vertical, persona, mode) => `${id}|${vertical}|${persona}|${mode}`;
 
 export default function App() {
@@ -126,6 +130,8 @@ export default function App() {
   // The lab opens in the mode the server derived (Real when it is fully configured). If the server does not answer, the mode stays unknown and the page says so.
   const loadMode = useCallback(() => getJson("/api/mode").then((m) => { setMode(m.mode); setModeFailed(false); }, () => setModeFailed(true)), []);
   useEffect(() => { getJson("/api/info").then(setInfo, (e) => setError(e.message)); loadMode(); }, [loadMode]);
+  // A resumed vertical id the server no longer has (a removed stub, a deploy in between) falls back to the default; the failed loads of the stale id are cleared.
+  useEffect(() => { if (info?.verticals && !info.verticals.some((v) => v.id === vertical)) { setVertical(DEFAULT_VERTICAL); setError(null); } }, [info]); // eslint-disable-line react-hooks/exhaustive-deps
   const realLevel = info?.real?.level ?? null;
   const loadSignin = useCallback(() => getJson("/api/signin").then(setSignin, () => setSignin(null)), []);
   useEffect(() => { if (realLevel === "full") loadSignin(); }, [realLevel, loadSignin]);
@@ -249,14 +255,14 @@ export default function App() {
       const run = res.body.run;
       setLast({ run, ucId: u.id });
       setSelHop(focusHop(run));
-      if (run.kind !== "live" && Object.hasOwn(EXTRAS, u.opens)) setOpened((o) => ({ ...o, [u.opens]: { run, uc: u } }));
+      if (run.kind !== "live" && Object.hasOwn(EXTRAS, u.opens) && !(run.fareRule && u.opens === "approval" && !askedAPerson(run))) setOpened((o) => ({ ...o, [u.opens]: { run, uc: u } }));
       // A hold opens the mock phone. Real: the server session carries the gateway's challenge; Mock: the lab mints one.
       const hold = run.outcome === "REAL_HOLD" && run.challenge ? "real"
         : ["HITL_REQUIRED", "STEP_UP", "REAL_HOLD"].includes(run.outcome) ? "mock" : null;
       if (hold) {
         postJson("/api/approval/start", {
-          kind: hold, tool: run.real?.tool || (OWN_TOOL_VERTICALS.includes(vertical) ? u.tool : null) || u.primaryTool || null, // the pack's own tool name only where its pack is not the catalog's (software); the other three keep the catalog name
-          amount: run.real?.tool === "create_transfer" ? 300 : null,
+          kind: hold, tool: run.real?.tool || (OWN_TOOL_VERTICALS.includes(vertical) ? u.tool : null) || u.primaryTool || null, // the pack's own tool name only where its pack is not the catalog's (software, airline); the other three keep the catalog name
+          amount: run.booking?.fare ?? (run.real?.tool === "create_transfer" ? 300 : null), // fare: an airline booking shows the fare the rule judged
           description: holdWords(run.outcome),
           ...(hold === "real" ? { challengeId: run.challenge } : {}),
           // Which service minted the challenge (the server's own words, a fixed pair): the phone answers it there.
@@ -327,18 +333,21 @@ export default function App() {
     if (busy) return;
     const said = String(text).slice(0, 400);
     if (stub) return answer(said, source, null);
-    if (cfg.brain !== "llama") return answer(said, source, matchPrompt(said, prompts));
+    if (cfg.brain !== "llama") return answer(said, source, matchPrompt(said, prompts, { strictNumbers: Boolean(cast.castFareRule) })); // fare: the airline pack never runs the staged fare for a different typed number
     const mine = ++pickSeq.current;
     setPicking(true);
     const res = await postJson("/api/brain/pick", { vertical, text: said }).catch(() => ({ ok: false, body: {} }));
     if (mine !== pickSeq.current) return; // a Reset, a new chat or another vertical took over
     setPicking(false);
     const b = res.ok ? res.body : { ok: false, message: res.body?.message || "The server did not answer." };
-    if (b.ok && b.uc && prompts.some((p) => p.uc === b.uc)) return answer(said, source, { uc: b.uc, how: "llm" });
+    const picked = b.ok && b.uc ? prompts.find((p) => p.uc === b.uc) : null;
+    // fare: on the airline pack a model pick of a booking prompt is held to the same number guard as a typed match (the staged fare never stands in for a typed one).
+    if (picked && !pickStands(said, picked.text, { strictNumbers: Boolean(cast.castFareRule) })) return answer(said, source, null, "llama.cpp picked a booking whose number is not the one you typed, so nothing ran.");
+    if (picked) return answer(said, source, { uc: b.uc, how: "llm" });
     if (b.ok) return answer(said, source, null, "llama.cpp found no use case on this list for those words.");
     const why = `llama.cpp brain unavailable: ${b.message || "no reason given"}`;
     if (cfg.routing === "llm-only") return answer(said, source, null, `${why} Routing is LLM only, so nothing ran.`);
-    const m = matchPrompt(said, prompts);
+    const m = matchPrompt(said, prompts, { strictNumbers: Boolean(cast.castFareRule) }); // fare:
     return answer(said, source, m, `${why} Used the Scripted brain instead.`);
   };
   const preview = (turn) => { setSelectedId(turn.uc.id); startRun(turn.uc, { said: `Preview “${turn.uc.title}” here`, how: "picked", preview: true }); };
@@ -476,7 +485,7 @@ export default function App() {
               <div className="work">
                 <AgentColumn agent={cast.castAgent} brand={cast.castBrand} userId={userId} vertical={vertical} verticalLabel={verticalLabel} verticals={verticals} stub={stub} prompts={prompts} turns={shownTurns}
                   status={busy ? "running" : statusOf(lastTurn)} onSay={say} onHop={onHop} onPreview={preview} running={busy}
-                  step={presenter ? DEMO_GUIDE[agendaStep] || DEMO_GUIDE[0] : null} onNextStep={() => setAgendaStep((i) => Math.max(0, Math.min(DEMO_GUIDE.length - 1, i + 1)))}
+                  person={cast.castPerson || "customer"} fare={Boolean(cast.castFareRule)} step={presenter ? DEMO_GUIDE[agendaStep] || DEMO_GUIDE[0] : null} onNextStep={() => setAgendaStep((i) => Math.max(0, Math.min(DEMO_GUIDE.length - 1, i + 1)))}
                   instructions={<AgentInstructions config={instrConfig} text={instrEdit} onText={setInstrEdit} />} />
                 {qcOpen ? (
                   <QuickConfig id="quick-config" config={cfg}
@@ -506,7 +515,7 @@ export default function App() {
       </main>
       <SignInDialog isOpen={signOpen} username={signin?.username} onClose={() => { setSignOpen(false); pendingRun.current = null; }} onSignedIn={afterSignIn} />
       <DemoGuide isOpen={guideOpen} onClose={() => setGuideOpen(false)} onRun={guideRun} onCompare={(s) => { setGuideOpen(false); guideCompare(s); }} activeUc={guideRunning} catalog={catalog} cast={cast} prompts={prompts} />
-      {phoneApproval && <MockPhone approval={phoneApproval} onDecided={onPhoneDecided} onClose={() => {}} />}
+      {phoneApproval && <MockPhone approval={phoneApproval} onDecided={onPhoneDecided} onClose={() => {}} approvedSentence={phoneApproval.kind !== "real" && last?.run?.fareRule ? FARE_PHONE_APPROVED : undefined} />}
     </div>
   );
 }

@@ -2,6 +2,8 @@
 // step 7): which agent acted, on whose behalf, which tool or resource, which policy applied, and what was decided. A pure
 // function of the run the server sent: it reads hops and tokens only and never decides anything itself.
 
+import { constrainedPolicy, constrainedReason, fareLevelOf, isConstrainedOutcome, riskRungsOf, seatFields } from "./fare"; // fare: the airline pack's logic lives in fare.js
+
 export const NOT_REACHED = "not reached in this run";
 
 const bodyOf = (hop) => hop?.response?.body;
@@ -42,6 +44,8 @@ function policyOf(run) {
     return { by: az.decision.by, reason: rule || text(az.note) || "the tool server's own rule", decision: text(az.decision?.outcome) };
   }
   const azBody = bodyOf(az);
+  const cp = constrainedPolicy(run, azBody); // fare: a constrained booking names the lab's own rule as the decider
+  if (cp) return cp;
   if (az && text(azBody?.reason)) return { by: WHO.authorize, reason: azBody.reason, decision: azBody.decision };
   const gw = bodyOf(ran(run, "gateway-check"));
   const failed = Array.isArray(gw?.checks) ? gw.checks.find((c) => c && c.ok === false) : null;
@@ -55,6 +59,7 @@ function policyOf(run) {
 function verdictOf(outcome) {
   if (outcome === "PERMIT" || outcome === "DELEGATE_AND_EXECUTE" || outcome === "REAL_PERMIT") return "allowed";
   if (outcome.startsWith("DENY") || outcome === "PERMIT_THEN_DENY" || outcome === "REAL_DENY") return "denied";
+  if (isConstrainedOutcome(outcome)) return "constrained"; // fare:
   if (outcome === "STEP_UP" || outcome === "HITL_REQUIRED" || outcome === "CIBA" || outcome === "REAL_HOLD") return "escalated";
   // The approval receipt a retry carried was refused by the tool server: a refusal, never a pass (owner 2026-11-16).
   if (outcome === "REAL_RECEIPT_REJECTED") return "denied";
@@ -72,6 +77,7 @@ export const RISK_RUNGS = [
 
 // Which rung of the strip a run landed on; null when the run made no decision (guided, identity-provider-only, not completed).
 export function riskLevelOf(run) {
+  if (run?.fareRule) return fareLevelOf(run); // fare: five controls on the airline pack
   const o = String(run?.outcome || "");
   if (run?.kind === "guided" || (run?.computed === false && !viaTools(run)) || run?.kind === "live") return null;
   const v = verdictOf(o);
@@ -89,8 +95,11 @@ function steerOf(run) {
   return `The agent's instructions steered it: it proposed ${s.proposed.tool}${amount} though the customer asked for ${text(s.asked?.tool) || "something else"}.`;
 }
 
-const WORD = { allowed: "ALLOWED", denied: "DENIED", escalated: "ESCALATED" };
-const TONE = { allowed: "ok", denied: "bad", escalated: "warn" };
+const WORD = { allowed: "ALLOWED", denied: "DENIED", escalated: "ESCALATED", constrained: "CONSTRAINED" };
+const TONE = { allowed: "ok", denied: "bad", escalated: "warn", constrained: "info" }; // fare: blue, never red
+
+// The strip's rungs for a run: five on the airline pack (run.fareRule), the four above otherwise.
+export const rungsOf = (run) => riskRungsOf(run, RISK_RUNGS);
 
 // Returns null while there is no run. Guided runs and the identity-provider-only Real check carry no decision of their own.
 export function decisionOf(run) {
@@ -171,6 +180,9 @@ export function decisionOf(run) {
   if (verdict === "allowed") {
     word = WORD.allowed; tone = TONE.allowed;
     reason = `Allowed${why ? `: ${why}` : ""}. The tool ran.`;
+  } else if (verdict === "constrained") {
+    word = WORD.constrained; tone = TONE.constrained; // fare:
+    reason = constrainedReason(run, why);
   } else if (verdict === "denied") {
     word = WORD.denied; tone = TONE.denied;
     reason = outcome === "REAL_RECEIPT_REJECTED" ? "The approval receipt was refused. Nothing was dispatched to the tool."
@@ -192,6 +204,7 @@ export function decisionOf(run) {
       { key: "tool", label: "Which tool or resource", value: tool || NOT_REACHED },
       { key: "policy", label: "Which policy applied", value: policy ? `${policy.by}: ${policy.reason}` : NOT_REACHED },
       { key: "decision", label: "Decision", value: decided },
+      ...seatFields(run), // fare: what was asked and what was booked (only when the run carries run.booking)
     ],
   };
 }

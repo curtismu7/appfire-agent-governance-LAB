@@ -63,7 +63,7 @@ test('every run of every use case in every full vertical: narration, token label
       hits.push(...findWords(r, `${vertical}/${uc.id}`));
     }
   }
-  assert.ok(runs >= 87 * 4, `scanned ${runs} runs`);
+  assert.ok(runs >= 87 * 5, `scanned ${runs} runs`);
   const unique = [...new Set(hits.map((h) => h.replace(/^[^:]+: /, '')))];
   none(unique, `the runs (${runs} of them)`);
 });

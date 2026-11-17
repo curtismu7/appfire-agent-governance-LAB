@@ -57,13 +57,13 @@ describe("the phone's words", () => {
     expect(holdWords("REAL_HOLD")).toBe("The gateway holds this call for approval");
     for (const o of ["STEP_UP", "HITL_REQUIRED", "REAL_HOLD", undefined, "x"]) expect(holdWords(o)).not.toMatch(/\bUC\d/);
   });
-  test("the page opens on the software vertical", () => {
-    expect(DEFAULT_VERTICAL).toBe("software");
+  test("the page opens on the airline vertical (Larkspur Air)", () => {
+    expect(DEFAULT_VERTICAL).toBe("airline");
   });
   test("a sentence that names the full packs is built from the loaded list, never typed by hand", () => {
-    const list = [{ id: "software", pack: "full" }, { id: "banking", pack: "full" }, { id: "healthcare", pack: "full" }, { id: "retail", pack: "full" }, { id: "sporting-goods", pack: "stub" }];
-    expect(fullPackNames(list)).toEqual(["Software", "Banking", "Healthcare", "Retail"]);
-    expect(pickFullPack(list)).toBe("Pick Software, Banking, Healthcare or Retail");
+    const list = [{ id: "airline", pack: "full" }, { id: "software", pack: "full" }, { id: "banking", pack: "full" }, { id: "healthcare", pack: "full" }, { id: "retail", pack: "full" }, { id: "sporting-goods", pack: "stub" }];
+    expect(fullPackNames(list)).toEqual(["Airline", "Software", "Banking", "Healthcare", "Retail"]);
+    expect(pickFullPack(list)).toBe("Pick Airline, Software, Banking, Healthcare or Retail");
     expect(pickFullPack([{ id: "banking", pack: "full" }, { id: "retail", pack: "full" }])).toBe("Pick Banking or Retail");
     expect(pickFullPack([{ id: "retail", pack: "full" }])).toBe("Pick Retail");
     expect(pickFullPack([])).toBe("Pick one of the full-pack verticals"); // before the list loads

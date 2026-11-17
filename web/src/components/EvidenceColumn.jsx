@@ -53,7 +53,7 @@ export function HandoffSummary({ uc, catalog, vertical, userId }) {
         </div>
       </div>
       <p className="kicker">Everything this lab hands to {mine.map((a, i) => <Fragment key={a}>{i ? " or " : ""}<code>{a}</code></Fragment>)}</p>
-      <ul className="evsum__list">{same.map((u) => <li key={u.id} data-current={u.id === uc.id ? "true" : undefined}><span className="mono">{u.id}</span> {u.title}</li>)}</ul>
+      <ul className="evsum__list">{same.map((u) => <li key={u.id} data-current={u.id === uc.id ? "true" : undefined}>{vertical !== "airline" && <><span className="mono">{u.id}</span> </>}{u.title}</li>)}</ul>
       <p className="muted">Open goes in this tab; this chat is kept. This app does not check whether the other one is running (no outbound calls). If it does not load, start it from the Shelf.</p>
     </section>
   );

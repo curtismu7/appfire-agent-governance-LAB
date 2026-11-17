@@ -50,6 +50,9 @@ export function realGate(uc, cast, { a2a = false, a2aWhy = null, tools = { se: f
   if (!isFlow(uc)) return { real: false, reason: 'it is a guided page: the lab shows it and does not compute it' };
   // The pack's tools are served by a tool server, not the SE gateway (castToolServer, software): the capability decides which provider can answer.
   const capability = cast && Object.hasOwn(cast, 'castToolServer') ? 'tools' : 'gateway';
+  // The airline pack (castFareRule) has no tool server yet (phase B hosts its tools there) and nobody ran the SE gateway's airline tools (UNVERIFIED): it runs on the lab's own steps,
+  // whatever its tool is called, and the reason is neutral so the page never says what SE serves.
+  if (cast?.castFareRule && capability !== 'tools') return { real: false, reason: "this vertical runs on the lab's own steps here" };
   const chain = chainOf(uc);
   // Owner 2026-11-13: UC7/UC8 (the hitl track, tool create_transfer) run REAL — the SE gateway's HITL pipeline
   // (428 + challenge, the HITL service, the receipt retry) is live and this lab drives it with the mock phone.

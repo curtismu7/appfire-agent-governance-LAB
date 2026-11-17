@@ -22,3 +22,16 @@ describe("the Agent column's height", () => {
     expect(base).not.toMatch(/height/);
   });
 });
+
+describe("the risk strip: four rungs everywhere, five on the airline pack", () => {
+  test("the grid reads its column count from --risk-n and defaults to four, so a four-pack strip is exactly as it was", () => {
+    expect(css).toMatch(/\.risk \{ display: grid; grid-template-columns: repeat\(var\(--risk-n, 4\), minmax\(0, 1fr\)\);/);
+  });
+  test("the blue info tone lights the lit rung (CONSTRAINED is never red) with a token, not a colour literal", () => {
+    expect(css).toMatch(/\.decision\[data-tone="info"\] \.risk__rung\[aria-current="step"\] \{ border-color: var\(--status-info\); \}/);
+    expect(css.match(/\.decision\[data-tone="info"\][^}]*\}/)?.[0] ?? "").not.toMatch(/#[0-9a-f]{3,6}|rgb\(|danger/i);
+  });
+  test("on a phone five rungs read 2 + 2 + 1: the last, odd rung spans both columns", () => {
+    expect(css).toMatch(/\.risk__rung:last-child:nth-child\(odd\) \{ grid-column: 1 \/ -1; \}/);
+  });
+});

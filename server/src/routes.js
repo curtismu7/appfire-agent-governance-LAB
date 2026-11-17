@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MANIFEST, findUseCase } from './manifest.js';
 import { isFullVertical } from './cast.js';
-import { VERTICAL_TEXT } from './verticalText.js';
+import { OUTCOME_OVERRIDES, VERTICAL_TEXT } from './verticalText.js';
 
 const DATA = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../data');
 export const ROUTE_KINDS = ['Here', 'Here + go deeper', 'Hand off', 'Guide'];
@@ -63,7 +63,7 @@ export const routeOf = (id) => (Object.hasOwn(HANDOFF.routes, id) ? HANDOFF.rout
 // A use case in a vertical's own words (owner 2026-11-16: no banking text in the software pack). A pack with an entry in verticalText.js gets its title and
 // story words, and a chat chip shows the pack's own prompt for that use case; the chip of every use case that has no prompt of its own and is the catalog's
 // read chip (UC1's "show my balance") shows the pack's read prompt. A pack with no entry gets the SAME object back, so banking, healthcare and retail are
-// byte-identical. Everything the engine decides on (id, track, outcome, tool, needs) is never touched.
+// byte-identical. Everything the engine decides on (id, track, tool, needs) is never touched, and so is the outcome, except the airline pack's four labelled overrides (OUTCOME_OVERRIDES: labelSource 'lab').
 export function localize(uc, vertical) {
   if (!uc || !Object.hasOwn(VERTICAL_TEXT, vertical)) return uc;
   const words = Object.hasOwn(VERTICAL_TEXT[vertical], uc.id) ? VERTICAL_TEXT[vertical][uc.id] : null;
@@ -71,8 +71,9 @@ export function localize(uc, vertical) {
   const read = (PROMPTS.verticals[vertical] ?? []).find((e) => e.uc === 'UC1');
   const chip = uc.trigger?.type === 'chip' ? uc.trigger : null;
   const text = !chip ? null : mine ? mine.text : read && chip.text === findUseCase('UC1')?.trigger?.text ? read.text : null;
-  if (!words && text === null) return uc;
-  return { ...uc, ...(words ?? {}), ...(text === null ? {} : { trigger: { ...uc.trigger, text } }) };
+  const over = Object.hasOwn(OUTCOME_OVERRIDES, vertical) && Object.hasOwn(OUTCOME_OVERRIDES[vertical], uc.id) ? OUTCOME_OVERRIDES[vertical][uc.id] : null;
+  if (!words && text === null && !over) return uc;
+  return { ...uc, ...(words ?? {}), ...(text === null ? {} : { trigger: { ...uc.trigger, text } }), ...(over ? { expectedOutcome: over, labelSource: 'lab' } : {}) };
 }
 
 // The prompts a vertical shows under "What to type". A stub vertical has none (no demo pack yet).

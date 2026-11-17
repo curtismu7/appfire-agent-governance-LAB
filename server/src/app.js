@@ -404,7 +404,7 @@ export function createApp({
           // Run in Real mode on the mock engine: the run says why (the same realGate the picker shows), and every hop is already labelled MOCK.
           if (gate) { run.realGate = { real: false, reason: gate.reason }; run.live = liveNote(uc); }
           s.seq += 1;
-          s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: run.persona, outcome: run.outcome, matchesExpected: run.matchesExpected, traceId: run.traceId });
+          s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: run.persona, outcome: run.outcome, matchesExpected: run.matchesExpected, ...(run.useCase?.labelSource ? { labelSource: run.useCase.labelSource } : {}), traceId: run.traceId });
           return { seq: s.seq, run };
         });
         res.set('traceparent', out.run.traceparent);

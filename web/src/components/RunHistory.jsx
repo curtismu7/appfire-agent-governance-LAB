@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getJson } from "../api";
 import { outcomeState, titleOfUc } from "../lib";
 import { Tag } from "./Bits";
+import { labelWord } from "../fare";
 
 // The server's short list of run summaries for this workspace (GET /api/runs). It reloads whenever a run is made or the workspace is reset.
 export default function RunHistory({ refresh }) {
@@ -25,7 +26,7 @@ export default function RunHistory({ refresh }) {
             <tr key={r.seq} data-testid="history-row">
               <td>{r.seq}</td><td>{titleOfUc(r.id)}</td><td>{r.vertical}</td><td>{r.persona ?? "n/a"}</td>
               <td><Tag state={outcomeState(r.outcome)}>{r.outcome}</Tag></td>
-              <td>{String(r.outcome).startsWith("REAL_") || String(r.outcome).startsWith("LIVE_") ? "not compared with the catalog label" : r.matchesExpected === null ? "guided, not computed" : r.matchesExpected ? "matches the catalog label" : "differs from the catalog label"}</td>
+              <td>{String(r.outcome).startsWith("REAL_") || String(r.outcome).startsWith("LIVE_") ? "not compared with the catalog label" : r.matchesExpected === null ? "guided, not computed" : r.matchesExpected ? `matches ${labelWord(r.labelSource)}` : `differs from ${labelWord(r.labelSource)}`}</td>
               <td><code>{String(r.traceId).slice(0, 8)}</code></td>
             </tr>
           ))}</tbody>

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { DEMO_GUIDE, TOPICS, buttonKey, fillGuide, guideStep, promptGroups, promptsOfStep, topicOfStep } from "./demoGuide";
-import { PRESETS, presetFor } from "./compare";
+import { DEMO_GUIDE, GUIDE_OVERRIDES, TOPICS, buttonKey, fillGuide, guideStep, promptGroups, promptsOfStep, topicOfStep } from "./demoGuide";
+import { PRESETS, presetFor, presetsFor } from "./compare";
 
 // The software cast and a few of its typed prompts, as the page receives them (/api/story cast, /api/prompts). The banking cast is the other end of the same fill.
 const SOFTWARE = { castBrand: "Appfire Work Suite", castUser: "maya.chen", castAgent: "release-assistant", castAsset: "project", castAction: "bulk edit", castGroup: "enterprise-tier" };
@@ -56,7 +56,11 @@ describe("demoGuide", () => {
 
   test("the walkthrough and the Compare presets carry no banking words: they are neutral or filled from the cast", () => {
     for (const t of everyWalkthroughString(DEMO_GUIDE)) expect(t).not.toMatch(BANK_WORDS);
-    for (const p of PRESETS) for (const t of [p.title, p.why, ...p.sides.map((x) => x.label)]) expect(t).not.toMatch(BANK_WORDS);
+    // the airline-only pairs (and the airline words of a shared pair) carry dollar amounts of their own: banking words still never appear
+    const BANK_WORDS_NO_AMOUNT = new RegExp(BANK_WORDS.source.replace("|\\$\\d", ""), "i");
+    for (const p of PRESETS) for (const t of [p.title, p.why, ...p.sides.map((x) => x.label)]) expect(t).not.toMatch(p.onlyFor ? BANK_WORDS_NO_AMOUNT : BANK_WORDS);
+    for (const p of PRESETS.filter((x) => x.fare)) expect(p.fare.why).not.toMatch(BANK_WORDS_NO_AMOUNT);
+    for (const t of everyWalkthroughString(Object.values(GUIDE_OVERRIDES).map((o) => ({ title: "", req: "", prove: "", say: "", ucs: [], ...o })))) expect(t).not.toMatch(BANK_WORDS_NO_AMOUNT);
   });
 
   test("fillGuide fills the cast and the vertical's typed prompts, with neutral words when either is missing; an unknown token is left visible", () => {
@@ -92,13 +96,13 @@ describe("demoGuide", () => {
   });
 
   test("presetFor fills a Compare preset's words from the vertical; the use cases and personas it runs are untouched", () => {
-    const soft = PRESETS.map((p) => presetFor(p, { cast: SOFTWARE, prompts: SOFT_PROMPTS }));
+    const soft = presetsFor(SOFTWARE).map((p) => presetFor(p, { cast: SOFTWARE, prompts: SOFT_PROMPTS }));
     for (const p of soft) for (const t of [p.title, p.why, ...p.sides.map((x) => x.label)]) expect(t).not.toMatch(/\{\{|\$\d|transfer|balance/i);
     expect(soft.find((p) => p.id === "stepup-person").sides.map((x) => x.label)).toEqual(["a bulk edit held for a second factor", "a bulk edit held for a person"]);
     expect(soft.find((p) => p.id === "ask-refuse").why).toMatch(/^A bulk edit above the first threshold/);
     expect(soft.find((p) => p.id === "careful-poisoned").why).toMatch(/^maya\.chen asks for a low-risk read both times/);
-    expect(soft.map((p) => p.sides.map((x) => [x.uc, x.persona, x.instructionsPreset]))).toEqual(PRESETS.map((p) => p.sides.map((x) => [x.uc, x.persona, x.instructionsPreset])));
-    expect(presetFor(PRESETS[1], { cast: BANKING }).sides[0].label).toBe("a transfer held for a second factor");
+    expect(soft.map((p) => p.sides.map((x) => [x.uc, x.persona, x.instructionsPreset]))).toEqual(presetsFor(SOFTWARE).map((p) => p.sides.map((x) => [x.uc, x.persona, x.instructionsPreset])));
+    expect(presetFor(PRESETS.find((p) => p.id === "stepup-person"), { cast: BANKING }).sides[0].label).toBe("a transfer held for a second factor");
   });
 
   test("steps 5 and 6 list the extra prompts a vertical offers: the allowed third-party call, then the refusals and the lower approval rung", () => {

@@ -236,7 +236,7 @@ describe("the Run page for a tool server run", () => {
 
 describe("the software vertical is no longer described as mock-only", () => {
   test("OWN_TOOL_VERTICALS replaces MOCK_ONLY_VERTICALS", () => {
-    expect(lib.OWN_TOOL_VERTICALS).toEqual(["software"]);
+    expect(lib.OWN_TOOL_VERTICALS).toEqual(["software", "airline"]); // the airline pack names its own booking tool too
     expect(lib.MOCK_ONLY_VERTICALS).toBeUndefined();
   });
 

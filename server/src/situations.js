@@ -10,6 +10,9 @@
 //   rar       pushed authorization_details bound (maxAmount)
 //   forgedApproval the client sends a boolean approval flag instead of a verified receipt
 //   public    a public catalog call that needs no token
+//   trip, international, phoneApproval   airline pack only (SITUATION_OVERRIDES.airline): the staged flight, the international flag and a lab input that
+//             approves a booking change on the traveller's own phone. They are dedicated fields, NOT `args`: `args` would run the gateway edge policy
+//             and turn a read into a write.
 //   chain     a lab-derived chain for use cases whose catalog evidence chain is empty
 export const SITUATIONS = {
   UC6: { amount: 2500 },
@@ -46,7 +49,19 @@ export const SITUATIONS = {
 };
 // Where a vertical's third-party tools take other arguments (the software pack's scanner takes a repository, its web search a Jira question), the
 // override replaces the use case's `args`. Everything else about the use case is shared. Banking, healthcare and retail have no override.
+// The airline pack's staged bookings (LAB-INVENTED flights and fares; the README lists them). One listed fare per flight: the price of the business seat
+// the lab asks for. `international` is the flag the fare rule reads.
+const trip = (flight, to, city, day) => ({ flight, from: 'ORD', to, city, day, cabin: 'business' });
 export const SITUATION_OVERRIDES = {
+  airline: {
+    UC7: { amount: 380, trip: trip('LK 214', 'DEN', 'Denver', 'Friday') },
+    UC8: { amount: 380, international: true, trip: trip('LK 322', 'YYZ', 'Toronto', 'Friday') },
+    UC48: { amount: 780, trip: trip('LK 560', 'BOS', 'Boston', 'December 4') },
+    UC6: { amount: 2400, international: true, trip: trip('LK 704', 'CDG', 'Paris', 'November 28') },
+    UC27: { amount: 2400, international: true, forgedApproval: true, trip: trip('LK 704', 'CDG', 'Paris', 'November 28') },
+    UC22: { amount: 150, phoneApproval: true, trip: trip('LK 109', 'DEN', 'Denver', 'Friday') },
+    UC14b: { trip: trip('LK 330', 'SFO', 'San Francisco', 'Friday') }, // amount 400 comes from the shared situation: exactly the first limit, flight LK 330
+  },
   software: {
     UC30: { args: { repo: 'platform' } },
     UC31: { args: { repo: 'payroll' } },

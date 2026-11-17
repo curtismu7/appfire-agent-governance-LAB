@@ -7,9 +7,9 @@ import { VERTICALS, STUB_VERTICALS, DEFAULT_CAST, DEFAULT_VERTICAL, OPTIONAL_CAS
 import { LABELS, EXTRA_TOKENS, NOT_DEMONSTRATED, rawStory } from '../src/data.js';
 import { buildStory, renderTalkTrackMarkdown } from '../src/story.js';
 
-test('four full vertical packs define every {{token}} the labels and the story use; a test fails on any undefined token', () => {
-  assert.deepEqual(Object.keys(VERTICALS), ['banking', 'healthcare', 'retail', 'software']);
-  assert.equal(DEFAULT_VERTICAL, 'software'); assert.equal(DEFAULT_CAST, VERTICALS.software);
+test('five full vertical packs define every {{token}} the labels and the story use; a test fails on any undefined token', () => {
+  assert.deepEqual(Object.keys(VERTICALS), ['airline', 'banking', 'healthcare', 'retail', 'software']);
+  assert.equal(DEFAULT_VERTICAL, 'airline'); assert.equal(DEFAULT_CAST, VERTICALS.airline);
   const text = JSON.stringify(rawStory());
   for (const [v, pack] of Object.entries(VERTICALS)) {
     const known = { ...pack, ...Object.fromEntries(EXTRA_TOKENS.map((t) => [t, 'x'])) };
@@ -25,26 +25,30 @@ test('all packs share one set of required keys (optional keys only where named),
     assert.deepEqual(Object.keys(pack).filter((k) => !OPTIONAL_CAST_KEYS.includes(k)).sort(), keys, v);
     for (const val of Object.values(pack)) { assert.equal(typeof val, 'string'); assert.ok(val.length > 0 && val.length < 41); assert.ok(!/[:/@]/.test(val)); }
   }
-  assert.equal(new Set(Object.values(VERTICALS).map((p) => p.castUser)).size, 4);
+  assert.equal(new Set(Object.values(VERTICALS).map((p) => p.castUser)).size, 5);
   for (const v of ['banking', 'healthcare', 'retail']) assert.deepEqual(Object.keys(VERTICALS[v]).filter((k) => OPTIONAL_CAST_KEYS.includes(k)), [], `${v} defines no optional key`);
-  assert.deepEqual(Object.keys(VERTICALS.software).filter((k) => OPTIONAL_CAST_KEYS.includes(k)).sort(), [...OPTIONAL_CAST_KEYS].sort(), 'software defines every optional key');
+  // software defines every optional key of its own; airline defines the optional keys it uses (no unit, no scan tool, and the airline-only fare keys instead of software's)
+  assert.deepEqual(Object.keys(VERTICALS.software).filter((k) => OPTIONAL_CAST_KEYS.includes(k)).sort(), OPTIONAL_CAST_KEYS.filter((k) => !/^castFare/.test(k)).sort(), 'software defines every optional key except the airline fare keys');
+  const airlineOptional = Object.keys(VERTICALS.airline).filter((k) => OPTIONAL_CAST_KEYS.includes(k)).sort();
+  for (const k of ['castPublicTool', 'castStatusTool', 'castRequestTool', 'castPerson', 'castFareRule', 'castFareLimit', 'castFareHold']) assert.ok(airlineOptional.includes(k), `airline defines ${k}`);
+  for (const k of ['castScanTool', 'castUnit']) assert.ok(!airlineOptional.includes(k), `airline does not define ${k}`);
 });
 
 test('fill never reads inherited properties: {{__proto__}} and {{constructor}} stay as text', () => {
   assert.equal(fill('a {{__proto__}} b {{constructor}} c {{toString}}', DEFAULT_CAST), 'a {{__proto__}} b {{constructor}} c {{toString}}');
-  assert.deepEqual(fillDeep({ a: ['{{castBrand}}', { b: '{{castUser}}' }], n: 1, z: null }, DEFAULT_CAST), { a: ['Appfire Work Suite', { b: 'maya.chen' }], n: 1, z: null });
+  assert.deepEqual(fillDeep({ a: ['{{castBrand}}', { b: '{{castUser}}' }], n: 1, z: null }, DEFAULT_CAST), { a: ['Larkspur Air', { b: 'elena.novak' }], n: 1, z: null });
 });
 
 test('fillDeep is iterative: a structure 50,000 levels deep does not overflow the stack', () => {
   let deep = '{{castBrand}}'; for (let i = 0; i < 50000; i++) deep = { x: deep };
   let out = fillDeep(deep, DEFAULT_CAST); let n = 0; while (typeof out === 'object') { out = out.x; n++; }
-  assert.equal(n, 50000); assert.equal(out, 'Appfire Work Suite');
+  assert.equal(n, 50000); assert.equal(out, 'Larkspur Air');
 });
 
-test('seven verticals are data stubs (a name only); one customer-flavoured source name is left out', () => {
+test('six verticals are data stubs (a name only); one customer-flavoured source name is left out', () => {
   const list = verticalList();
   assert.equal(list.length, 11);
-  assert.deepEqual(list.filter((v) => v.pack === 'full').map((v) => v.id), ['banking', 'healthcare', 'retail', 'software']);
+  assert.deepEqual(list.filter((v) => v.pack === 'full').map((v) => v.id), ['airline', 'banking', 'healthcare', 'retail', 'software']);
   assert.deepEqual(list.filter((v) => v.pack === 'stub').map((v) => v.id), Object.keys(STUB_VERTICALS));
   for (const stub of Object.values(STUB_VERTICALS)) assert.equal(typeof stub, 'string');
   assert.equal(isFullVertical('government'), false); assert.equal(isKnownVertical('government'), true);
@@ -93,9 +97,9 @@ test('customer.config.json can set only the brand and a one-label host; a bad va
       fs.writeFileSync(f, JSON.stringify({ cast: bad }));
       const d = loadCast(f, 'retail'); assert.equal(d.castBrand, VERTICALS.retail.castBrand); assert.equal(d.castHost, VERTICALS.retail.castHost);
     }
-    fs.writeFileSync(f, 'not json'); assert.equal(loadCast(f).castBrand, 'Appfire Work Suite');
+    fs.writeFileSync(f, 'not json'); assert.equal(loadCast(f).castBrand, 'Larkspur Air');
     assert.equal(loadCast('/nonexistent/c.json', 'healthcare').castBrand, 'Appfire Health Suite');
-    assert.equal(loadCast(f, '__proto__').castBrand, 'Appfire Work Suite', 'an unknown vertical falls back to the default');
+    assert.equal(loadCast(f, '__proto__').castBrand, 'Larkspur Air', 'an unknown vertical falls back to the default');
     assert.equal(loadCast(f, 'banking').castBrand, 'Appfire Platform'); assert.equal(loadCast('/nonexistent/c.json', 'software').castUnit, 'issues');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
@@ -113,5 +117,5 @@ test('review fix: the presenter text counts the stub verticals correctly (the NO
   const words = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
   const line = NOT_DEMONSTRATED.find((l) => /verticals are data stubs/.test(l));
   assert.ok(line.toLowerCase().startsWith(`${words[Object.keys(STUB_VERTICALS).length]} verticals are data stubs`), line);
-  assert.equal(Object.keys(STUB_VERTICALS).length, 7);
+  assert.equal(Object.keys(STUB_VERTICALS).length, 6);
 });

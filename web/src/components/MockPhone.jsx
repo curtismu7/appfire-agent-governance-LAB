@@ -10,6 +10,7 @@
 //   onClose()         the phone was dismissed (the session keeps its state; the host can reopen later)
 //   onDecided(state)  called once when the session ends: 'approved' | 'denied' | 'expired'
 //   onError(message)  a failed start is the host's business; here: only network errors on decide
+//   approvedSentence  optional: the sentence shown once approved, for a host whose approval does not release the call (default: the lab proceeds)
 //   reopenable        when true (default) a dismissed pending phone shows an "Open phone" button again
 import { useEffect, useRef, useState } from 'react';
 import FloatingDialog from '../floating-dialog/FloatingDialog';
@@ -22,7 +23,7 @@ const STATES = {
   expired: { tone: 'warn', word: 'Expired', sentence: 'Nobody answered in time. The hold stands and nothing was sent to the tool.' },
 };
 
-export default function MockPhone({ approval, onClose, onDecided, onError, reopenable = true }) {
+export default function MockPhone({ approval, onClose, onDecided, onError, reopenable = true, approvedSentence }) {
   const [view, setView] = useState(approval);
   const [error, setError] = useState('');
   const [closed, setClosed] = useState(false);
@@ -61,7 +62,7 @@ export default function MockPhone({ approval, onClose, onDecided, onError, reope
   };
 
   const pending = view?.state === 'pending';
-  const chip = STATES[view?.state];
+  const chip = STATES[view?.state] && view.state === 'approved' && approvedSentence ? { ...STATES.approved, sentence: approvedSentence } : STATES[view?.state];
   const money = Number.isFinite(view?.amount) ? `$${Number(view.amount).toLocaleString()}` : null;
 
   const phone = (

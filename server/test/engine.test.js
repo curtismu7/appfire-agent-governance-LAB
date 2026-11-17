@@ -7,6 +7,7 @@ import { decide, edgePolicy, BANDS, countText, unitFor } from '../src/policy.js'
 import { verifyMockJwt } from '../src/mockjwt.js';
 import { SITUATIONS } from '../src/situations.js';
 import { maskText } from '../src/credentials.js';
+import { localize } from '../src/routes.js';
 
 const go = (id, vertical = 'banking', extra = {}) => runUseCase(findUseCase(id), { cast: VERTICALS[vertical], vertical, seed: 'run', ...extra });
 // Flips every bit of the first signature byte, so the tampered token ALWAYS differs (replacing trailing characters can be a no-op in base64url).
@@ -18,17 +19,17 @@ const ranKinds = (r) => ran(r).map((h) => h.kind);
 const FRAME = ['website', 'sign-in', 'prompt', 'agent-receive', 'tools-list-challenge', 'tools-list', 'llm-plan'];
 const strip = (r) => JSON.parse(JSON.stringify(r, (k, v) => (typeof v === 'string' ? v.replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, (m) => m.split('.').slice(0, 2).join('.')) : v)));
 
-test('all 87 use cases run in mock in all four full verticals and the COMPUTED outcome equals the manifest expectedOutcome', () => {
+test('all 87 use cases run in mock in all five full verticals and the COMPUTED outcome equals the label the pack shows (the manifest expectedOutcome; the airline pack relabels four, see engine.airline.test.js)', () => {
   let n = 0;
   for (const vertical of Object.keys(VERTICALS)) {
     for (const uc of MANIFEST.usecases) {
       const r = go(uc.id, vertical);
-      assert.equal(r.outcome, uc.expectedOutcome, `${vertical}/${uc.id}`);
+      assert.equal(r.outcome, localize(uc, vertical).expectedOutcome, `${vertical}/${uc.id}`);
       assert.equal(r.matchesExpected, r.computed ? true : null, `${vertical}/${uc.id}`);
       n += 1;
     }
   }
-  assert.equal(n, 87 * 4);
+  assert.equal(n, 87 * 5);
 });
 
 test('54 use cases are computed by the engine, 33 are guided pages whose outcome is the catalog label (and say so)', () => {
@@ -247,8 +248,8 @@ test('the situation table names only real use cases, and the engine never reads 
 });
 
 test('only full verticals exist as packs; the stubs are names only', () => {
-  assert.deepEqual(Object.keys(VERTICALS), ['banking', 'healthcare', 'retail', 'software']);
-  assert.equal(Object.keys(STUB_VERTICALS).length, 7);
+  assert.deepEqual(Object.keys(VERTICALS), ['airline', 'banking', 'healthcare', 'retail', 'software']);
+  assert.equal(Object.keys(STUB_VERTICALS).length, 6);
   assert.ok(!Object.keys(STUB_VERTICALS).includes('walbuy'));
 });
 

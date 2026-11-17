@@ -6,6 +6,7 @@ import { MANIFEST, findUseCase } from '../src/manifest.js';
 import { VERTICALS } from '../src/cast.js';
 import { runUseCase, isFlow, REEL_TABLES } from '../src/flow.js';
 import { situationOf } from '../src/situations.js';
+import { ucReplyFor } from '../src/replies.js';
 import { validateHop } from '../src/vendor/hopDetail.mjs';
 import CATALOG from '../src/vendor/hop-catalog.json' with { type: 'json' };
 
@@ -16,7 +17,7 @@ const skipOf = (r, kind) => r.hops.find((h) => h.verdict === 'skip' && h.kind ==
 const SKIP_ORDER = ['step-up', 'intent-binding-verified', 'vault-key-inject', 'api-key-swap', 'database-query'];
 const { PLANS, CALLS_TOOL, API_KEY_PATH, A2A_PROTOCOL } = REEL_TABLES;
 const everyRun = function* () {
-  for (const vertical of Object.keys(VERTICALS)) for (const uc of MANIFEST.usecases.filter(isFlow)) yield { at: `${vertical} ${uc.id}`, uc, r: runUseCase(uc, { cast: VERTICALS[vertical], vertical, seed: 'run' }) };
+  for (const vertical of Object.keys(VERTICALS)) for (const uc of MANIFEST.usecases.filter(isFlow)) yield { at: `${vertical} ${uc.id}`, vertical, uc, r: runUseCase(uc, { cast: VERTICALS[vertical], vertical, seed: 'run' }) };
 };
 
 test('UC1 banking: the exact AI-DEMO2 order of the hops that ran, then the not-in-path list', () => {
@@ -48,7 +49,7 @@ test('UC1 banking: the exact AI-DEMO2 order of the hops that ran, then the not-i
 
 test('every flow use case in every full vertical keeps the AI-DEMO2 shape', () => {
   let runs = 0;
-  for (const { at, uc, r } of everyRun()) {
+  for (const { at, vertical, uc, r } of everyRun()) {
     runs++;
     const sit = situationOf(uc.id);
     const k = ranKinds(r);
@@ -82,7 +83,9 @@ test('every flow use case in every full vertical keeps the AI-DEMO2 shape', () =
     assert.ok(firstSkip > 0, at);
     assert.ok(r.hops.slice(firstSkip).every((h) => h.verdict === 'skip'), `${at}: skips are last`);
     const skips = r.hops.slice(firstSkip).map((h) => h.kind);
-    assert.deepEqual(skips, SKIP_ORDER.filter((s) => skips.includes(s)), `${at}: skip order`);
+    // hitl-receipt is skipped only in an airline run that books (UC48 CONSTRAINED: nobody is asked); in every other run it is drawn as the hold it is
+    assert.deepEqual(skips, [...SKIP_ORDER.slice(0, 1), 'hitl-receipt', ...SKIP_ORDER.slice(1)].filter((s) => skips.includes(s)), `${at}: skip order`);
+    if (skips.includes('hitl-receipt')) assert.ok(vertical === 'airline' && uc.id === 'UC48' && !k.includes('hitl-receipt'), `${at}: only an airline UC48 that booked skips hitl-receipt`);
     for (const s of SKIP_ORDER) assert.notEqual(k.includes(s), skips.includes(s), `${at}: ${s} is either run or listed as skipped`);
     for (const h of r.hops.slice(firstSkip)) { assert.deepEqual(h.request, {}); assert.ok(h.note && /^No /.test(h.note), `${at}: ${h.kind} says why`); assert.equal(h.fact, 'not in this path'); }
     // A reply only on a finished run, built from the tool result or the run's own narration: never a bare "Done".
@@ -93,7 +96,10 @@ test('every flow use case in every full vertical keeps the AI-DEMO2 shape', () =
       const text = ran(r).at(-1).response.body.reply;
       assert.doesNotMatch(text, /^Done[.!]?$/, at); // never a bare "Done": a write says what was done ("Done: $150 moved ...")
       assert.ok(text.length > 20, at);
-      if (td < 0) assert.ok(text.startsWith('No tool was called.') && text.includes(r.outcome), `${at}: ${text}`);
+      // The airline pack answers the explanation use case in its own words (byUseCase, review fix): a sentence that claims no tool ran, so it is checked against the data.
+      const own = r.vertical === 'airline' ? ucReplyFor({ cast: VERTICALS.airline, vertical: 'airline', persona: r.persona, uc: r.useCase.id }) : null;
+      if (td < 0 && own) assert.equal(text, own, `${at}: ${text}`);
+      else if (td < 0) assert.ok(text.startsWith('No tool was called.') && text.includes(r.outcome), `${at}: ${text}`);
       else {
         // The reply is the tool's own lab-invented answer (data/replies.json), never a placeholder that names the tool.
         const toolText = ran(r)[td].response.body.result.content[0].text;
@@ -109,7 +115,7 @@ test('every flow use case in every full vertical keeps the AI-DEMO2 shape', () =
       assert.deepEqual(validateHop(h, CATALOG, { tokens: 'raw' }), [], `${at} hop ${h.n} ${h.kind}`);
     }
   }
-  assert.equal(runs, 54 * 4);
+  assert.equal(runs, 54 * 5);
 });
 
 test('skip notes never contradict the hops that ran', () => {

@@ -26,6 +26,7 @@ export const CAPTIONS = {
     say: "Before the gateway lets anything through, the policy engine evaluates this call: who the agent is, whose permission it carries, the action, the resource and the risk. It is a decision, not a prompt the model answers.",
     deny: "The policy engine says no. The decision is made before the tool is touched, so a manipulated agent still meets the same answer.",
     held: "The policy engine does not refuse and does not wave it through. It asks for more: a second factor or a person.",
+    constrained: "The lab's fare rule does not refuse and does not stop for anyone. It allows the call with a limit: the booking may go ahead, but only in economy. The agent's ask for business is not granted. This outcome is the lab's own, not a PingOne Authorize one.",
     point: "The decision and the policy named on it.",
   },
   "tools-call-challenge": { agenda: "call", say: "The agent tries the tool call. With no token the gateway turns it away. The enforcement point is the gateway, not the model.", point: "The 401 on the tools/call request." },
@@ -36,10 +37,10 @@ export const CAPTIONS = {
     held: "The gateway holds the call. It waits for approval before anything is forwarded.",
     point: "The filter chain: each check passes or the first one that fails.",
   },
-  "tool-dispatched": { agenda: "allow", say: "The call is allowed and goes through. A low-risk read like this one needs nobody's approval, and the record is still written.", point: "The tool result and the allowed decision. Nobody was asked." },
+  "tool-dispatched": { agenda: "allow", say: "The call is allowed and goes through. A low-risk read like this one needs nobody's approval, and the record is still written.", constrained: "The call goes through with the narrowed arguments: economy, not the business the agent asked for. Nobody was asked, and the record says what was narrowed.", point: "The tool result and the allowed decision. Nobody was asked." },
   "tool-refused": { agenda: "escalate", say: "The call is refused. Nothing reached the tool and no data moved. The agent gets a clear no.", point: "The refusal and the reason it names." },
   "tool-held": { agenda: "escalate", say: "A risky write stops here. It waits for a second factor or a person, and nothing is changed until that happens.", point: "The held status and what it is waiting for." },
-  "api-call": { agenda: "allow", say: "The tool calls the Appfire back-end with the person's delegated access. The service sees who it is acting for, not just that an agent called.", point: "The request to the resource server and its answer." },
+  "api-call": { agenda: "allow", say: "The tool calls the Appfire back-end with the person's delegated access. The service sees who it is acting for, not just that an agent called.", constrained: "The back end receives the narrowed booking: economy. It never sees the business the agent asked for.", point: "The request to the resource server and its answer." },
   "agent-reply": { agenda: "audit", say: "The agent answers in plain words. Behind that sentence is every step you just saw, and each one is recorded.", point: "The reply, then the decision card: agent, person, tool, policy, outcome." },
   "step-up": { agenda: "escalate", say: "A riskier write needs a second factor from the person before it goes ahead.", point: "The step-up request and the person's answer." },
   "intent-binding-verified": { agenda: "escalate", say: "The approval is tied to this exact action. An approval for one action cannot be reused for another.", point: "The intent the approval was bound to." },
@@ -90,6 +91,8 @@ const verdictOf = (hop) => {
   const outcome = typeof hop?.decision?.outcome === "string" ? hop.decision.outcome : "";
   if (hop?.verdict === "deny" || /^deny/i.test(outcome)) return "deny";
   if (hop?.verdict === "held" || /^(held|escalat|hitl)/i.test(outcome)) return "held";
+  // fare: the lab's own CONSTRAINED outcome (the decision hop) or the narrowed arguments (the tool and API hops carry a `constraint` row)
+  if (outcome === "CONSTRAINED" || (Array.isArray(hop?.kv) && hop.kv.some((r) => (Array.isArray(r) ? r[0] : r?.k ?? r?.key) === "constraint"))) return "constrained";
   return "ok";
 };
 
