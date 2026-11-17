@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Appfire Agent Governance: the customer-facing AI agent of the AI-DEMO2 demo with all 87 of its use cases, in eight tracks and eleven verticals (four full packs and seven stubs). A deterministic engine produces every token, hop and decision with no network. The lab opens in Real when Real is fully configured; otherwise no tenant is reached.",
+  "description": "Appfire Agent Governance: the customer-facing AI agent of the AI-DEMO2 demo with all 87 of its use cases, in eight tracks and eleven verticals (five full packs and six stubs). A deterministic engine produces every token, hop and decision with no network. The lab opens in Real when Real is fully configured; otherwise no tenant is reached.",
   "license": "MIT",
   "workspaces": [
     "server",

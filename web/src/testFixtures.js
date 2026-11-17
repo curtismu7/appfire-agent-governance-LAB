@@ -16,12 +16,12 @@ export const USECASES = [
 ];
 export const TRACK_ORDER = ["foundations", "learn", "controls", "hitl", "demo", "attacks", "tools", "nhi"];
 export const catalog = (vertical = "banking") => ({
-  schema: "appfire-agent-governance-usecases/1", vertical, pack: ["software", "banking", "healthcare", "retail"].includes(vertical) ? "full" : "stub", total: USECASES.length, meta: {},
+  schema: "appfire-agent-governance-usecases/1", vertical, pack: ["airline", "software", "banking", "healthcare", "retail"].includes(vertical) ? "full" : "stub", total: USECASES.length, meta: {},
   tracks: TRACK_ORDER.map((t) => { const items = USECASES.filter((u) => u.track === t); return { track: t, count: items.length, usecases: items }; }).filter((t) => t.count),
 });
 export const INFO = {
   mode: "mock", modes: ["mock", "live"], simulated: true, total: 87, counts: {}, personas: ["standard", "premium"],
-  verticals: [{ id: "software", label: "Appfire Work Suite", pack: "full" }, { id: "banking", label: "Appfire Platform", pack: "full" }, { id: "healthcare", label: "Appfire Health Suite", pack: "full" }, { id: "government", label: "Government", pack: "stub" }],
+  verticals: [{ id: "airline", label: "Larkspur Air", pack: "full" }, { id: "software", label: "Appfire Work Suite", pack: "full" }, { id: "banking", label: "Appfire Platform", pack: "full" }, { id: "healthcare", label: "Appfire Health Suite", pack: "full" }, { id: "government", label: "Government", pack: "stub" }],
 };
 // The one neutral banner line the server serves (the web's BANNER_LOCAL and BANNER_HOSTED say the same, word for word).
 export const BANNER_LOCAL_TEXT = "HIVE, Appfire's platform, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.";

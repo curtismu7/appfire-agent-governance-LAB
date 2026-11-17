@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWorkspaces, MAX_RUNS } from '../src/workspaces.js';
 import { MANIFEST, TRACKS } from '../src/manifest.js';
+import { localize } from '../src/routes.js';
 import { get, post, put, run, W, withServer, MOCK_OK } from './helpers.js';
 import { SECRETS, NEEDLE } from './secrets.js';
 import { createLive, liveConfig } from '../src/live.js';
@@ -73,11 +74,11 @@ test('GET /api/usecases is grouped by track, all 87, filterable by track and ver
   await withServer(async (url) => {
     const j = await (await get(url, '/api/usecases')).json();
     assert.equal(j.total, 87); assert.deepEqual(j.tracks.map((t) => [t.track, t.count]), Object.entries(TRACKS));
-    assert.equal(j.vertical, 'software', 'the default vertical is the Appfire Work Suite'); assert.equal(j.pack, 'full'); assert.match(j.source.commit, /^[0-9a-f]{40}$/);
+    assert.equal(j.vertical, 'airline', 'the default vertical is Larkspur Air'); assert.equal(j.pack, 'full'); assert.match(j.source.commit, /^[0-9a-f]{40}$/);
     const hc = await (await get(url, '/api/usecases?vertical=healthcare&track=controls')).json();
     assert.equal(hc.total, 16); assert.equal(hc.tracks.length, 1);
     assert.equal(hc.tracks[0].usecases.find((u) => u.id === 'UC6').tool, 'pay_bill');
-    assert.equal(j.tracks[2].usecases.find((u) => u.id === 'UC6').tool, 'bulk_update_issues');
+    assert.equal(j.tracks[2].usecases.find((u) => u.id === 'UC6').tool, 'book_airline_flight');
     const sw = await (await get(url, '/api/usecases?vertical=software&track=controls')).json();
     assert.equal(sw.tracks[0].usecases.find((u) => u.id === 'UC6').tool, 'bulk_update_issues');
     const swTp = await (await get(url, '/api/usecases/UC31?vertical=software')).json();
@@ -106,8 +107,10 @@ test('bad query values are 400 with fixed text, and nothing typed comes back', a
     assert.equal(s.cast.castBrand, 'Appfire Retail Suite'); assert.equal(s.total, 87); assert.ok(!JSON.stringify(s).includes('{{'));
     const sw = await (await get(url, '/api/story?vertical=software')).json();
     assert.equal(sw.cast.castBrand, 'Appfire Work Suite'); assert.equal(sw.cast.castUnit, 'issues'); assert.ok(!JSON.stringify(sw).includes('{{'));
-    assert.deepEqual(sw.fullVerticals, ['banking', 'healthcare', 'retail', 'software']);
-    assert.equal((await (await get(url, '/api/story')).json()).vertical, 'software');
+    assert.deepEqual(sw.fullVerticals, ['airline', 'banking', 'healthcare', 'retail', 'software']);
+    const air = await (await get(url, '/api/story?vertical=airline')).json();
+    assert.equal(air.cast.castBrand, 'Larkspur Air'); assert.equal(air.cast.castFareLimit, '$400'); assert.equal(air.cast.castFareHold, '$1,500'); assert.ok(!JSON.stringify(air).includes('{{'));
+    assert.equal((await (await get(url, '/api/story')).json()).vertical, 'airline');
   });
 });
 
@@ -159,13 +162,13 @@ test('POST /api/run/:id runs a use case in mock and returns the full record', as
 test('every one of the 87 use cases runs over HTTP and matches its expected outcome, in every full vertical', async () => {
   await withServer(async (url) => {
     let n = 0;
-    for (const v of ['banking', 'healthcare', 'retail', 'software']) for (const uc of MANIFEST.usecases) {
+    for (const v of ['airline', 'banking', 'healthcare', 'retail', 'software']) for (const uc of MANIFEST.usecases) {
       const ws = W(`all-${v}`);
       let r = await run(url, uc.id, { vertical: v }, ws);
       if (r.status === 409) { await post(url, '/api/reset', {}, ws); r = await run(url, uc.id, { vertical: v }, ws); } // a workspace holds 100 runs: Reset and go on
-      assert.equal(r.status, 200, `${v}/${uc.id}`); assert.equal(r.body.run.outcome, uc.expectedOutcome, `${v}/${uc.id}`); n++;
+      assert.equal(r.status, 200, `${v}/${uc.id}`); assert.equal(r.body.run.outcome, localize(uc, v).expectedOutcome, `${v}/${uc.id}`); n++; // the airline pack relabels four use cases (verticalText.js OUTCOME_OVERRIDES)
     }
-    assert.equal(n, 348);
+    assert.equal(n, 435);
   });
 });
 
@@ -366,11 +369,12 @@ test('step 2: every use case says whether it is guided (33) or computed (54), an
       const r = (await run(url, id)).body;
       assert.equal(r.run.kind === 'guided', u.guided, id);
     }
-    assert.deepEqual(all.find((u) => u.id === 'UC7').labInputs, { amount: 600 });
+    assert.deepEqual(all.find((u) => u.id === 'UC7').labInputs, { amount: 380, trip: { flight: 'LK 214', from: 'ORD', to: 'DEN', city: 'Denver', day: 'Friday', cabin: 'business' } }, 'the default (airline) pack stages its own booking');
+    const bankUc7 = await (await get(url, '/api/usecases/UC7?vertical=banking')).json(); assert.deepEqual(bankUc7.usecase.labInputs, { amount: 600 });
     assert.deepEqual(all.find((u) => u.id === 'UC5').labInputs, { event: 'insufficient-scope' });
     assert.deepEqual(all.find((u) => u.id === 'UC1').labInputs, {});
     // a copy: the engine's table is not reachable through the answer
-    const again = await (await get(url, '/api/usecases/UC7')).json(); assert.deepEqual(again.usecase.labInputs, { amount: 600 });
+    const again = await (await get(url, '/api/usecases/UC7?vertical=banking')).json(); assert.deepEqual(again.usecase.labInputs, { amount: 600 });
   });
 });
 

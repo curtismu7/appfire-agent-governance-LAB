@@ -9,8 +9,8 @@ import { createHash } from 'node:crypto';
 import { extrasOf, fill, personaOf, roleOf, toolFor } from './cast.js';
 import { LABELS } from './data.js';
 import { verifyMockJwt, signMockJwt, tokenView } from './mockjwt.js';
-import { GATEWAY, countText, decide, edgePolicy, unitFor } from './policy.js';
-import { PROBE_DENIED, proposalFor, replyFor } from './replies.js';
+import { BOOKING_TOOLS, FARE_RULE, GATEWAY, countText, decide, edgePolicy, unitFor } from './policy.js';
+import { PROBE_DENIED, proposalFor, replyFor, ucReplyFor } from './replies.js';
 import { situationOf } from './situations.js';
 import { localize } from './routes.js';
 import { STEER_AMOUNT, instructionsFor } from './instructions.js';
@@ -19,11 +19,17 @@ import { enrichHop } from './vendor/hopDetail.mjs';
 import { mockExchange } from './gatewayExchanges.js';
 import HOP_CATALOG from './vendor/hop-catalog.json' with { type: 'json' };
 
-export const ENGINE_OUTCOMES = new Set(['PERMIT', 'DENY', 'DENY_401', 'DENY_403', 'DENY_429', 'DENY_503', 'STEP_UP', 'HITL_REQUIRED', 'PERMIT_THEN_DENY', 'DELEGATE_AND_EXECUTE']);
+export const ENGINE_OUTCOMES = new Set(['PERMIT', 'DENY', 'DENY_401', 'DENY_403', 'DENY_429', 'DENY_503', 'STEP_UP', 'HITL_REQUIRED', 'PERMIT_THEN_DENY', 'DELEGATE_AND_EXECUTE', 'CONSTRAINED']);
 const T0 = 1767227814; // 2026-01-01T00:00:00Z, the lab's fixed clock
 const TTL = 300;
 // The pushed authorization_details entry (RAR): banking packs push a payment bound, the software pack an issue-change bound.
 const authDetail = (ctx) => ({ type: ctx.extras.authz.type, [ctx.extras.authz.maxKey]: ctx.sit.rar.maxAmount });
+// Airline pack (castFareRule). Who decided a CONSTRAINED outcome, said where the page reads it: the lab's own fare rule, never a PingOne Authorize outcome.
+const FARE_BY = "the lab's fare rule, not a PingOne Authorize outcome";
+// The trip a steered run proposes when the use case stages none (the pack's defaults in data/replies.json values.airline.common). The tool server is never
+// called on a held run, so this fare is the manipulated agent's own proposal, not a row of the flights table.
+const DEFAULT_TRIP = { flight: 'LK 214', from: 'ORD', to: 'DEN', city: 'Denver', day: 'Friday', cabin: 'business' };
+const FARE_CALLS = new Set(['UC6', 'UC7', 'UC8', 'UC27']); // booking use cases that reach the tool when the fare rule neither holds nor refuses them
 const sha = (s, n = 16) => createHash('sha256').update(String(s)).digest('hex').slice(0, n);
 
 // A use case is computed by the engine when its outcome is one the engine can produce and it has something to compute (not a bare learning link).
@@ -38,12 +44,17 @@ function makeCtx(uc, { cast, vertical, persona, traceparent, seed, brain, said, 
   const extras = extrasOf(vertical);
   const person = personaOf(cast, persona || sit.persona || 'standard');
   // A use case with no primary tool in the catalog is run against the vertical's everyday read tool (lab reading).
-  const role = uc.primaryTool ? roleOf(uc.primaryTool) : 'read';
+  const fareRule = Boolean(cast.castFareRule);
+  let role = uc.primaryTool ? roleOf(uc.primaryTool) : 'read';
   const tool = uc.primaryTool ? toolFor(cast, uc.primaryTool) : cast.castReadTool;
+  // A booking use case whose primary tool is the booking tool itself (UC48) has no role in TOOL_ROLES: in an airline run it is the write role, so it carries
+  // the pack's write scope like every other booking. The other packs keep null.
+  if (fareRule && BOOKING_TOOLS.has(tool)) role = 'write';
   const trace = newTrace(traceparent, `${seed}:${uc.id}:${vertical}:${person.key}`);
   const host = cast.castHost;
   const ctx = {
     uc, cast, vertical, sit, extras, unit: unitFor(cast, uc.primaryTool), person, role, tool, trace, hops: [], gwTrace: [], tokens: [], clock: T0, halted: null, pending: null, probeDenied: false,
+    fareRule, international: sit.international === true, cabin: sit.trip?.cabin,
     amount: typeof sit.amount === 'number' ? sit.amount : undefined, event: sit.event || null, gwDone: false, seenProofs: new Set(),
     urls: { idp: 'https://idp.mock.example/as', bff: `https://bff.${host}.example`, agent: `https://agent.${host}.example`, llm: 'https://llm.mock.example', gw: `https://gateway.${host}.example`, mcp: `https://mcp.${host}.example`, api: `https://api.${host}.example`, registry: `https://registry.${host}.example`, a2a: `https://a2a.${host}.example` },
     scope: extras.scopes[role] || `tools:${tool || 'none'}`,
@@ -292,17 +303,23 @@ function authorize(ctx) {
   const dec = decide({
     role: ctx.role, tool: ctx.uc.primaryTool, amount: ctx.amount, unit: ctx.unit, sub: ctx.person.sub, owner: ctx.event === 'cross-owner-account' ? ctx.cast.castOwner2 : ctx.person.sub,
     groupGate: ctx.sit.groupGate, groups: ctx.person.groups, group: ctx.cast.castGroup, actor: actorUnregistered ? { registered: false } : { registered: true }, rar: ctx.sit.rar,
+    ...(ctx.fareRule ? { fareRule: true, international: ctx.international, cabin: ctx.cabin, forgedApproval: ctx.sit.forgedApproval === true, phoneApproval: ctx.sit.phoneApproval === true } : {}),
   });
+  // A booking decision of the fare rule (not an earlier refusal): the airline run then carries `booking`, and a narrowing is `constrained`.
+  const fareBooking = ctx.fareRule && (ctx.role === 'write' || BOOKING_TOOLS.has(ctx.uc.primaryTool)) && typeof ctx.amount === 'number' && !String(dec.decision).startsWith('DENY');
+  if (fareBooking) ctx.bookingDecided = true;
+  const tripFor = tripOf(ctx);
   hop(ctx, 'authorize-decision', {
     from: 'bff', to: 'authorize', url: 'https://authorize.mock.example/decision',
-    body: { subject: ctx.person.sub, action: ctx.tool, context: { amount: ctx.amount, groups: ctx.person.groups, act: actorUnregistered ? { sub: 'unregistered-agent' } : act, ...(ctx.sit.rar ? { authorization_details: [authDetail(ctx)] } : {}), ...(ctx.sit.forgedApproval ? { hitl_approved: true } : {}) } },
-    resBody: { decision: dec.decision === 'DENY_403' ? 'DENY' : dec.decision, reason: dec.reason, ...(['STEP_UP', 'HITL_REQUIRED', 'CIBA'].includes(dec.decision) ? { obligation: dec.decision } : {}) },
-    verdict: dec.decision === 'PERMIT' ? 'ok' : ['STEP_UP', 'HITL_REQUIRED', 'CIBA'].includes(dec.decision) ? 'obligation' : 'deny',
+    body: { subject: ctx.person.sub, action: ctx.tool, context: { amount: ctx.amount, groups: ctx.person.groups, act: actorUnregistered ? { sub: 'unregistered-agent' } : act, ...(ctx.sit.rar ? { authorization_details: [authDetail(ctx)] } : {}), ...(ctx.sit.forgedApproval ? { hitl_approved: true } : {}), ...(fareBooking ? { booking: { flight: tripFor.flight, from: tripFor.from, to: tripFor.to, international: ctx.international, cabin: FARE_RULE.from, fare: ctx.amount } } : {}) } },
+    resBody: { decision: dec.decision === 'DENY_403' ? 'DENY' : dec.decision, reason: dec.reason, ...(['STEP_UP', 'HITL_REQUIRED', 'CIBA'].includes(dec.decision) ? { obligation: dec.decision } : {}), ...(dec.constrain ? { constraint: { ...dec.constrain } } : {}) },
+    verdict: dec.decision === 'PERMIT' || dec.decision === 'CONSTRAINED' ? 'ok' : ['STEP_UP', 'HITL_REQUIRED', 'CIBA'].includes(dec.decision) ? 'obligation' : 'deny',
     note: ctx.sit.forgedApproval ? 'the client sent a boolean "approved" flag; the BFF ignores it and needs a real, verified receipt' : undefined,
-    detail: { decision: { outcome: dec.decision, by: 'authorize policy', reasons: [dec.reason].filter(Boolean) } },
+    detail: { decision: { outcome: dec.decision, by: fareBooking ? FARE_BY : 'authorize policy', reasons: [dec.reason].filter(Boolean) } }, // an airline booking is decided by the lab's own fare rule in every outcome, never presented as a PingOne Authorize outcome
   });
+  if (dec.constrain) ctx.constrained = { ...dec.constrain, by: FARE_BY };
   if (dec.decision === 'DENY' || dec.decision === 'DENY_403') halt(ctx, dec.decision, 'authorize', 403, dec.reason);
-  else if (dec.decision !== 'PERMIT') { ctx.pending = dec.decision; ctx.obligation = dec.decision; stepUp(ctx, dec.decision); }
+  else if (dec.decision !== 'PERMIT' && dec.decision !== 'CONSTRAINED') { ctx.pending = dec.decision; ctx.obligation = dec.decision; stepUp(ctx, dec.decision); }
 }
 
 // AI-DEMO2's step-up step, drawn right after the decision that asked for it. This lab does not complete the approval: nothing reaches a person or a device.
@@ -334,7 +351,16 @@ function dispatch(ctx) {
   toolCall(ctx);
 }
 
-const replyInput = (ctx) => ({ cast: ctx.cast, vertical: ctx.vertical, persona: ctx.person.key, tool: ctx.tool, amount: ctx.amount, args: ctx.sit.args });
+// Airline pack: the staged trip (or, for a steered run that stages none, the pack's defaults) and the arguments of the booking call as the agent asked (`asked`)
+// or as it was booked (`booked`: the cabin the fare rule granted). Nothing here is a price paid: `fare_judged` is the fare the rule judged.
+// A steered run proposes the pack's default trip whatever use case it runs (its $2,500 is never attached to a listed flight).
+const tripOf = (ctx) => (ctx.fareRule ? (ctx.steered ? DEFAULT_TRIP : ctx.sit.trip ?? DEFAULT_TRIP) : null);
+const bookingArgs = (ctx, which) => ({ flight: ctx.sit.trip.flight, cabin: which === 'booked' && ctx.constrained ? ctx.constrained.granted : ctx.sit.trip.cabin ?? FARE_RULE.from });
+const airlineTrip = (ctx) => ctx.fareRule && ctx.sit.trip;
+const replyInput = (ctx) => ({
+  cast: ctx.cast, vertical: ctx.vertical, persona: ctx.person.key, tool: ctx.tool, amount: ctx.amount, args: ctx.sit.args,
+  ...(ctx.fareRule ? { uc: ctx.uc.id, booking: tripOf(ctx) && (ctx.steered || ctx.sit.trip) ? { flight: tripOf(ctx).flight, from: tripOf(ctx).from, city: tripOf(ctx).city, day: tripOf(ctx).day } : undefined, constrained: ctx.constrained ? { because: ctx.constrained.because } : undefined } : {}),
+});
 
 // The tool runs and its back end answers. Bearer path: tool-dispatched then api-call with the delegated token. API-key path (AI-DEMO2 order:
 // gateway, vault-key-inject, api-key-swap, mcp, api): the gateway fetches the route's key and swaps the bearer for it; the api step carries the key.
@@ -347,21 +373,25 @@ function toolCall(ctx) {
   const text = `${said} (lab-invented values)`;
   hop(ctx, 'tool-dispatched', {
     from: 'gateway', to: 'mcp', url: `${ctx.urls.mcp}/mcp`, headers: bearer,
-    body: { jsonrpc: '2.0', method: 'tools/call', params: { name: ctx.tool, ...(ctx.sit.args ? { arguments: ctx.sit.args } : {}) } },
+    body: { jsonrpc: '2.0', method: 'tools/call', params: { name: ctx.tool, ...(ctx.sit.args ? { arguments: ctx.sit.args } : airlineTrip(ctx) ? { arguments: bookingArgs(ctx, 'booked') } : {}) } },
     resBody: { result: { tool: ctx.tool, isError: false, content: [{ type: 'text', text }] } },
     note: publicCall ? 'public catalog call: no token, no authorize, no gateway check' : undefined,
+    detail: narrowedKv(ctx),
   });
   ctx.toolResult = said;
   const keyPath = API_KEY_PATH.has(ctx.uc.id) && !publicCall;
-  const write = ctx.role === 'write' || Boolean(ctx.sit.args);
+  const write = ctx.role === 'write' || Boolean(ctx.sit.args) || (ctx.fareRule && BOOKING_TOOLS.has(ctx.tool));
   hop(ctx, 'api-call', {
     from: 'mcp', to: 'api', method: write ? 'POST' : 'GET', url: `${ctx.urls.api}/v1/${String(ctx.tool).replace(/_/g, '-')}`,
     headers: keyPath ? { 'x-api-key': '[write-only]', 'x-user-sub': ctx.person.sub } : bearer,
-    ...(write && ctx.sit.args ? { body: ctx.sit.args } : {}),
+    ...(write && ctx.sit.args ? { body: ctx.sit.args } : write && airlineTrip(ctx) ? { body: bookingArgs(ctx, 'booked') } : {}),
     resBody: { tool: ctx.tool, data: `${ctx.cast.castAsset} data (synthetic)`, source: 'mock' },
     note: publicCall ? 'public data: the resource server needs no token' : keyPath ? 'API-key path: the service key (write-only) and the user subject reach the resource server; no bearer' : 'the MCP server calls the resource server with the delegated token; the API checks it again',
+    detail: narrowedKv(ctx),
   });
 }
+// A narrowed booking says so on the hops that carry it (no new hop kind): the cabin, and the fare as `fare_judged` (the fare the rule judged, never a price paid).
+const narrowedKv = (ctx) => (ctx.constrained && airlineTrip(ctx) ? { kv: [['constraint', `${ctx.constrained.field}: ${ctx.constrained.asked} -> ${ctx.constrained.granted}`], ['fare_judged', `$${ctx.amount}`]] } : undefined);
 
 function apiKeyPath(ctx) {
   const route = `/v1/${String(ctx.tool).replace(/_/g, '-')}`;
@@ -434,7 +464,7 @@ function frameAfterSignIn(ctx) {
   hop(ctx, 'llm-plan', {
     from: 'agent', to: 'llm', url: `${ctx.urls.llm}/v1/chat/completions`,
     body: { model: ctx.brain === 'llama' ? 'llama.cpp (local model; the run itself is mock)' : 'scripted-intent-match (mock)', messages: [{ role: 'system', content: ctx.instructions.text }, { role: 'user', content }], tools: [ctx.tool] },
-    resBody: { tool_calls: [{ name: ctx.tool, arguments: ctx.steered ? { amount: ctx.steered.proposed.amount } : (ctx.sit.args || {}) }] },
+    resBody: { tool_calls: [{ name: ctx.tool, arguments: ctx.steered ? { amount: ctx.steered.proposed.amount } : airlineTrip(ctx) ? bookingArgs(ctx, 'asked') : (ctx.sit.args || {}) }] },
     note: ctx.steered
       ? `The instructions steered the agent (an override phrase the lab recognises): the customer asked for ${ctx.steered.asked.tool}, the agent proposed ${ctx.steered.proposed.tool} for ${countText(ctx.steered.proposed.amount, ctx.unit)}. The model proposes, policy decides; it never sees a token`
       : `${routingOf(ctx)}. The model proposes, policy decides; it never sees a token`,
@@ -444,7 +474,9 @@ function frameAfterSignIn(ctx) {
 
 function reply(ctx) {
   // From the tool result, else from the run's own narration and outcome: never a claim that something ran when nothing did.
-  const text = ctx.toolResult ? (ctx.probeDenied ? `${ctx.toolResult} ${PROBE_DENIED}` : ctx.toolResult) : `No tool was called. ${narrate(ctx, finalOutcome(ctx))}`;
+  // Airline pack: a use case that calls no tool but has its own sentence (the explanation of an outcome) says it; nothing else changes.
+  const own = ctx.toolResult || !ctx.fareRule ? null : ucReplyFor(replyInput(ctx));
+  const text = ctx.toolResult ? (ctx.probeDenied ? `${ctx.toolResult} ${PROBE_DENIED}` : ctx.toolResult) : own ?? `No tool was called. ${narrate(ctx, finalOutcome(ctx))}`;
   hop(ctx, 'agent-reply', { from: 'agent', to: 'browser', url: `${ctx.urls.bff}/api/agent/run`, resBody: { reply: text } });
 }
 
@@ -459,6 +491,7 @@ function skipped(ctx) {
     : ctx.halted ? 'No step-up: the run was refused before any policy decision ran.' : 'No step-up: no policy decision ran on this path.';
   const list = [
     ['step-up', 'authorize', 'hitl', !ran.has('step-up'), stepNote],
+    ['hitl-receipt', 'bff', 'hitl', ctx.skipReceipt === true && !ran.has('hitl-receipt'), 'No approval receipt: nobody was asked to approve this booking.'],
     ['intent-binding-verified', 'bff', 'authorize', !ran.has('intent-binding-verified'), pushed ? 'No separate intent-binding check ran in this path.' : 'No intent binding: no authorization_details were pushed for this call.'],
     ['vault-key-inject', 'gateway', 'credentials', !ran.has('vault-key-inject'), tool ? 'No vault key: this call used the OAuth bearer path.' : 'No vault key: no tool call reached the gateway route on this run.'],
     ['api-key-swap', 'gateway', 'api', !ran.has('api-key-swap'), tool ? 'No API-key swap: the delegated bearer is what reached the resource server.' : 'No API-key swap: no tool call reached the back end on this run.'],
@@ -492,12 +525,19 @@ const STEPS = {
   'a2a-protocol-message': (ctx) => hop(ctx, 'a2a-protocol-message', { from: 'agent', to: 'a2a', url: `${ctx.urls.a2a}/a2a`, headers: { authorization: `Bearer ${ctx.exchanged.raw}` }, body: { jsonrpc: '2.0', method: 'message/send', params: { message: { role: 'user', parts: [{ kind: 'text', text: `run ${ctx.tool}` }] } } }, resBody: { result: { kind: 'task', status: { state: 'completed' } } } }),
   'ciba-poll': (ctx) => {
     if (ctx.halted) return;
+    // Airline pack: a booking the fare rule holds for a person (a steered run on the phone use case, over the second limit) was not approved on a phone: no phone approval is drawn.
+    if (ctx.fareRule && ctx.pending && ctx.pending !== 'CIBA') return;
     const id = sha(`${ctx.trace.traceId}:ciba`, 12);
     hop(ctx, 'ciba-authorize', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/bc-authorize`, body: { login_hint: ctx.person.sub, binding_message: 'APPROVE', scope: ctx.scope }, resBody: { auth_req_id: id, expires_in: 120, interval: 5 } });
     hop(ctx, 'ciba-poll', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/token`, body: { grant_type: 'urn:openid:params:grant-type:ciba', auth_req_id: id }, resBody: { access_token: mint(ctx, 'ciba token', { sub: ctx.person.sub, aud: ctx.urls.mcp, scope: ctx.scope, amr: ['pwd', 'mfa'] }, 'at+jwt').raw, note: 'the user approved on the phone' } });
     if (ctx.pending === 'CIBA') ctx.pending = null;
   },
-  'hitl-receipt': (ctx) => { if (!ctx.halted) hop(ctx, 'hitl-receipt', { from: 'bff', to: 'hitl', url: `${ctx.urls.bff}/api/hitl/receipt`, status: 404, verdict: 'held', resBody: { receipt: null, state: 'pending', note: 'no verified approval receipt yet; the human has not approved' } }); },
+  'hitl-receipt': (ctx) => {
+    // Airline pack: the receipt step draws only for a booking that is held. A booking nobody was asked about (allowed, or narrowed by the fare rule) has no
+    // receipt to wait for, so the step is listed as not in this run with the other skipped steps (skipped() below).
+    if (ctx.fareRule && !ctx.halted && !ctx.pending) { ctx.skipReceipt = true; return; }
+    if (!ctx.halted) hop(ctx, 'hitl-receipt', { from: 'bff', to: 'hitl', url: `${ctx.urls.bff}/api/hitl/receipt`, status: 404, verdict: 'held', resBody: { receipt: null, state: 'pending', note: 'no verified approval receipt yet; the human has not approved' } });
+  },
   'sim-exchange-ok': exchangeOnce,
   'sim-gateway-deny': (ctx) => { if (!ctx.halted) gatewayCheck(ctx, { again: ctx.seenProofs.size > 0 }); if (ctx.halted) refusal(ctx); },
   'sim-replay-start': (ctx) => { exchangeOnce(ctx); if (gatewayCheck(ctx)) toolCall(ctx); }, // the first use is accepted and reaches the tool; the replay is refused
@@ -524,8 +564,17 @@ function finalOutcome(ctx) {
   if (ctx.halted) return ctx.halted.outcome;
   if (ctx.pending) return ctx.pending;
   if (ctx.probeDenied) return 'PERMIT_THEN_DENY';
+  if (ctx.constrained) return 'CONSTRAINED';
   if (ctx.uc.needs.includes('llm') && ctx.uc.needs.includes('a2a')) return 'DELEGATE_AND_EXECUTE';
   return 'PERMIT';
+}
+
+// run.constrained and run.booking (airline pack): the page reads these, never the hop bodies. `fare` is the fare the rule JUDGED (what the agent asked for), not a price paid.
+const bookingConstrained = (ctx) => { const { field, asked, granted, because, limit, by } = ctx.constrained; return { field, asked, granted, because: [...because], limit, by }; };
+function bookingOf(ctx) {
+  const t = tripOf(ctx);
+  const dispatched = ctx.hops.some((h) => h.kind === 'tool-dispatched');
+  return { flight: t.flight, from: t.from, to: t.to, fare: ctx.amount, international: ctx.steered ? false : ctx.international, asked: t.cabin ?? FARE_RULE.from, booked: dispatched ? (ctx.constrained ? ctx.constrained.granted : t.cabin ?? FARE_RULE.from) : null };
 }
 
 export function liveNote(uc) {
@@ -537,7 +586,7 @@ export function liveNote(uc) {
 // The use case reaches the engine in the vertical's own words (routes.js `localize`): the title, the narration and the prompt hop never carry another pack's text.
 export function runUseCase(catalogUc, input) {
   const uc = localize(catalogUc, input.vertical);
-  const base = { schema: 'appfire-agent-governance-run/1', mode: 'mock', useCase: { id: uc.id, track: uc.track, title: uc.title, maturity: uc.maturity, flag: uc.flag }, vertical: input.vertical, expectedOutcome: uc.expectedOutcome, live: liveNote(uc), labSimulated: uc.maturity === 'needs-build' };
+  const base = { schema: 'appfire-agent-governance-run/1', mode: 'mock', useCase: { id: uc.id, track: uc.track, title: uc.title, maturity: uc.maturity, flag: uc.flag, ...(uc.labelSource ? { labelSource: uc.labelSource } : {}) }, vertical: input.vertical, expectedOutcome: uc.expectedOutcome, live: liveNote(uc), labSimulated: uc.maturity === 'needs-build', ...(input.cast?.castFareRule ? { fareRule: { ...FARE_RULE } } : {}) };
   if (!isFlow(uc)) {
     // Guided use case: the product shows its own page; the lab opens it and does not recompute the outcome (it is the catalog's label).
     const ctx = makeCtx(uc, input);
@@ -558,7 +607,7 @@ export function runUseCase(catalogUc, input) {
   if (!ctx.halted && !ctx.gwDone && ctx.event && ctx.uc.needs.includes('gw')) gatewayCheck(ctx);
   // A chain with no dispatch step whose use case reaches the MCP server in AI-DEMO2 runs the dispatch leg now (Authorize when needed, the
   // tools/call challenge, the gateway, the tool and its back end). Nothing else meets the gateway after the chain: a forwarded call always has a tool.
-  if (!ctx.halted && !ctx.pending && CALLS_TOOL.has(uc.id) && !ctx.hops.some((h) => h.kind === 'tool-dispatched')) dispatch(ctx);
+  if (!ctx.halted && !ctx.pending && (CALLS_TOOL.has(uc.id) || (ctx.fareRule && FARE_CALLS.has(uc.id))) && !ctx.hops.some((h) => h.kind === 'tool-dispatched')) dispatch(ctx);
   if (ctx.halted) refusal(ctx);
   else if (ctx.pending && ctx.pending !== 'CIBA') held(ctx);
   else if (!ctx.pending) reply(ctx); // AI-DEMO2 cuts at the first error and a held run stops at the hold: only a finished run replies
@@ -566,5 +615,6 @@ export function runUseCase(catalogUc, input) {
   const outcome = finalOutcome(ctx);
   // A steered run is not comparable with the catalog's label (the agent proposed something else), so it carries no match, and it says what steered it.
   const steeredNote = ctx.steered ? ` The agent's instructions steered it to propose ${ctx.steered.proposed.tool} for ${countText(ctx.steered.proposed.amount, ctx.unit)} (an override phrase the lab recognises).` : '';
-  return { ...base, kind: 'flow', computed: true, persona: ctx.person.key, outcome, matchesExpected: ctx.steered ? null : outcome === uc.expectedOutcome, instructions: { text: ctx.instructions.text, default: ctx.instructions.default, steered: ctx.instructions.steered, reasons: ctx.instructions.reasons }, steered: ctx.steered || null, hops: enrichAll(ctx), gatewayTrace: ctx.gwTrace, tokens: ctx.tokens, traceId: ctx.trace.traceId, traceparent: formatTraceparent(ctx.trace.traceId, ctx.rootSpan), narration: narrate(ctx, outcome) + steeredNote };
+  const booking = ctx.bookingDecided ? bookingOf(ctx) : null;
+  return { ...base, ...(ctx.constrained ? { constrained: bookingConstrained(ctx) } : {}), ...(booking ? { booking } : {}), kind: 'flow', computed: true, persona: ctx.person.key, outcome, matchesExpected: ctx.steered ? null : outcome === uc.expectedOutcome, instructions: { text: ctx.instructions.text, default: ctx.instructions.default, steered: ctx.instructions.steered, reasons: ctx.instructions.reasons }, steered: ctx.steered || null, hops: enrichAll(ctx), gatewayTrace: ctx.gwTrace, tokens: ctx.tokens, traceId: ctx.trace.traceId, traceparent: formatTraceparent(ctx.trace.traceId, ctx.rootSpan), narration: narrate(ctx, outcome) + steeredNote };
 }

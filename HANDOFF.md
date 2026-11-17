@@ -45,6 +45,13 @@ Standalone Ping demo for Appfire's Agentic AI evaluation (the customer's brief):
 - Meta-repo has unrelated uncommitted changes (`check-top-menu.sh`, `pingone-setup.sh`, `a2a-lab-LAB` pin) from another session — do not commit them with appfire work.
 - Rules in force: `curtismu7` GitHub account only; no AI attribution anywhere; OrbStack not Docker Desktop; URL via lab-proxy domain, never loopback.
 
+## Airline vertical (2026-11-16, not yet merged: branch `feat/airline-vertical`)
+- `airline` (Larkspur Air, invented) is the DEFAULT full vertical; software, banking, healthcare and retail stay selectable and byte-identical (golden guard: `server/test/golden/fourPacks.json` + `server/test/golden.test.js`; never regenerate the golden to make a test pass). Rule: domestic up to $400 allowed as asked; international, or over $400 and up to $1,500, booked but economy only (CONSTRAINED); over $1,500 a person approves. All numbers LAB-INVENTED.
+- CONSTRAINED is the lab's own fare rule, never a PingOne Authorize outcome; Real decisions stay inferred/observed. UC ids never shown (titles only). UC48 runs from the walkthrough button and Compare only (route stays Hand off; a typed prompt needs two lines changed in the owner's `docs/use-case-routing.md` and `data/handoff.json`).
+- Phase B (Real airline tools on the lab's own local tool server, six tools, second tier group, five scopes) is NOT built: it waits for the in-flight Real build (`.wt-appfire-real`, `feat/real-local-providers`) to merge and for the owner's live software Real run. Until then the airline cast uses `castMockOnly` and Real runs airline on the lab's own steps.
+- The deck (`deck/build2.py`) is rebuilt later from real screenshots of the airline default; the old banking shots stay as history.
+- Verification: `npm test -w server`, `npm test -w web`, `node --test scripts/*.test.mjs`, `npm run build`, `npm run e2e`. `server/test/docker-live.test.js` binds 7820/7821, which OrbStack holds on the owner's Mac (those two tests fail there; run a copy on free ports to prove them). In a full-suite run on that Mac the other docker-live tests can also fail from port clashes with parallel files; re-run the file alone. Its first two tests also failed on unmodified main (e0633ae) when run here, so they are not an airline regression.
+
 ## Suggested next steps
 1. Owner: flip the P1AZ consent rule to mint HITL challenges for `create_transfer`, then re-test the Real loop: UC8 → 428 challenge → phone → `POST /api/approval/decide` → retry with `approvalId` → REAL_PERMIT.
 2. Upstream TopMenu adaptations to shared canonical + family re-pin.

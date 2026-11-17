@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { outcomeState, pickFullPack, verticalName } from "../lib";
 import { routeOf } from "../handoff";
 import { Tag } from "./Bits";
@@ -6,6 +6,7 @@ import Turn from "./Turn";
 import { followNewest } from "../follow";
 import { Spin } from "./Working";
 import { DEMO_GUIDE, promptGroups, promptsOfStep } from "../demoGuide";
+import { narrowedChip } from "../fare";
 
 const STATUS = { idle: ["Ready", "info"], running: ["Running", "info"], waiting: ["Waiting for you", "warn"], handoff: ["Ready to hand off", "info"], done: ["Done", "ok"], refused: ["Refused", "bad"] };
 
@@ -30,11 +31,11 @@ function Chips({ list, typeAndSend, disabled, label, testId }) {
 
 // What to type, per vertical: always visible above the input (owner rule). The prompts that run here come first; the ones whose use case opens
 // its own app sit in their own group. A stub vertical says it has no demo pack yet.
-export function WhatToType({ prompts, vertical, verticalLabel, verticals, stub, typeAndSend, disabled, step = null, onNextStep }) {
+export function WhatToType({ prompts, vertical, verticalLabel, verticals, stub, typeAndSend, disabled, step = null, onNextStep, fare = false }) {
   const heading = verticalHeading(vertical, verticalLabel);
   const at = step ? DEMO_GUIDE.findIndex((g) => g.id === step.id) : -1;
-  const mine = step ? promptsOfStep(step.id, prompts) : [];
-  const { groups, more } = promptGroups(prompts);
+  const mine = step ? promptsOfStep(step.id, prompts, { fare }) : [];
+  const { groups, more } = promptGroups(prompts, { fare });
   return (
     <section className="wtt" aria-label={`What to type, ${heading}`} data-testid="what-to-type">
       <p className="kicker" data-testid="wtt-heading">What to type · {step ? `Step ${at + 1} · ${step.short} · ${heading}` : heading}</p>
@@ -68,13 +69,13 @@ export function WhatToType({ prompts, vertical, verticalLabel, verticals, stub, 
 }
 
 // First open: the agent's name and four starter cards from the vertical's prompts.
-function Starters({ agent, brand, prompts, typeAndSend, stub, step = null }) {
-  const list = step ? promptsOfStep(step.id, prompts) : prompts.filter((p) => !opensApp(p));
+function Starters({ agent, brand, prompts, typeAndSend, stub, step = null, person = "customer", fare = false }) {
+  const list = step ? promptsOfStep(step.id, prompts, { fare }) : prompts.filter((p) => !opensApp(p));
   return (
     <div className="starters" data-testid="starters">
       <span className="avatar avatar--agent avatar--big" aria-hidden="true">AI</span>
       <h2 className="starters__title">{agent || "The agent"} at {brand || "the demo company"}</h2>
-      <p className="muted">Type what a customer would say. Each prompt runs one use case and the evidence column draws every hop.</p>
+      <p className="muted">{`Type what a ${person} would say. Each prompt runs one use case and the evidence column draws every hop.`}</p>
       {!stub && (
         <ul className="starters__grid">
           {list.slice(0, 4).map((p) => (
@@ -93,7 +94,7 @@ function Starters({ agent, brand, prompts, typeAndSend, stub, step = null }) {
   );
 }
 
-export default function AgentColumn({ agent, brand, userId, vertical, verticalLabel, verticals, stub, prompts, turns, status, onSay, onHop, onPreview, running, instructions, step = null, onNextStep }) {
+export default function AgentColumn({ agent, brand, userId, vertical, verticalLabel, verticals, stub, prompts, turns, status, onSay, onHop, onPreview, running, instructions, step = null, onNextStep, person = "customer", fare = false }) {
   const [text, setText] = useState("");
   const endRef = useRef(null);
   // Keep the newest reply in view: inside the chat box, and the page too when the (twice as tall) column runs below the window (follow.js).
@@ -126,21 +127,29 @@ export default function AgentColumn({ agent, brand, userId, vertical, verticalLa
         <Tag state={state} testId="agent-status">{status === "running" && <Spin small />}{word}</Tag>
       </header>
       <div className="agentcol__scroll">
-        {turns.length === 0 ? <Starters agent={agent} brand={brand} prompts={prompts} typeAndSend={typeAndSend} stub={stub} step={step} /> : (
+        {turns.length === 0 ? <Starters agent={agent} brand={brand} prompts={prompts} typeAndSend={typeAndSend} stub={stub} step={step} person={person} fare={fare} /> : (
           <ol className="turns" aria-label="Conversation" data-testid="turns">
-            {turns.map((t) => <Turn key={t.id} turn={t} onHop={onHop} onPreview={onPreview} userId={userId} running={running} />)}
+            {turns.map((t) => {
+              const chip = t.result?.ok ? narrowedChip(t.result.body.run) : null; // fare: a narrowed booking is never silent
+              return (
+                <Fragment key={t.id}>
+                  <Turn turn={t} onHop={onHop} onPreview={onPreview} userId={userId} running={running} />
+                  {chip && <li className="narrowed" data-testid="turn-narrowed"><Tag state="info">{chip}</Tag></li>}
+                </Fragment>
+              );
+            })}
           </ol>
         )}
         <div ref={endRef} />
       </div>
       <div className="agentcol__foot">
         {instructions}
-        <WhatToType prompts={prompts} vertical={vertical} verticalLabel={verticalLabel} verticals={verticals} stub={stub} typeAndSend={typeAndSend} disabled={running} step={step} onNextStep={onNextStep} />
+        <WhatToType prompts={prompts} vertical={vertical} verticalLabel={verticalLabel} verticals={verticals} stub={stub} typeAndSend={typeAndSend} disabled={running} step={step} onNextStep={onNextStep} fare={fare} />
       </div>
       <div className="agentcol__compose">
         <form className={`composer${sending ? " composer--sending" : ""}`} onSubmit={send}>
           <label className="sr-only" htmlFor="composer-input">Message the agent</label>
-          <input id="composer-input" type="text" value={text} maxLength={400} onChange={(e) => setText(e.target.value)} placeholder={stub ? "No demo pack for this vertical yet" : "Type what a customer would say"} autoComplete="off" data-testid="composer-input" />
+          <input id="composer-input" type="text" value={text} maxLength={400} onChange={(e) => setText(e.target.value)} placeholder={stub ? "No demo pack for this vertical yet" : `Type what a ${person} would say`} autoComplete="off" data-testid="composer-input" />
           <button type="submit" className="primary" aria-disabled={running || !text.trim() ? "true" : undefined} data-testid="composer-send">Send</button>
         </form>
       </div>

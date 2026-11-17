@@ -87,17 +87,22 @@
 .cap__point { margin: 0 0 8px; color: var(--muted); }
 .cap__nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
-/* ===== risk strip (inside the decision card): which of the four controls this run landed on ===== */
-.risk { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; }
+/* ===== risk strip (inside the decision card): which of the controls (four, five on the airline pack) this run landed on ===== */
+.risk { display: grid; grid-template-columns: repeat(var(--risk-n, 4), minmax(0, 1fr)); gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; }
 .risk__rung { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 13px; }
 .risk__rung[aria-current="step"] { border-width: 3px; background: var(--surface-2); font-weight: 700; }
 .decision[data-tone="ok"] .risk__rung[aria-current="step"] { border-color: var(--status-ok); }
 .decision[data-tone="warn"] .risk__rung[aria-current="step"] { border-color: var(--status-warn); }
 .decision[data-tone="bad"] .risk__rung[aria-current="step"] { border-color: var(--danger-text); }
+.decision[data-tone="info"] .risk__rung[aria-current="step"] { border-color: var(--status-info); }
+.risk--five .risk__rung { padding: 6px 4px; font-size: 12px; overflow-wrap: anywhere; }
+.risk--five .risk__rung[aria-current="step"] { border-width: 2px; }
+.risk--five .risk__word { font-size: 10px; }
 .risk__n { font-weight: 700; }
 .risk__word { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
 .risk__rung[aria-current="step"] .risk__word { color: var(--text); font-weight: 700; }
 @media (max-width: 600px) { .risk { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .risk__rung:last-child:nth-child(odd) { grid-column: 1 / -1; } }
 
 /* ===== agent instructions panel (agent column) and privilege settings panel (evidence column) ===== */
 .instr, .priv { margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
@@ -192,6 +197,7 @@
 .turn__refused { color: var(--danger-text); }
 .turn__answer { display: grid; gap: 6px; justify-items: start; }
 .turn__who { margin: 3px 0 0; }
+.narrowed { margin: -6px 0 0 38px; }
 .turn__ev { justify-self: start; min-height: 32px; padding: 0; border: 0; background: none; color: var(--muted); font-size: 12px; text-decoration: underline; }
 .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
 /* "Where each hop ran": 17+ short rows, so flow them into as many 220px columns as fit (reads down, then across). Owner, 2026-11-16. */

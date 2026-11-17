@@ -259,10 +259,16 @@ try {
       if (tag === 'desktop-light') await walk(page, `${tag}: the agent page after a run`);
       check((await t('nav-page-consent').count()) === 1, `${tag}: UC1 brought in the Consent and step-up page`);
       await pick('UC7'); await t('run').click(); await t('result').waitFor();
-      check((await t('outcome').innerText()) === 'STEP_UP' && (await t('nav-page-approval').count()) === 1, `${tag}: UC7 is STEP_UP and brings in Human approval`);
+      check((await t('outcome').innerText()) === 'PERMIT' && (await t('decision-word').innerText()) === 'ALLOWED' && (await t('risk-strip').locator('li').count()) === 5, `${tag}: the domestic $380 booking is PERMIT, the card says ALLOWED, and the strip has five rungs (the airline pack)`);
+      await pick('UC8'); await t('run').click(); await t('result').waitFor();
+      check((await t('outcome').innerText()) === 'CONSTRAINED' && (await t('decision-word').innerText()) === 'CONSTRAINED' && (await t('decision-seat').innerText()) === 'business asked, economy booked' && (await t('mp-deny').count()) === 0, `${tag}: the same $380, international, is CONSTRAINED: business asked, economy booked, and no phone opens`);
+      check((await page.locator('[data-testid="risk-strip"] [aria-current="step"]').getAttribute('data-testid')) === 'risk-2' && (await t('risk-strip').getAttribute('aria-label')).includes('five controls'), `${tag}: the five-rung strip lights rung two for CONSTRAINED and says five in its label`);
+      check((await t('decision-policy').innerText()).startsWith("the lab's fare rule, not a PingOne Authorize outcome"), `${tag}: the policy row says the lab's own fare rule decided, never a PingOne Authorize outcome`);
+      await pick('UC27'); await t('run').click(); await t('result').waitFor();
+      check((await t('outcome').innerText()) === 'STEP_UP' && (await t('nav-page-approval').count()) === 1, `${tag}: a claimed approval is STEP_UP (a second factor first) and brings in Human approval`);
       // The hold opens the phone (owner 2026-11-13); deny it so the run can continue.
       await t('mp-deny').click(); await t('mp-outcome').waitFor();
-      check((await t('mp-outcome').innerText()).includes('Denied'), `${tag}: UC7's hold opened the phone and a deny was recorded`);
+      check((await t('mp-outcome').innerText()).includes('Denied'), `${tag}: the held booking opened the phone and a deny was recorded`);
       // The persona the use case needs is selected by the use case itself: the default Run of UC21 permits and UC9 denies, as the README says.
       await pick('UC21');
       check((await t('persona').inputValue()) === 'premium', `${tag}: picking UC21 selects the premium persona it needs`);
@@ -299,7 +305,11 @@ try {
       // banking stays selectable and unchanged: one UC1 run in it (its own read tool in the evidence), then back to the default
       await t('vertical').selectOption('banking'); await pick('UC1'); await t('run').click(); await t('result').waitFor();
       check((await t('outcome').innerText()) === 'PERMIT' && (await page.getByTestId('evidence-column').innerText()).includes('get_account_balance'), `${tag}: banking is still selectable and runs its own read tool`);
-      await t('vertical').selectOption('software');
+      check((await t('risk-strip').locator('li').count()) === 4, `${tag}: banking draws the four-rung strip, unchanged`);
+      // software stays selectable and unchanged too: its own read tool in the evidence, four rungs, no airline wording
+      await t('vertical').selectOption('software'); await pick('UC1'); await t('run').click(); await t('result').waitFor();
+      check((await t('outcome').innerText()) === 'PERMIT' && (await page.getByTestId('evidence-column').innerText()).includes('get_my_issues') && (await t('risk-strip').locator('li').count()) === 4 && !/Larkspur|CONSTRAINED/.test(await page.getByTestId('evidence-column').innerText()), `${tag}: software is still selectable and runs its own read tool with a four-rung strip`);
+      await t('vertical').selectOption('airline');
       // With no .env Real is refused by the server contract (rule 19: POST /api/mode answers 409 and says what to fill in), and the page stays on the lab's own steps.
       const refusedReal = await modeCall(page, 'real');
       check(refusedReal.status === 409 && /^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME in this app's \.env/.test(refusedReal.body?.message || '') && /need a PingOne environment \(PINGONE_ENVIRONMENT_ID and the AAG_\* apps\)\.$/.test(refusedReal.body?.message || '') && !/PingFederate/.test(refusedReal.body?.message || '') && (await modeMarker(page, 'mock').count()) === 1, `${tag}: with no .env Real is refused (HTTP 409), the answer says what to fill in, and the page stays on its own steps`);
@@ -395,24 +405,24 @@ try {
       await t('theme-select').selectOption(scheme);
       check(await oneRow(), `${tag}: the shell bar is one row`);
       const wtt = await t('what-to-type').innerText();
-      check((await t('wtt-heading').innerText()).toUpperCase() === 'WHAT TO TYPE · SOFTWARE · APPFIRE WORK SUITE' && wtt.includes('show my open issues'), `${tag}: What to type names the vertical and lists its prompts`);
+      check((await t('wtt-heading').innerText()).toUpperCase() === 'WHAT TO TYPE · AIRLINE · LARKSPUR AIR' && wtt.includes('show my upcoming trips'), `${tag}: What to type names the vertical and lists its prompts`);
       check((await t('wtt-away').getByRole('button').count()) >= 1 && wtt.toLowerCase().includes('opens its own app'), `${tag}: What to type has an Opens its own app group`);
 
       await t('wtt-UC1').click(); await t('turn-answer').waitFor(); await sleep(300);
       // a chat turn is the message and one reply (owner 2026-11-09): no reasoning, token cards or hop pills; those stay in the evidence column
       const lastTurn = () => page.getByTestId('turn').last();
       const onlyReply = async () => { const tx = await lastTurn().innerText(); return (await lastTurn().getByRole('button', { name: /^Hop \d/ }).count()) === 0 && !/Reasoning|Tokens used|Step 1|routing table/i.test(tx); };
-      check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AGENT' && (await lastTurn().getByTestId('turn-answer-text').innerText()) === 'You have 7 open issues assigned to you, 2 due this week; the top one is PLAT-412, Fix login timeout on the billing page.', `${tag}: UC1 is the message and the agent's answer only, a real sentence with lab-invented amounts`);
+      check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AGENT' && (await lastTurn().getByTestId('turn-answer-text').innerText()) === 'You have 2 upcoming trips: LK 214 to Denver on Friday, seat 14C; and LK 560 to Boston on December 4, seat 22A. You also have 18,400 miles on file.', `${tag}: UC1 is the message and the agent's answer only, a real sentence with lab-invented amounts`);
       // go deeper and the use case panel are in the evidence column, not the chat (owner 2026-11-09)
       check((await lastTurn().getByTestId('go-deeper').count()) === 0 && (await t('agent-column').getByTestId('uc-panel').count()) === 0 && (await t('evidence-column').getByTestId('go-deeper').innerText()).toLowerCase().includes('go deeper in') && (await t('evidence-column').getByTestId('uc-panel').count()) === 1, `${tag}: go deeper and the use case panel sit in the evidence column, not the reply`);
       check((await t('evidence-why').innerText()).includes('Matched your words to “Delegated access (consent only)”') && (await t('evidence-count').innerText()).startsWith('Delegated access (consent only) ·'), `${tag}: the reasoning and the hops are in the evidence column`);
-      await t('wtt-UC6').click(); await page.getByTestId('turn').nth(1).getByTestId('turn-answer').waitFor();
+      await t('wtt-UC13').click(); await page.getByTestId('turn').nth(1).getByTestId('turn-answer').waitFor();
       // Owner 2026-11-16: use-case ids mean nothing in the demo; the page says each use case in words. After two runs, nothing visible (text, tooltips, labels) names one by id.
       const idsShown = await page.evaluate(() => { const re = /\bUC[-\w.]*\d\w*/; const hit = []; const els = document.body.querySelectorAll('*');
         for (const e of els) { const r = e.getBoundingClientRect(); if (!r.width && !r.height) continue; const own = [...e.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent).join(' ');
           for (const v of [own, e.getAttribute('title'), e.getAttribute('aria-label'), e.getAttribute('placeholder')]) if (v && re.test(v)) hit.push(v.trim().slice(0, 60)); } return hit.slice(0, 3); });
       check(idsShown.length === 0, `${tag}: no use-case id is shown anywhere on the page, only words (${idsShown.join(' | ')})`);
-      check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AUTHORIZE' && (await lastTurn().getByTestId('turn-answer-text').innerText()).startsWith('Authorize refused this request (HTTP 403): 2500 issues'), `${tag}: UC6 is Authorize's refusal in plain words`);
+      check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AUTHORIZE' && (await lastTurn().getByTestId('turn-answer-text').innerText()).startsWith('Authorize refused this request'), `${tag}: the forged actor is Authorize's refusal in plain words`);
       await t('wtt-UC1').click(); await page.getByTestId('turn').nth(2).getByTestId('turn-answer').waitFor(); await sleep(300);
       const [side, agent, ev] = [await rect('.setup'), await rect('.agentcol'), await rect('.evcol')];
       check(Math.abs(side.t - agent.t) < 2 && Math.abs(agent.t - ev.t) < 2 && side.r <= agent.l && agent.r <= ev.l, `${tag}: sidebar | agent | evidence side by side (lefts ${Math.round(side.l)}, ${Math.round(agent.l)}, ${Math.round(ev.l)})`);
@@ -463,9 +473,9 @@ try {
       }
       await page.keyboard.press('Escape');
       check((await page.getByRole('dialog').count()) === 0, `${tag}: Escape closes the actor card`);
-      await t('wtt-UC7').click(); await t('turn-approval').waitFor();
-      check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AUTHORIZE', `${tag}: the step-up hold is labelled Authorize and carries no reasoning or pills`);
-      check((await lastTurn().getByTestId('turn-approval-say').innerText()) === "I'm ready to move 600 issues in the Billing project to Done.", `${tag}: the held 600-issue bulk edit says what the agent is ready to do, with the count`);
+      await t('wtt-UC27').click(); await t('turn-approval').waitFor();
+      check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'FARE RULE', `${tag}: the second-factor hold is labelled with the lab's fare rule (not Authorize) and carries no reasoning or pills`);
+      check((await lastTurn().getByTestId('turn-approval-say').innerText()) === "I'm ready to book a business seat on LK 704 to Paris for $2,400.", `${tag}: the held booking says what the agent is ready to do, with the flight and the fare`);
       // The hold opened the mock phone; deny it so the rest of the flow is not behind its backdrop.
       if (await t('mp-deny').isVisible().catch(() => false)) { await t('mp-deny').click(); await t('mp-outcome').waitFor(); }
       check(!/mock result of|Here is what I found/.test(await t('agent-column').innerText()), `${tag}: nothing in the chat says mock result of`);
@@ -506,6 +516,88 @@ try {
     }
   }
 
+  // ---- The airline walkthrough (the default pack, Larkspur Air): the seven steps, the rule in one breath, step 6's nine buttons with the five rungs, Compare, no use case id, no banned word ----
+  for (const [width, height, name] of [[1280, 900, 'desktop'], [375, 800, 'phone']]) {
+    const tag = `airline-walkthrough-${name}`;
+    const ctx = await browser.newContext({ viewport: { width, height } });
+    const page = await ctx.newPage();
+    const errors = []; const external = [];
+    page.on('request', (r) => { if (!r.url().startsWith(base) && !/^(data|blob):/.test(r.url())) external.push(r.url()); });
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error' && !/status of (403|409|501)/.test(m.text())) errors.push(m.text()); });
+    const t = (id) => page.getByTestId(id);
+    const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const lit = async () => page.locator('[data-testid="risk-strip"] [aria-current="step"]').getAttribute('data-testid');
+    const idsShown = () => page.evaluate(() => { const re = /\bUC[-\w.]*\d\w*/; const hit = []; for (const e of document.body.querySelectorAll('*')) { const r = e.getBoundingClientRect(); if (!r.width && !r.height) continue; const own = [...e.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent).join(' '); for (const v of [own, e.getAttribute('title'), e.getAttribute('aria-label'), e.getAttribute('placeholder')]) if (v && re.test(v)) hit.push(v.trim().slice(0, 60)); } return hit.slice(0, 3); });
+    await page.goto(`${base}/`); await t('uc-UC1').waitFor();
+    check((await t('vertical').inputValue()) === 'airline' && (await t('wtt-heading').innerText()).toUpperCase().includes('LARKSPUR AIR'), `${tag}: the page opens on the airline pack (Larkspur Air) by default`);
+    check((await t('vertical').locator('option').first().innerText()).includes('Larkspur Air'), `${tag}: the vertical menu lists Larkspur Air first`);
+    const starters = (await t('starters').innerText()).toUpperCase();
+    check(['PERMIT', 'CONSTRAINED'].every((w) => starters.includes(w)), `${tag}: the starter cards show the airline outcomes, CONSTRAINED among them`);
+    // the Demo guide's own words for steps 5 and 6 (the airline overrides), read before Presenter mode
+    await t('help-link').click(); await t('demo-guide').waitFor();
+    const guideAllow = await t('guide-step-allow').innerText(); const guideEscalate = await t('guide-step-escalate').innerText();
+    check(guideAllow.includes('five controls') && !guideAllow.includes('four controls'), `${tag}: the Demo guide's step 5 says five controls`);
+    check(guideEscalate.includes('a domestic booking up to $400 is allowed as asked; an international booking, or one over $400 and up to $1,500, is booked but only in economy; over $1,500, domestic or international, a person approves'), `${tag}: the Demo guide's step 6 carries the rule in one breath, with the numbers the cast owns`);
+    check(guideEscalate.includes("the lab's own") && !/\bUC\d/.test(guideAllow + guideEscalate) && !/mock|simulat|engine|scripted/i.test(guideAllow + guideEscalate), `${tag}: the guide says the limits are the lab's own and shows no use case id or banned word`);
+    await walk(page, `${tag}: the Demo guide`);
+    await page.keyboard.press('Escape'); await t('demo-guide').waitFor({ state: 'detached' }).catch(() => {});
+    await page.keyboard.press('p'); await t('agenda-steps').waitFor();
+    const ids = ['start', 'identity', 'call', 'evaluate', 'allow', 'escalate', 'audit'];
+    check((await Promise.all(ids.map((id) => t(`agenda-pill-${id}`).count()))).every((n) => n === 1), `${tag}: the seven walkthrough steps are there`);
+    await walk(page, `${tag}: Presenter mode, step 1`);
+    await t('agenda-pill-escalate').click();
+    const labels = await Promise.all(['run-UC7', 'run-UC8', 'run-UC48', 'run-UC6', 'run-UC27', 'run-UC31', 'run-UC13', 'compare-careful-poisoned', 'compare-same-fare'].map((k) => t(`agenda-${k}`).innerText()));
+    check(labels.join('|') === ['Allowed as asked: domestic, up to $400', 'Constrained: international, business becomes economy', 'Constrained: over $400, business becomes economy', "Needs a person's approval: over $1,500", 'Approval claimed, not proven: needs a second factor', 'Out of scope: refused', 'Manipulated agent: refused', 'Poisoned instructions: a person must approve', 'Compare: same fare, domestic against international'].join('|'), `${tag}: step 6 has the nine buttons in order (${labels.join(' | ')})`);
+    // the five rungs: each button's run lands on its own rung, in words
+    const expected = [['UC7', 'ALLOWED', 'risk-1'], ['UC8', 'CONSTRAINED', 'risk-2'], ['UC48', 'CONSTRAINED', 'risk-2'], ['UC6', 'ESCALATED', 'risk-4'], ['UC27', 'ESCALATED', 'risk-3'], ['UC31', 'DENIED', 'risk-5'], ['UC13', 'DENIED', 'risk-5']];
+    for (const [uc, word, rung] of expected) {
+      await t(`agenda-run-${uc}`).click();
+      await page.waitForFunction((w) => document.querySelector('[data-testid="decision-word"]')?.textContent === w, word, { timeout: 15000 });
+      await page.waitForFunction((r) => document.querySelector('[data-testid="risk-strip"] [aria-current="step"]')?.getAttribute('data-testid') === r, rung, { timeout: 5000 }).catch(() => {});
+      check((await t('decision-word').innerText()) === word && (await lit()) === rung && (await t('risk-strip').locator('li').count()) === 5, `${tag}: the ${uc === 'UC48' ? 'over-the-limit booking' : uc} run says ${word} and lights ${rung} of five`);
+      if (uc === 'UC8' || uc === 'UC48') check((await t('decision-seat').innerText()) === 'business asked, economy booked' && (await t('mp-deny').count()) === 0, `${tag}: the narrowed booking says business asked, economy booked, and opens no phone`);
+      if (uc === 'UC6' && (await t('mp-approve').isVisible().catch(() => false))) {
+        await t('mp-approve').click(); await t('mp-outcome').waitFor();
+        const o = await t('mp-outcome').innerText();
+        check(/recorded/.test(o) && /not run/.test(o) && !/proceeds/.test(o), `${tag}: the phone's approval on the held booking says it is recorded and not run, never that the lab proceeds`);
+      }
+      if (await t('mp-deny').isVisible().catch(() => false)) { await t('mp-deny').click(); await t('mp-outcome').waitFor(); }
+    }
+    // typed words that change the rule never run the staged booking (review fix): number words, another cabin, no number
+    for (const typed of ['book a business seat to Denver for five hundred dollars', 'book a first class seat to Denver for $380']) {
+      const before = await t('turn').count();
+      await t('composer-input').fill(typed); await t('composer-send').click(); await t('turn-nomatch').last().waitFor();
+      check((await t('turn').count()) === before + 1 && (await t('turn-nomatch').last().innerText()).startsWith('I have no answer for that'), `${tag}: "${typed}" matches nothing, so the staged $380 booking does not run`);
+    }
+    check((await t('turn-narrowed').count()) >= 1 && (await t('turn-narrowed').first().innerText()) === 'Narrowed: business to economy', `${tag}: the chat shows the chip Narrowed: business to economy`);
+    if (width < 600) {
+      await t('agenda-run-UC8').click(); await page.waitForFunction(() => document.querySelector('[data-testid="decision-word"]')?.textContent === 'CONSTRAINED');
+      const g = await page.evaluate(() => { const strip = document.querySelector('[data-testid="risk-strip"]'); const box = strip.getBoundingClientRect(); const r = [...strip.querySelectorAll('li')].map((l) => l.getBoundingClientRect()); return { strip: Math.round(box.width), w: r.map((x) => Math.round(x.width)), tops: r.map((x) => Math.round(x.top)) }; });
+      check(g.w.length === 5 && g.tops[0] === g.tops[1] && g.tops[2] === g.tops[3] && g.tops[4] > g.tops[3] && g.w[4] >= g.strip - 2 && g.w[0] < g.strip * 0.6, `${tag}: at 375 px the five rungs read 2 + 2 + 1 (widths ${g.w.join(',')} in ${g.strip})`);
+    }
+    await walk(page, `${tag}: Presenter mode, step 6 after the runs`);
+    // Compare: the same fare, domestic against international
+    await t('agenda-compare-same-fare').click(); await t('page-compare').waitFor();
+    for (let i = 0; i < 60 && !((await t('decision-card').count()) === 2 && (await t('compare-running').count()) === 0); i++) await sleep(200);
+    check((await t('compare-presets').getByRole('button').allInnerTexts()).join('|') === 'Allowed vs denied|Same fare, domestic vs international|Same ask, two fares|Same tool, different person|Careful vs poisoned instructions', `${tag}: Compare lists the airline's five pairs`);
+    check((await t('decision-card').count()) === 2 && (await t('risk-strip').count()) === 2 && (await t('risk-strip').first().locator('li').count()) === 5, `${tag}: Compare shows two decision cards with five-rung strips`);
+    const diff = async (k) => (await t(`compare-row-${k}`).getAttribute('data-diff')) === 'true';
+    check((await diff('verdict')) && (await diff('policy')) && (await diff('decision')) && (await diff('seat')) && !(await diff('agent')) && !(await diff('principal')) && !(await diff('tool')), `${tag}: same fare, domestic against international: verdict, policy, decision and seat rows differ; agent, principal and tool do not`);
+    check((await t('compare-why').innerText()).includes('The flag, not the price, made the difference.'), `${tag}: the pair says the flag, not the price, made the difference`);
+    await t('compare-two-fares').click();
+    for (let i = 0; i < 60 && !((await t('decision-card').count()) === 2 && (await t('compare-running').count()) === 0); i++) await sleep(200);
+    check((await diff('seat')) && (await t('compare-why').innerText()).includes('$780 is over it'), `${tag}: the two-fares pair differs on the seat row`);
+    await t('compare-careful-poisoned').click();
+    for (let i = 0; i < 60 && !((await t('decision-card').count()) === 2 && (await t('compare-running').count()) === 0); i++) await sleep(200);
+    check((await t('compare-why').innerText()).includes('a person must approve it') && (await t('compare-side-1').getByTestId('decision-word').innerText()) === 'ESCALATED', `${tag}: poisoned instructions end in a person's approval (ESCALATED), not a refusal`);
+    check((await overflow()) <= 0, `${tag}: Compare does not scroll sideways (${await overflow()} px)`);
+    await walk(page, `${tag}: Compare`);
+    check((await idsShown()).length === 0, `${tag}: no use case id is shown anywhere (${(await idsShown()).join(' | ')})`);
+    check(external.length === 0 && errors.length === 0, `${tag}: no request to another origin and no console error (${errors.slice(0, 2).join(' | ')})`);
+    await ctx.close();
+  }
+
   // ---- The Agent to agent page (owner, 2026-11-09: keep #page-a2a): UC2's chip runs here, opens the page, and offers going deeper in a2a-lab ----
   {
     const tag = 'a2a-page';
@@ -517,12 +609,12 @@ try {
     const t = (id) => page.getByTestId(id);
     await page.goto(`${base}/`); await t('wtt-UC1').waitFor();
     check((await t('nav-page-a2a').count()) === 0, `${tag}: no Agent to agent page before a run`);
-    await t('composer-input').fill('hand off the release summary to the release specialist'); await t('composer-send').click();
+    await t('composer-input').fill('hand my trip question to the bookings specialist'); await t('composer-send').click();
     const turn = page.getByTestId('turn').last();
     await turn.getByTestId('turn-answer').waitFor();
-    check((await turn.getAttribute('data-status')) === 'done' && (await turn.getByTestId('handoff-card').count()) === 0, `${tag}: "hand off the release summary to the release specialist" runs UC2 here (no hand-off card)`);
+    check((await turn.getAttribute('data-status')) === 'done' && (await turn.getByTestId('handoff-card').count()) === 0, `${tag}: "hand my trip question to the bookings specialist" runs UC2 here (no hand-off card)`);
     check((await turn.getByTestId('go-deeper').count()) === 0 && (await t('evidence-column').getByTestId('go-deeper').textContent()).includes('Go deeper in a2a-lab'), `${tag}: the evidence column (not the reply) offers going deeper in a2a-lab`);
-    check((await turn.getByTestId('turn-answer-text').innerText()).startsWith('Release 4.18 has 38 issues, 31 merged pull requests and 2 open blockers'), `${tag}: UC2's reply is the release summary`);
+    check((await turn.getByTestId('turn-answer-text').innerText()).startsWith('The bookings specialist answered for you: your next trip is LK 214'), `${tag}: UC2's reply is the specialist's trip answer, never the sensitive record`);
     check((await t('nav-page-a2a').innerText()) === 'Agent to agent', `${tag}: the Agent to agent page is in the More menu`);
     await t('nav-more').selectOption('page-a2a');
     const a2a = t('extra-a2a');
@@ -635,13 +727,17 @@ try {
     await t('uc-UC1').waitFor();
     await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
     check((await t('mode-select').count()) === 0 && (await t('banner').innerText()) === BANNER_LOCAL && (await t('sign-in').isVisible()), `${tag}: with the full settings the lab opens in Real by itself (marker live, no mode control, the same neutral banner) and shows the Sign in button`);
-    // The default software vertical runs Real on the lab's own tool server (owner 2026-11-16): its reads run as the signed-in person, so no persona and no inputs and the
+    // The default airline vertical is served by the lab's own steps even though the lab opened in Real: the persona and the inputs stay and there is no note about a person who signed in.
+    await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
+    check((await t('persona').count()) === 1 && (await t('lab-inputs').count()) === 1 && (await t('live-persona-note').count()) === 0 && (await t('gateway-status').count()) === 1, `${tag}: a use case the gateway does not serve keeps its persona and inputs while the lab opens in Real (airline), with no sign-in note`);
+    // The software vertical runs Real on the lab's own tool server (owner 2026-11-16): its reads run as the signed-in person, so no persona and no inputs and the
     // note says so; a use case that stays on the lab's own steps (UC25, enterprise-managed MCP: it needs an AI-DEMO2 feature flag) keeps its persona and has no note.
+    await t('vertical').selectOption('software');
     await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
     check((await t('persona').count()) === 0 && (await t('lab-inputs').count()) === 0 && (await t('live-persona-note').count()) === 1, `${tag}: a software use case the lab's own tool server answers runs as the signed-in person while the lab opens in Real: no persona, no inputs, and the note says so`);
     await t('search').fill('UC25'); await page.locator('[data-testid="uc-UC25"]').click(); await t('search').fill('');
     check((await t('persona').count()) === 1 && (await t('live-persona-note').count()) === 0, `${tag}: a software use case that stays on the lab's own steps keeps its persona while the lab opens in Real, with no sign-in note`);
-    // The SE gateway serves banking, healthcare and retail: the checks of its path below pick the Banking vertical (the software vertical's own checks are in the next block).
+    // The SE gateway serves banking, healthcare and retail: the checks of its path below pick the Banking vertical.
     await t('vertical').selectOption('banking');
     await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
     await t('run').click();
@@ -686,7 +782,10 @@ try {
     check(titles[2].includes('Exchange 1: act = agent') && titles[3].includes('Exchange 2: for the gateway') && /Exchange 1: act = agent/.test(await t('sequence-view').innerText()), `${tag}: the two exchanges are named in the run and in the Sequence (${titles.slice(2, 4).join(' | ')})`);
     const tx = fullP1.seen.filter((x) => x.method === 'POST' && x.url.endsWith('/as/token')).map((x) => Object.fromEntries(new URLSearchParams(x.body))).filter((f) => f.grant_type === 'urn:ietf:params:oauth:grant-type:token-exchange');
     check(tx.length === 2 && tx[0].actor_token && !tx[1].actor_token && tx.every((f) => f.audience === undefined) && tx[0].scope === 'agent:invoke' && tx[1].scope === 'fake:mcp:invoke', `${tag}: PingOne saw exchange 1 (user + agent actor, agent:invoke) and exchange 2 (no actor, no audience, the gateway scope)`);
-    check(fullGw.seen.every((c) => fullP1.issued.delegated.has(c.headers.authorization.slice(7))), `${tag}: every gateway call carried the exchange-2 token, which has act`);
+    // The gateway's 401 challenge hop is a call with no token on purpose (tools/list or initialize); every OTHER gateway call must carry the exchange-2 token, which has act.
+    const gwAuthed = fullGw.seen.filter((c) => c.headers.authorization);
+    const gwBare = fullGw.seen.filter((c) => !c.headers.authorization);
+    check(gwAuthed.length > 0 && gwAuthed.every((c) => fullP1.issued.delegated.has(c.headers.authorization.slice(7))) && gwBare.every((c) => ['tools/list', 'initialize'].includes(c.rpc?.method)), `${tag}: every gateway call carried the exchange-2 token, which has act (the only token-less calls are the 401 challenge: ${gwBare.length})`);
     await t('evtab-tokens').click();
     check((await t('token').count()) === 4 && (await t('token-act').count()) === 2 && (await t('token-no-act').count()) === 0, `${tag}: the Tokens tab lists the user, agent, exchange-1 and delegated tokens; both exchange tokens show their act`);
     check((await t('turn-answer-text').last().innerText()).includes('balance 1200.5') && (await t('turn-who').last().textContent()) === 'Agent', `${tag}: the reply is the real tool result, in the Agent's voice`);
@@ -773,6 +872,7 @@ try {
     await page.goto(`${fullBase}/`);
     await t('uc-UC1').waitFor();
     await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
+    await t('vertical').selectOption('software'); // the default is airline (phase A has no tool server for it): this block is the software pack's own tool server
     const info = await infoOf(fullBase);
     check(info.provider?.setting === 'auto' && info.provider?.local?.state === 'ready' && info.provider?.toolsSe === false && info.provider?.hosted === false && !/https?:|secret|token|127\.0\.0\.1|localhost/i.test(JSON.stringify(info.provider)), `${tag}: /api/info says the provider setting is auto and the lab's own tool server is ready, with no URL, port, secret or token`);
     // The local services are a child process of the lab (the tool server, the enforcer and the approval service are one process, loopback only, no published port).
@@ -896,6 +996,7 @@ try {
     await page.goto(`${soloBase}/`);
     await t('uc-UC1').waitFor();
     await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
+    await t('vertical').selectOption('software'); // the default is airline: this check is the software pack on the lab's own tool server
     const info = await (await fetch(`${soloBase}/api/info`, { headers: { 'x-workspace': 'w-eeeeeeeeeeeeeeee' } })).json();
     check(info.provider?.setting === 'local' && info.provider?.gateway === false && info.provider?.toolsSe === false && info.provider?.local?.state === 'ready' && info.real?.level === 'full', `${tag}: with the five app names and no gateway name Real is configured; the lab's own tool server is ready and the SE gateway is not set up`);
     await pick('UC1');
@@ -948,10 +1049,10 @@ try {
     check(true, `${tag}: the lab is opened in Real (marker live, nothing on the page says so)`);
     await walk(page, `${tag}: the Agent page before any run`);
 
-    // a use case on the lab's own steps: agent-to-agent is banking only, so in the software pack the whole run is the lab's own steps
+    // a use case on the lab's own steps: agent-to-agent is banking only, so in the software and airline packs the whole run is the lab's own steps
     await pick('UC2');
     let run = await runIt();
-    check(run?.realGate?.real === false && run?.mode === 'mock', `${tag}: UC2 in the software pack runs whole on the lab's own steps (data: realGate.real false)`);
+    check(run?.realGate?.real === false && run?.mode === 'mock', `${tag}: UC2 in the airline pack runs whole on the lab's own steps (data: realGate.real false)`);
     await walk(page, `${tag}: an engine run, Sequence tab`);
     for (const v of ['reel', 'topology', 'tokens', 'sequence']) {
       await t(`evtab-${v}`).click(); await sleep(400);
@@ -963,7 +1064,7 @@ try {
     check((await t('evidence-why').count()) >= 1, `${tag}: the Why list is on the page and was read in the scans above`);
 
     // a held use case with the phone dialog open
-    await pick('UC7');
+    await pick('UC27');
     run = await runIt();
     await t('mp-deny').waitFor({ timeout: 10000 });
     await walk(page, `${tag}: a held use case with the phone open`);
@@ -971,6 +1072,7 @@ try {
     await walk(page, `${tag}: after the phone answer`);
 
     // a use case the lab's own tool server answers (software, Real): the page, its step detail with "Answered by", and its tokens
+    await t('vertical').selectOption('software'); // the default is airline: this check is the software pack
     await pick('UC1');
     run = await runIt();
     check(run?.outcome === 'REAL_PERMIT' && run.provider === 'local' && toolHop(run)?.answeredBy === 'tool server (local)', `${tag}: UC1 in the software pack ran on the lab's own tool server (data: provider local)`);
@@ -996,7 +1098,7 @@ try {
     await walk(page, `${tag}: the tokens of a run through the gateway`);
     await t('evtab-sequence').click(); await t('row-3').click(); await t('step-detail').waitFor();
     await walk(page, `${tag}: a step detail of a run through the gateway`);
-    await t('vertical').selectOption('software');
+    await t('vertical').selectOption('airline');
 
     // Compare, the Demo guide, Quick Config, Presenter, the talk track
     await page.evaluate(() => { window.location.hash = '#compare'; });

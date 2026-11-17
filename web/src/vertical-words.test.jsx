@@ -8,7 +8,7 @@ import DemoGuide from "./components/DemoGuide";
 
 // The words that name a vertical come from the loaded vertical list and the cast, never from a typed list of names.
 const VERTICALS = [
-  { id: "software", label: "Appfire Work Suite", pack: "full" }, { id: "banking", label: "Appfire Platform", pack: "full" },
+  { id: "airline", label: "Larkspur Air", pack: "full" }, { id: "software", label: "Appfire Work Suite", pack: "full" }, { id: "banking", label: "Appfire Platform", pack: "full" },
   { id: "healthcare", label: "Appfire Health Suite", pack: "full" }, { id: "retail", label: "Appfire Retail Suite", pack: "full" }, { id: "government", label: "Government", pack: "stub" },
 ];
 afterEach(cleanup);
@@ -24,17 +24,17 @@ describe("the vertical menu", () => {
       cleanup();
     }
   });
-  test("the vertical menu lists the software pack first among the full packs", () => {
+  test("the vertical menu lists the airline pack first among the full packs", () => {
     sidebar({});
     const full = [...screen.getByTestId("vertical").querySelectorAll("optgroup")[0].querySelectorAll("option")].map((o) => o.textContent);
-    expect(full).toEqual(["Appfire Work Suite", "Appfire Platform", "Appfire Health Suite", "Appfire Retail Suite"]);
+    expect(full).toEqual(["Larkspur Air", "Appfire Work Suite", "Appfire Platform", "Appfire Health Suite", "Appfire Retail Suite"]);
   });
 });
 
 describe("messages that name the full packs", () => {
-  test("a stub vertical's chat notice is built from the loaded list, and names Software", () => {
+  test("a stub vertical's chat notice is built from the loaded list, and names the full packs from the list", () => {
     render(<WhatToType prompts={[]} vertical="government" verticalLabel="Government" verticals={VERTICALS} stub typeAndSend={() => {}} />);
-    expect(screen.getByTestId("wtt-stub").textContent).toBe("Government: no demo pack yet. Pick Software, Banking, Healthcare or Retail to chat.");
+    expect(screen.getByTestId("wtt-stub").textContent).toBe("Government: no demo pack yet. Pick Airline, Software, Banking, Healthcare or Retail to chat.");
   });
   test("before the list loads the notice is generic", () => {
     render(<WhatToType prompts={[]} vertical="government" verticalLabel="Government" stub typeAndSend={() => {}} />);
@@ -42,7 +42,7 @@ describe("messages that name the full packs", () => {
   });
   test("the run panel's not-built answer names the full packs from the list when the server sends no words", () => {
     render(<Refusal result={{ ok: false, status: 501, body: { error: "vertical_stub" } }} verticals={VERTICALS} />);
-    expect(screen.getByTestId("refusal").textContent).toMatch(/Pick Software, Banking, Healthcare or Retail to run\./);
+    expect(screen.getByTestId("refusal").textContent).toMatch(/Pick Airline, Software, Banking, Healthcare or Retail to run\./);
   });
 });
 

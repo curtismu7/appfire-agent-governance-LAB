@@ -29,6 +29,7 @@ export function HandoffCard({ uc, vertical, userId, canPreview, onPreview, previ
 export function GoDeeper({ uc, vertical, userId }) {
   const r = routeOf(uc);
   if (r.route !== "Here + go deeper" || !r.app) return null;
+  if (uc.labelSource === "lab") return null; // the pack's own label for this use case (the airline narrowing): the other lab has the catalog's outcome, not this one
   return (
     <div className="deeper" data-testid="go-deeper">
       <span className="kicker">Go deeper in <code>{r.app}</code></span>

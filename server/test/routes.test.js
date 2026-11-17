@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { MANIFEST, findUseCase } from '../src/manifest.js';
-import { HANDOFF, PROMPTS, ROUTE_KINDS, promptsFor, routeOf, validatePrompts, validateRoutes } from '../src/routes.js';
+import { HANDOFF, PROMPTS, ROUTE_KINDS, localize, promptsFor, routeOf, validatePrompts, validateRoutes } from '../src/routes.js';
 import { runUseCase } from '../src/flow.js';
 import { DEFAULT_VERTICAL, loadCast, STUB_VERTICALS, VERTICALS } from '../src/cast.js';
 import { get, withServer } from './helpers.js';
@@ -69,18 +69,18 @@ test('every shown prompt runs here or hands off; either way, in its vertical the
       assert.ok(['Here', 'Here + go deeper', 'Hand off'].includes(routeOf(uc.id).route), `${vertical} ${e.uc} runs here or hands off (never a guide)`);
       const r = runUseCase(uc, { cast: loadCast(null, vertical), vertical, seed: 'prompts' });
       assert.equal(r.kind, 'flow', `${vertical} ${e.uc}`);
-      assert.equal(r.outcome, uc.expectedOutcome, `${vertical} ${e.uc}`);
+      assert.equal(r.outcome, localize(uc, vertical).expectedOutcome, `${vertical} ${e.uc}`); // the airline pack relabels four (verticalText.js OUTCOME_OVERRIDES)
       assert.equal(r.matchesExpected, true, `${vertical} ${e.uc}`);
       assert.ok(r.hops.length > 0 && r.hops.every((h) => h.title && h.narrative), `${vertical} ${e.uc} hops carry full detail`);
     }
   }
 });
 
-// Software (the Appfire Work Suite) lists the 14 core use cases banking lists, in the same order, and five extras after them (lab-written, named here on
+// Software (the Appfire Work Suite) and airline (Larkspur Air) list the 14 core use cases banking lists, in the same order, and five extras after them (lab-written, named here on
 // purpose so a new extra needs a decision): an allowed and a refused third-party tool call, another person's private project, a forged approval and a
 // lower human-approval rung. The other verticals list exactly the 14.
 const SOFTWARE_EXTRAS = ['UC30', 'UC31', 'UC10', 'UC27', 'UC22'];
-test('every full vertical lists the same 14 core use cases as banking in the same order; software adds exactly its five named extras; no vertical repeats a prompt', () => {
+test('every full vertical lists the same 14 core use cases as banking in the same order; software and airline add exactly their five named extras; no vertical repeats a prompt', () => {
   const ucs = (v) => PROMPTS.verticals[v].map((e) => e.uc);
   assert.deepEqual(Object.keys(PROMPTS.verticals).sort(), Object.keys(VERTICALS).sort());
   const core = ucs('banking');
@@ -88,8 +88,10 @@ test('every full vertical lists the same 14 core use cases as banking in the sam
   for (const v of ['healthcare', 'retail']) assert.deepEqual(ucs(v), core, v);
   assert.deepEqual(ucs('software').slice(0, 14), core, 'software starts with the 14 core use cases in banking order');
   assert.deepEqual(ucs('software').slice(14), SOFTWARE_EXTRAS, 'software extras, named');
-  assert.equal(new Set(ucs('software')).size, 19, 'one prompt per use case');
-  for (const v of ['healthcare', 'retail', 'software']) {
+  assert.deepEqual(ucs('airline').slice(0, 14), core, 'airline starts with the 14 core use cases in banking order');
+  assert.deepEqual(ucs('airline').slice(14), SOFTWARE_EXTRAS, 'airline extras, named: UC30, UC31, UC10, UC27, UC22');
+  assert.equal(new Set(ucs('software')).size, 19, 'one prompt per use case'); assert.equal(new Set(ucs('airline')).size, 19, 'one prompt per use case');
+  for (const v of ['healthcare', 'retail', 'software', 'airline']) {
     const bank = new Set(PROMPTS.verticals.banking.map((e) => e.text));
     assert.ok(PROMPTS.verticals[v].filter((e) => bank.has(e.text)).length === 0, `${v} is not the banking text`);
   }
@@ -105,6 +107,14 @@ test('software prompts use work-management words only: no banking vocabulary, no
   for (const e of PROMPTS.verticals.software) assert.ok(e.text.length >= 8 && e.text.length <= 160, e.uc);
   // the extras that hand off to another app (a third-party call outside its scope, a lower approval rung) stay Hand off
   for (const id of ['UC31', 'UC30', 'UC22', 'UC2.6', 'UC28']) assert.equal(routeOf(id).route, 'Hand off', id);
+});
+
+test('airline prompts use airline words only: no banking vocabulary, no use case id, a dollar amount only on the three booking prompts and the claimed approval', () => {
+  const banking = /\b(balance|transfer|checking|savings|mortgage|bank(ing)?|deposit|portfolio|branch(es)?|fee waiver|credit)\b|\bUC\d/i;
+  for (const e of PROMPTS.verticals.airline) { assert.ok(!banking.test(e.text), e.uc); assert.ok(e.text.length >= 8 && e.text.length <= 160, e.uc); }
+  assert.deepEqual(PROMPTS.verticals.airline.filter((e) => e.text.includes('$')).map((e) => e.uc), ['UC7', 'UC8', 'UC6', 'UC27']);
+  assert.ok(!PROMPTS.verticals.airline.some((e) => e.uc === 'UC48'), 'UC48 has no typed prompt: its route stays Hand off');
+  assert.equal(routeOf('UC48').route, 'Hand off');
 });
 
 test('GET /api/prompts gives the vertical prompts with title, outcome and route; a stub vertical has none; a bad vertical is 400 and not echoed', async () => {

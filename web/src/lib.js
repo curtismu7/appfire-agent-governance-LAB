@@ -46,6 +46,7 @@ export const notRunText = (hops, sep = " · ") => { const m = (hops || []).lengt
 // An outcome word to a state. The word is always shown, so colour never carries the meaning alone.
 export function outcomeState(outcome) {
   const o = String(outcome || "");
+  if (o === "CONSTRAINED" || o === "REAL_CONSTRAINED") return "info"; // fare: a booked trip is never painted red (every other REAL_ word is)
   if (o.startsWith("DENY") || o === "PERMIT_THEN_DENY") return "bad";
   if (o === "STEP_UP" || o === "HITL_REQUIRED" || o === "CIBA") return "warn";
   if (o === "PERMIT" || o === "DELEGATE_AND_EXECUTE" || o === "LIVE_OK" || o === "REAL_PERMIT") return "ok";
@@ -92,10 +93,10 @@ export const HOT_CLAIMS = ["intent", "amr"];
 // The server serves the same two sentences (the story and the hosted banner); the page shows these when the server has not answered yet.
 export const BANNER_LOCAL = "HIVE, Appfire's platform, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.";
 export const BANNER_HOSTED = "Hosted copy. HIVE, Appfire's platform, is represented and never called. Thresholds, personas and amounts are the lab's own (lab-invented). No tenant or live system is reached.";
-// The vertical the page opens on (owner, 2026-11-16: Appfire's own industry). The server's default (cast.js DEFAULT_VERTICAL) is the same id; the picker starts here.
-export const DEFAULT_VERTICAL = "software";
-// The full packs whose own tool names the lab uses for a held write (server: the pack's `castToolServer`, the tool server the lab ships); the other packs keep the catalog's tool name.
-export const OWN_TOOL_VERTICALS = ["software"];
+// The vertical the page opens on (owner, 2026-11-16: the invented airline, Larkspur Air). The server's default (cast.js DEFAULT_VERTICAL) is the same id; the picker starts here.
+export const DEFAULT_VERTICAL = "airline";
+// The full packs whose own tool names the lab uses for a held write (server: the pack's `castToolServer`, the tool server the lab ships; the airline pack names its own booking tool too); the other packs keep the catalog's tool name.
+export const OWN_TOOL_VERTICALS = ["software", "airline"]; // fare: the airline pack names its own booking tool
 
 // Vertical names for prose. "sporting-goods" is "Sporting goods"; the full packs are the ones the server lists with pack "full", so a sentence that names them
 // never goes stale when a pack is added.

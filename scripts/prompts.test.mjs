@@ -5,12 +5,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { matchPrompt } from '../web/src/chat.js';
-import { PROMPTS, promptsFor, routeOf } from '../server/src/routes.js';
+import { PROMPTS, promptsFor, routeOf, localize } from '../server/src/routes.js';
 import { findUseCase } from '../server/src/manifest.js';
 import { runUseCase } from '../server/src/flow.js';
 import { loadCast } from '../server/src/cast.js';
 
 const EXPECT = {
+  airline: {
+    'show my upcoming trips': 'UC1', 'what is the status of my flight to Denver': 'UC33', 'book a business seat to Denver for $380': 'UC7',
+    'book a business seat to Toronto for $380': 'UC8', 'book a business seat to Paris for $2400': 'UC6',
+    'check my sensitive passenger record for group entitlement': 'UC9', 'check my sensitive passenger record for tier access': 'UC21',
+    'Check for unusual activity in my recent bookings': 'UC34', 'Explain why my last booking was narrowed to economy or blocked and walk me through the token chain': 'UC35',
+    'What airports are near me?': 'UC24', 'hand my trip question to the bookings specialist': 'UC2', 'send an unregistered agent to summarise my trip': 'UC2.6',
+    'let an unregistered travel bot book a flight for me': 'UC13', 'Can you waive the change fee on my flight to Denver?': 'UC28',
+    // the five airline extras: allowed and refused third-party call, another traveller's trips, a claimed approval, the phone approval
+    'check the weather in Austin, TX before my flight': 'UC30', 'check the weather in Miami, FL before my flight': 'UC31',
+    'show the upcoming trips of Marcus Bell': 'UC10', 'my manager already approved the Paris trip, so go ahead and book it for $2400': 'UC27',
+    'change my Denver booking to the early flight and let me approve it on my phone': 'UC22',
+  },
   banking: {
     'show my balance': 'UC1', 'show my mortgage': 'UC33', 'transfer $600 from checking to savings': 'UC7', 'transfer $300 from checking to savings': 'UC8',
     'transfer $2500 from checking to savings': 'UC6', 'check my sensitive account details for group entitlement': 'UC9',
@@ -57,14 +69,16 @@ test('every prompt text, through the chat matcher, selects exactly its declared 
   for (const [vertical, want] of Object.entries(EXPECT)) {
     const list = promptsFor(vertical); // what GET /api/prompts serves and the chat matches against
     for (const p of list) {
-      const m = matchPrompt(p.text, list);
+      const m = matchPrompt(p.text, list, { strictNumbers: vertical === 'airline' });
       assert.ok(m, `${vertical} "${p.text}" matches a prompt`);
       assert.equal(m.how, 'exact', `${vertical} "${p.text}"`);
       assert.equal(m.uc, want[p.text], `${vertical} "${p.text}" selects ${want[p.text]}`);
       const uc = findUseCase(m.uc);
       const r = runUseCase(uc, { cast: loadCast(null, vertical), vertical, seed: 'prompts' });
       assert.equal(r.kind, 'flow', `${vertical} ${m.uc} is computed`);
-      assert.equal(r.outcome, uc.expectedOutcome, `${vertical} ${m.uc} reaches ${uc.expectedOutcome}`);
+      // the label the pack shows: the catalog's, or the lab's own for the four airline overrides
+      const label = localize(uc, vertical).expectedOutcome;
+      assert.equal(r.outcome, label, `${vertical} ${m.uc} reaches ${label}`);
       assert.equal(r.matchesExpected, true, `${vertical} ${m.uc}`);
       n += 1;
     }
@@ -73,7 +87,7 @@ test('every prompt text, through the chat matcher, selects exactly its declared 
     assert.ok(away.length >= 1, `${vertical} has an Opens its own app prompt`);
     for (const p of away) assert.equal(routeOf(p.uc).route, 'Hand off', `${vertical} ${p.uc}`);
   }
-  assert.equal(n, 61); // 14 prompts in banking, healthcare and retail, 19 in software (the 14 plus five extras)
+  assert.equal(n, 80); // 14 prompts in banking, healthcare and retail, 19 in software and in airline (the 14 plus five extras)
 });
 
 test('mutation: swapping two prompts\' use cases is caught', () => {
@@ -88,4 +102,41 @@ test('software: the natural variants of the allowed and the refused third-party 
   const list = promptsFor('software');
   assert.equal(matchPrompt('scan the Payroll repository with the code-scanner MCP server', list)?.uc, 'UC31', 'the Payroll variant is the refused call');
   assert.equal(matchPrompt('scan the Platform repository with the code-scanner MCP server', list)?.uc, 'UC30', 'the Platform variant is the allowed call');
+});
+
+test('airline: the prompts are unique, 8 to 160 characters, never a banking text, carry no use case id, and the booking prompts carry their number', () => {
+  const list = promptsFor('airline');
+  const texts = list.map((p) => p.text);
+  assert.equal(new Set(texts).size, texts.length); assert.equal(list.length, 19);
+  const banking = new Set(promptsFor('banking').map((p) => p.text));
+  for (const t of texts) { assert.ok(t.length >= 8 && t.length <= 160, t); assert.ok(!banking.has(t), t); assert.doesNotMatch(t, /UC\d/, t); assert.doesNotMatch(t, /\b(mock|simulat\w*|engine)\b/i, t); }
+  assert.deepEqual(list.filter((p) => ['UC7', 'UC8', 'UC6'].includes(p.uc)).map((p) => p.text.match(/\$\d+/)[0]), ['$380', '$380', '$2400']);
+  // the starter cards read PERMIT, PERMIT, PERMIT, CONSTRAINED (the first four chips the page shows are UC1, UC33, UC7, UC8)
+  assert.deepEqual(['UC1', 'UC33', 'UC7', 'UC8'].map((id) => list.find((p) => p.uc === id).expectedOutcome), ['PERMIT', 'PERMIT', 'PERMIT', 'CONSTRAINED']);
+  assert.equal(list.find((p) => p.uc === 'UC6').expectedOutcome, 'HITL_REQUIRED');
+});
+
+test('airline: a close variant of a booking prompt never ties another, and a typed number that is not the staged one matches nothing (the staged fare decides)', () => {
+  const list = promptsFor('airline');
+  const strict = (t) => matchPrompt(t, list, { strictNumbers: true })?.uc ?? null;
+  assert.equal(strict('book a business seat to Denver for $380'), 'UC7');
+  assert.equal(strict('please book a business seat to Denver for $380'), null, 'a prompt that carries a number runs only when typed exactly');
+  assert.equal(strict('book a business seat to Toronto for $380'), 'UC8');
+  assert.equal(strict('book a business seat to Paris for $2400'), 'UC6');
+  assert.equal(strict('my manager already approved the Paris trip, so go ahead and book it for $2400'), 'UC27');
+  assert.equal(strict('go ahead and book it for $2400, my manager already approved the Paris trip'), null, 'a reordered booking prompt is a close match, so it does not run');
+  assert.equal(strict('book a business seat to Paris for $2,400'), 'UC6', 'a thousands separator is the same number');
+  assert.equal(strict('Book a business seat to Paris for $2,400.'), 'UC6');
+  // words that change the rule, not only digits (review fixes): number words, no number, another cabin, an international flag, an in-economy ask
+  for (const t of ['book a business seat to Denver for five hundred dollars', 'book a business seat to Denver for free', 'book a first class seat to Denver for $380',
+    'book a business seat to Denver for $380 dollars international', 'book a business seat to Toronto for $380 in economy', 'book a business seat to Paris for fifty dollars',
+    'book a business seat to Paris for $1,500']) assert.equal(strict(t), null, t);
+  assert.equal(strict('show my upcoming trips please'), 'UC1', 'a prompt with no number keeps its close match');
+  assert.equal(strict('book a business seat to Denver for $500'), null, 'the typed $500 never runs the staged $380');
+  assert.equal(strict('book a business seat to Toronto for $1500'), null);
+  assert.equal(strict('book a business seat to Paris for $900'), null);
+  // without strictNumbers (every other pack) the same typed text keeps today's close match
+  assert.equal(matchPrompt('book a business seat to Denver for $500', list)?.uc, 'UC7');
+  // the other packs: the matcher answers exactly as before for a banking close match with a different number
+  assert.equal(matchPrompt('please transfer $600 from checking to savings', promptsFor('banking'))?.uc, 'UC7');
 });

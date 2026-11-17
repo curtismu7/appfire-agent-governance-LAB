@@ -114,7 +114,7 @@ describe("What to type and the Scripted brain", () => {
   test("first open shows starter cards and the What to type chips for the vertical; a chip runs its use case and the reply is built from the run", async () => {
     await boot();
     expect(screen.getByTestId("starters")).toBeTruthy();
-    expect(screen.getByTestId("wtt-heading").textContent).toBe("What to type · Software · Appfire Work Suite");
+    expect(screen.getByTestId("wtt-heading").textContent).toBe("What to type · Airline · Larkspur Air");
     expect(within(screen.getByTestId("wtt-away")).getAllByRole("button").map((b) => b.textContent)).toEqual(["simulate an agent identity mismatch"]);
     expect(within(screen.getByTestId("what-to-type")).getByText("Opens its own app")).toBeTruthy();
     expect(screen.queryByTestId("starter-UC2.6")).toBeNull(); // starter cards are prompts that run here
@@ -124,7 +124,7 @@ describe("What to type and the Scripted brain", () => {
     const turn = await screen.findByTestId("turn");
     await within(turn).findByTestId("turn-answer");
     expect(posts("UC1")).toHaveLength(1);
-    expect(posts("UC1")[0].body).toEqual({ vertical: "software", persona: "standard", said: "show my balance", brain: "scripted" });
+    expect(posts("UC1")[0].body).toEqual({ vertical: "airline", persona: "standard", said: "show my balance", brain: "scripted" });
     expect(within(turn).getByTestId("turn-said").textContent).toBe("show my balance");
     onlyReply(turn);
     expect(within(turn).getByTestId("turn-who").textContent).toBe("Agent");
@@ -200,7 +200,7 @@ describe("What to type and the Scripted brain", () => {
     fireEvent.change(screen.getByTestId("vertical"), { target: { value: "government" } });
     await screen.findByTestId("wtt-stub");
     expect(screen.getByTestId("wtt-stub").textContent).toMatch(/no demo pack yet/);
-    expect(screen.getByTestId("wtt-stub").textContent).toMatch(/Pick Software, Banking or Healthcare to chat\./); // built from the loaded vertical list
+    expect(screen.getByTestId("wtt-stub").textContent).toMatch(/Pick Airline, Software, Banking or Healthcare to chat\./); // built from the loaded vertical list
     expect(screen.queryAllByTestId(/^wtt-UC/)).toHaveLength(0);
   });
 
@@ -318,7 +318,7 @@ describe("hand-off and go deeper", () => {
     const card = within(turn).getByTestId("handoff-card");
     expect(card.textContent).not.toMatch(/named in lab entry|Carried|Never carried/);
     const summary = screen.getByTestId("handoff-summary");
-    expect([...summary.querySelectorAll("dt")].map((d) => `${d.textContent}=${d.nextElementSibling.textContent}`).join("")).toBe("from=appfire-agent-governanceuc=UC2.6vertical=softwareuser=alex.morgan");
+    expect([...summary.querySelectorAll("dt")].map((d) => `${d.textContent}=${d.nextElementSibling.textContent}`).join("")).toBe("from=appfire-agent-governanceuc=UC2.6vertical=airlineuser=alex.morgan");
     expect(summary.textContent).toMatch(/Never carried/);
     expect(within(screen.getByTestId("uc-UC2.6")).getByTestId("route-tag").getAttribute("title")).toMatch(/routing table: named in lab entry/);
     expect(within(card).getByTestId("handoff-open-shelf").textContent).toMatch(/Start a2a-lab from the Shelf/);
@@ -360,7 +360,7 @@ describe("hand-off and go deeper", () => {
     await u.click(screen.getByTestId("uc-UC2.6"));
     const open = screen.getByTestId("handoff-open");
     expect(open.textContent).toBe("Open a2a-lab");
-    expect(open.getAttribute("data-href")).toBe("../a2a-lab/?from=appfire-agent-governance&uc=UC2.6&vertical=software&user=alex.morgan");
+    expect(open.getAttribute("data-href")).toBe("../a2a-lab/?from=appfire-agent-governance&uc=UC2.6&vertical=airline&user=alex.morgan");
     // the evidence summary lists exactly what the link carries, in order
     const summary = screen.getByTestId("handoff-summary");
     expect([...summary.querySelectorAll("dt")].map((d) => `${d.textContent}=${d.nextElementSibling.textContent}`)).toEqual([...new URLSearchParams(open.getAttribute("data-href").split("?")[1])].map(([k, v]) => `${k}=${v}`));
@@ -368,7 +368,7 @@ describe("hand-off and go deeper", () => {
     await screen.findByTestId("turn-answer");
     // go deeper lives in the evidence column for that run, not in the reply (owner, 2026-11-09)
     expect(within(screen.getAllByTestId("turn")[1]).queryByTestId("go-deeper")).toBeNull();
-    expect(within(screen.getByTestId("evidence-column")).getByTestId("deeper-open").getAttribute("data-href")).toBe("../delegation-lab/?from=appfire-agent-governance&uc=UC1&vertical=software&user=alex.morgan");
+    expect(within(screen.getByTestId("evidence-column")).getByTestId("deeper-open").getAttribute("data-href")).toBe("../delegation-lab/?from=appfire-agent-governance&uc=UC1&vertical=airline&user=alex.morgan");
   });
 
   test("a Here + go deeper run names the deeper lab in the evidence column (not the reply); off the proxy it says to start it from the Shelf", async () => {
@@ -469,8 +469,8 @@ describe("the llama.cpp brain (Step 2)", () => {
     const u = userEvent.setup();
     await typeAndSend(u, "how much money do I have");
     await waitFor(() => expect(posts("UC1")).toHaveLength(1));
-    expect(picks()[0].body).toEqual({ vertical: "software", text: "how much money do I have" });
-    expect(posts("UC1")[0].body).toEqual({ vertical: "software", persona: "standard", said: "how much money do I have", brain: "llama" });
+    expect(picks()[0].body).toEqual({ vertical: "airline", text: "how much money do I have" });
+    expect(posts("UC1")[0].body).toEqual({ vertical: "airline", persona: "standard", said: "how much money do I have", brain: "llama" });
     await screen.findByTestId("turn-answer");
     onlyReply(screen.getByTestId("turn"));
     expect(screen.getByTestId("evidence-why").textContent).toMatch(/llama\.cpp picked “Delegated access \(consent only\)” from this vertical's list/);
@@ -565,7 +565,7 @@ describe("Agent to agent page (owner, 2026-11-09: keep it)", () => {
     expect(within(turn).queryByTestId("go-deeper")).toBeNull();
     const ev = screen.getByTestId("evidence-column");
     expect(within(ev).getByTestId("go-deeper").textContent).toMatch(/Go deeper in a2a-lab/);
-    expect(within(ev).getByTestId("deeper-open").getAttribute("data-href")).toBe("../a2a-lab/?from=appfire-agent-governance&uc=UC2&vertical=software&user=alex.morgan");
+    expect(within(ev).getByTestId("deeper-open").getAttribute("data-href")).toBe("../a2a-lab/?from=appfire-agent-governance&uc=UC2&vertical=airline&user=alex.morgan");
     expect(screen.getByTestId("nav-page-a2a").textContent).toBe("Agent to agent"); // the page's entry under More pages
     await u.selectOptions(screen.getByTestId("nav-more"), "page-a2a");
     expect(window.location.hash).toBe("#page-a2a");

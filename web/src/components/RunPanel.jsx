@@ -1,5 +1,6 @@
 import { NEEDS_LABELS, TRACK_LABELS, noIds, notRunText, outcomeState, pickFullPack, ranCount, triggerText } from "../lib";
 import { InventedTag, Json, Tag } from "./Bits";
+import { labelWord } from "../fare";
 import GatewayTrace from "../gateway-trace/GatewayTrace";
 
 // The sentence under the "What Privilege did" heading says what the decisions rest on (rule 25: an inferred decision is never presented as one the gateway
@@ -70,7 +71,7 @@ export function RunResult({ run }) {
           ? null
           : guided
           ? <Tag state="warn" testId="guided-note" title="The lab did not compute this">guided, not computed</Tag>
-          : <Tag state={run.matchesExpected ? "ok" : "bad"} testId="matches">{run.matchesExpected ? "matches the catalog label" : "differs from the catalog label"}</Tag>}
+          : <Tag state={run.matchesExpected ? "ok" : "bad"} testId="matches">{run.matchesExpected ? `matches ${labelWord(run.useCase?.labelSource)}` : `differs from ${labelWord(run.useCase?.labelSource)}`}</Tag>}
         {run.labSimulated && <Tag state="warn">lab-simulated (source says needs-build)</Tag>}
         {!isReal && !isLive && <Tag state="info">persona: {run.persona}</Tag>}
       </div>
@@ -85,7 +86,7 @@ export function RunResult({ run }) {
 }
 
 // The one line a screen reader hears when a run finishes.
-const announce = (run) => `${run.useCase?.title || "Run"} finished: ${run.outcome}${run.kind === "real" || run.kind === "live" ? "" : run.kind === "guided" ? ", guided, not computed" : run.matchesExpected ? ", matches the catalog label" : ", differs from the catalog label"}.`;
+const announce = (run) => `${run.useCase?.title || "Run"} finished: ${run.outcome}${run.kind === "real" || run.kind === "live" ? "" : run.kind === "guided" ? ", guided, not computed" : run.matchesExpected ? `, matches ${labelWord(run.useCase?.labelSource)}` : `, differs from ${labelWord(run.useCase?.labelSource)}`}.`;
 
 export default function RunPanel({ uc, vertical, verticals, persona, setPersona, personas, onRun, running, result, mode, realLevel = null }) {
   if (!uc) return <section className="panel" data-testid="run-empty"><h2 className="panel__title">Run a use case</h2><p className="muted">Pick a use case on the left. Then choose a vertical pack and a persona, and Run.</p></section>;
@@ -107,7 +108,7 @@ export default function RunPanel({ uc, vertical, verticals, persona, setPersona,
         <ul className="plain">{Object.entries(uc.productRoles || {}).map(([k, t]) => <li key={k}><strong>{NEEDS_LABELS[k] || k}:</strong> {noIds(t)}</li>)}</ul>
       </details>
       <p className="muted">Trigger in the product: <code>{noIds(triggerText(uc.trigger))}</code></p>
-      <p className="muted">Expected outcome (the catalog's label): <Tag state={outcomeState(uc.expectedOutcome)}>{uc.expectedOutcome}</Tag> {uc.tool && <>Tool in this vertical: <code>{uc.tool}</code></>}</p>
+      <p className="muted">Expected outcome ({uc.labelSource === "lab" ? "the lab's label for this vertical" : "the catalog's label"}): <Tag state={outcomeState(uc.expectedOutcome)}>{uc.expectedOutcome}</Tag> {uc.tool && <>Tool in this vertical: <code>{uc.tool}</code></>}</p>
       {uc.live?.status === "needs-build" && <p className="muted">{noIds(uc.live.message)}</p>}
       {!personaUnused && <Inputs uc={uc} />}
       <div className="runbar">

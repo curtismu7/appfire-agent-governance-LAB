@@ -1,4 +1,4 @@
-// {{token}} templating for the story, hop labels and narration. Tokens are filled from one of four FULL vertical packs (banking, healthcare, retail, software).
+// {{token}} templating for the story, hop labels and narration. Tokens are filled from one of five FULL vertical packs (airline, banking, healthcare, retail, software).
 // The other verticals are listed as data stubs: they have a name and nothing else, and a run on one is refused with 501. A test fails on any token a pack does not define.
 // Every person, agent and host in a pack is synthetic: only .example hosts, no real company, tenant or account. Product vocabulary (Jira, Confluence,
 // Marketplace) in the software pack is allowed (owner, 2026-11-16); customer and tenant names are not.
@@ -17,9 +17,21 @@ export const TOOL_ROLES = { get_account_balance: 'read', create_transfer: 'write
 export const OPTIONAL_TOOL_ROLES = { get_branch_hours: 'public', show_mortgage: 'status', request_fee_waiver: 'request', get_weather: 'scan' };
 const OPTIONAL_ROLE_KEY = { public: 'castPublicTool', status: 'castStatusTool', request: 'castRequestTool', scan: 'castScanTool' };
 // Cast keys only some packs define. Everything else is required of every pack (a test pins both lists).
-export const OPTIONAL_CAST_KEYS = [...Object.values(OPTIONAL_ROLE_KEY), 'castUnit', 'castPerson', 'castToolServer'];
+// castFareRule marks a pack that uses the fare rule (policy.js fareDecision, like castUnit marks a count); castFareLimit and castFareHold carry its two numbers as text
+// so no copy of the rule types a number by hand (a test pins them against FARE_RULE).
+export const OPTIONAL_CAST_KEYS = [...Object.values(OPTIONAL_ROLE_KEY), 'castUnit', 'castPerson', 'castToolServer', 'castFareRule', 'castFareLimit', 'castFareHold'];
 
 export const VERTICALS = {
+  // The airline pack (owner, 2026-11-16): an INVENTED airline, Larkspur Air (never a real carrier), the lab's default. Flights, fares, limits and the
+  // two lab-invented tools (list_airports, request_change_fee_waiver) are LAB-INVENTED. castFareRule marks the fare rule. The pack has no castToolServer yet (phase B hosts its
+  // tools on the lab's own tool server), so realGate keeps it on the lab's own steps.
+  airline: {
+    castBrand: 'Larkspur Air', castHost: 'larkspur-air', castUser: 'elena.novak', castUser2: 'jun.takeda', castOwner2: 'marcus.bell', castAgent: 'travel-assistant', castAgent2: 'bookings-specialist', castAgent3: 'report-generalist',
+    castAdmin: 'sofia.reyes', castMoney: 'trips and bookings', castReadTool: 'get_airline_bookings', castWriteTool: 'book_airline_flight', castSensitiveTool: 'sensitive_passenger_record', castA2aTool: 'sensitive_passenger_record',
+    castAsset: 'trip', castAction: 'booking', castGroup: 'orbit-tier',
+    castPublicTool: 'list_airports', castStatusTool: 'get_flight_status', castRequestTool: 'request_change_fee_waiver', castPerson: 'traveller',
+    castFareRule: 'fare', castFareLimit: '$400', castFareHold: '$1,500',
+  },
   banking: {
     castBrand: 'Appfire Platform', castHost: 'appfire-platform', castUser: 'alex.morgan', castUser2: 'sam.rivera', castOwner2: 'dana.whitfield', castAgent: 'triage-agent', castAgent2: 'analytics-specialist', castAgent3: 'report-generalist',
     castAdmin: 'priya.nair', castMoney: 'checking', castReadTool: 'get_account_balance', castWriteTool: 'create_transfer', castSensitiveTool: 'get_sensitive_account_details', castA2aTool: 'get_portfolio_summary',
@@ -55,6 +67,12 @@ export const DEFAULT_EXTRAS = {
   intent: 'transfer:limited',
 };
 export const PACK_EXTRAS = {
+  // records:read is used only by the staged agent-to-agent hand-off and is not created anywhere.
+  airline: {
+    scopes: { read: 'trips:read', write: 'flights:book', sensitive: 'travellers:read', a2a: 'records:read' },
+    authz: { type: 'flight-booking', maxKey: 'maxFare' },
+    intent: 'flight-booking:limited',
+  },
   software: {
     scopes: { read: 'issues:read', write: 'issues:write', sensitive: 'projects:admin', a2a: 'releases:read' },
     authz: { type: 'issue-change', maxKey: 'maxIssues' },
@@ -62,14 +80,14 @@ export const PACK_EXTRAS = {
   },
 };
 export const extrasOf = (vertical) => (Object.hasOwn(PACK_EXTRAS, vertical) ? PACK_EXTRAS[vertical] : DEFAULT_EXTRAS);
-export const DEFAULT_VERTICAL = 'software';
+export const DEFAULT_VERTICAL = 'airline';
 export const DEFAULT_CAST = VERTICALS[DEFAULT_VERTICAL];
 
-// Vertical ids named in the source's vertical list, minus banking/healthcare/retail (full packs; software is the lab's own, not from the source list) and minus one customer-flavoured name that is left out.
+// Vertical ids named in the source's vertical list, minus banking/healthcare/retail (full packs; software and airline are the lab's own, not from the source list) and minus one customer-flavoured name that is left out.
 // Data stubs: an id and a label, nothing else.
 export const STUB_VERTICALS = {
   government: 'Government', university: 'University', workforce: 'Workforce', 'sporting-goods': 'Sporting goods',
-  manufacturing: 'Manufacturing', investment: 'Investment', airlines: 'Airlines',
+  manufacturing: 'Manufacturing', investment: 'Investment',
 };
 
 export const unfilled = (text, cast) => [...String(text).matchAll(TOKEN)].map((m) => m[1]).filter((k) => !Object.hasOwn(cast, k));

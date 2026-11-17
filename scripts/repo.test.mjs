@@ -161,9 +161,9 @@ test('step 2: the Dockerfile builds the web app in its own stage and copies only
   assert.equal((d.match(/^FROM node:26-alpine/gm) || []).length, 2); assert.match(d, /^USER node$/m);
 });
 
-test('package.json counts eleven verticals (four full, seven stubs)', () => {
+test('package.json counts eleven verticals (five full, six stubs)', () => {
   const d = JSON.parse(read('package.json')).description;
-  assert.match(d, /eleven verticals \(four full packs and seven stubs\)/); assert.ok(!/ten verticals/i.test(d));
+  assert.match(d, /eleven verticals \(five full packs and six stubs\)/); assert.ok(!/ten verticals/i.test(d));
 });
 
 test('review fix: the README names the UC28 title change, the guided matchesExpected null, and that a restart frees workspace slots', () => {
@@ -174,9 +174,9 @@ test('review fix: the README names the UC28 title change, the guided matchesExpe
   assert.match(r, /set on 6 entries/);
 });
 
-test('review fix: the talk track says seven stub verticals', () => {
+test('review fix: the talk track says six stub verticals', () => {
   const t = read('docs/talk-track.md');
-  assert.match(t, /Seven verticals are data stubs/); assert.ok(!/Eight verticals are data stubs/.test(t));
+  assert.match(t, /Six verticals are data stubs/); assert.ok(!/Seven verticals are data stubs/.test(t));
 });
 
 test('step 3: CI has no self-skipping conformance job (it would be a green check with nothing behind it), the pack and the talk track carry live mode, and Docker takes Real from the app .env by name only', () => {
@@ -265,4 +265,11 @@ test('the default vertical is one value in two places: the server (cast.js) and 
   const web = read('web/src/lib.js').match(/export const DEFAULT_VERTICAL = "([a-z-]+)"/)?.[1];
   assert.ok(server && web, 'both literals are found');
   assert.equal(web, server);
+  assert.equal(server, 'airline', 'the default is the invented airline (Larkspur Air), owner 2026-11-16');
+});
+
+test('the airline pack names no real airline or programme anywhere in its data or docs (an invented brand only)', () => {
+  const text = ['data/prompts.json', 'data/replies.json', 'server/src/cast.js', 'server/src/verticalText.js', 'README.md', 'docs/talk-track.md', 'content-pack.json'].map(read).join('\n').toLowerCase();
+  for (const w of ['united airlines', 'delta', 'american airlines', 'southwest', 'jetblue', 'lufthansa', 'british airways', 'air france', 'emirates', 'qantas', 'mileageplus', 'skymiles', 'aadvantage', 'air canada']) assert.ok(!text.includes(w), w);
+  assert.match(read('server/src/cast.js'), /castBrand: 'Larkspur Air'/);
 });

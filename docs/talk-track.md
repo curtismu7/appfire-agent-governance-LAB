@@ -6,11 +6,11 @@
 
 ## Appfire today: the split between HIVE and Ping
 
-HIVE manages Appfire's backend authorization rules and MCP-server eligibility. This lab shows the front end Ping governs: the agent release-assistant at Appfire Work Suite gets an identity, receives delegated privileges from the principal it acts for (maya.chen), and every tool call gets a policy decision — enforced and recorded. In this vertical the agent works with projects and issues. The two layers complement each other; neither replaces the other.
+HIVE manages Appfire's backend authorization rules and MCP-server eligibility. This lab shows the front end Ping governs: the agent travel-assistant at Larkspur Air gets an identity, receives delegated privileges from the principal it acts for (elena.novak), and every tool call gets a policy decision — enforced and recorded. In this vertical the agent works with trips and bookings. The two layers complement each other; neither replaces the other.
 
 ## Step 2 · The agent gets its own identity
 
-Run “Delegated access (consent only)”: maya.chen signs in, consents once, and RFC 8693 token exchange mints a delegated token whose sub is the USER and whose act names release-assistant — open the Tokens tab to read both claims raw. “Non-human (agent) identity lifecycle” shows the agent's own credential enrolled, rotated and retired as a first-class identity. The point: delegation, not impersonation — the agent never pretends to be the user, and every action traces back to a real human's consent.
+Run “Delegated access (consent only)”: elena.novak signs in, consents once, and RFC 8693 token exchange mints a delegated token whose sub is the USER and whose act names travel-assistant — open the Tokens tab to read both claims raw. “Non-human (agent) identity lifecycle” shows the agent's own credential enrolled, rotated and retired as a first-class identity. The point: delegation, not impersonation — the agent never pretends to be the user, and every action traces back to a real human's consent.
 
 ## Step 3 · The agent tries a tool call: privilege is scoped per task
 
@@ -22,15 +22,15 @@ Run “Entitlement-tiered capability” (permits) and then “Group / entitlemen
 
 ## Step 5 · A low-risk read is allowed automatically
 
-Run a low-risk read: the decision card says ALLOWED, the tool ran and nobody was asked. The risk strip shows it landed on the first control. The record is still written. Where the vertical lists a third-party MCP call the agent may use, run it next: the gateway lets it through, and step 6 shows the same kind of call refused.
+Run a low-risk read, then a domestic booking up to $400: the decision card says ALLOWED, the tool ran as asked and nobody was asked. The risk strip shows it landed on the first of its five controls. The record is still written. Where the vertical lists a third-party MCP call the agent may use, run it next: the gateway lets it through, and step 6 shows the same kind of call refused.
 
 ## Step 6 · A higher-risk request is denied, constrained or approved
 
-The read you just saw needed nobody. Now the writes: “MFA step-up” (a bulk edit above the first threshold) stops for a second factor. “MFA + HITL consent” (a smaller bulk edit) stops for an actual human: approve it on the phone and the call is retried with the verified approval (signed in with PingOne, the approval is also recorded with the HITL service). A bulk edit above the limit is refused outright. A claim that someone 'already approved it' changes nothing: only a verified approval counts. The thresholds are the lab's own — the point is the model: controlled autonomy, not a person approving every step.
+A domestic booking up to $400 is allowed as asked. An international booking, or any booking over $400 and up to $1,500, is booked but only in economy. Over $1,500, domestic or international, a person approves. Run them in that order. “Booking within the limit” is ALLOWED: business, as asked, and nobody is asked. “International booking, economy only” costs the same but is international, so it is CONSTRAINED: the agent asked for business, the traveller gets economy, and the answer and the Decision card say exactly that. “Consumer Agent — governed flight booking” is over $400 by its price alone and is CONSTRAINED the same way. “Booking over the higher limit” goes to a person: approve it on the phone. “Approval claimed, not proven” says a manager already approved, but a claim is not an approval: it asks for a second factor first and, because the booking is over $1,500, a person still approves. The two limits and the international flag are the lab's own, and CONSTRAINED is the lab's own fare rule, not a PingOne Authorize outcome: Larkspur Air would set the real limits in policy.
 
 ## Step 6 · Limiting damage from a manipulated agent
 
-Run “confused-deputy actor injection” (a forged actor claim is refused), “intent exceeded” (the agent tries more than the pushed authorization allows), “raw user-token forwarding” (zero-trust refusal), “token theft / replay”, and a request for another person's private project (refused: the token's subject does not own it). Eleven attacks run here and every one ends in DENY with nothing dispatched. A manipulated agent cannot talk its way past the tool, data and action layers: permissions are enforced there, not left to the model to follow instructions.
+Run “confused-deputy actor injection” (a forged actor claim is refused), “intent exceeded” (the agent tries more than the pushed authorization allows), “raw user-token forwarding” (zero-trust refusal), “token theft / replay”, and a request for another person's private trip (refused: the token's subject does not own it). Eleven attacks run here and every one ends in DENY with nothing dispatched. Then poison the agent's instructions: it proposes a $2,500 business booking, over $1,500, so a person must approve it. That run is not one of the eleven; it shows that the decision comes from the call, never from the prompt. A manipulated agent cannot talk its way past the tool, data and action layers: permissions are enforced there, not left to the model to follow instructions.
 
 ## Step 7 · The decision history is there for audit
 
@@ -42,7 +42,7 @@ When you sign in with PingOne, “Delegated access” and the other use cases th
 
 ## What the lab does not call
 
-HIVE is Appfire's platform and is never called: its side of the split is represented, not run. The thresholds, personas and amounts are the lab's own (lab-invented). The step-up second factor is not completed here, and a use case that needs a feature flag or a trusted-caller header keeps running on the lab's own steps (the picker tags the flag).
+HIVE is Appfire's platform and is never called: its side of the split is represented, not run. The thresholds, personas and amounts are the lab's own (lab-invented). The two limits, the international flag and the CONSTRAINED word are the lab's own. The step-up second factor is not completed here, and a use case that needs a feature flag or a trusted-caller header keeps running on the lab's own steps (the picker tags the flag).
 
 ## Why it matters: governed agent autonomy for Appfire
 
@@ -53,6 +53,8 @@ Challenge: Appfire's HIVE platform already manages the backend: data policy and 
 - Anything about how a real identity provider, gateway or policy engine behaves: nothing here ran against one.
 - The identity-provider-only path reaches the identity provider only (discovery and the agent's client-credentials token). Sign-in, token exchange, gateway, authorize and tool steps are not run on it, and it does not recompute the use case's outcome.
 - The path through a real tenant has not been run by the builder: UNVERIFIED. The owner runs it.
-- The thresholds that decide step-up, approval and deny (lab-invented), the events that stage each attack, and the persona that drives group checks.
-- Seven verticals are data stubs (a name only); only software, banking, healthcare and retail have full packs.
+- The thresholds that decide step-up, approval and deny (lab-invented), the events that stage each attack, the persona that drives group checks, and the two fare limits and the international flag.
+- The outcome word CONSTRAINED and the narrowing of a request argument: the lab's own rule, not a PingOne Authorize outcome; how a product policy would express it is not claimed.
+- The airline booking limits: the lab's own two limits and international flag. Read from the product's code and docs, not run (UNVERIFIED): its reference airline setup holds bookings for a person's consent and refuses on its own spend limits (a different rule), so none of the booking outcomes here may be what that setup would answer.
+- Six verticals are data stubs (a name only); only airline, software, banking, healthcare and retail have full packs.
 - Guided use cases (learning pages, presenter guides, A2A reviews, the NHI inventory): the lab opens a stand-in step and does not recompute their outcome.

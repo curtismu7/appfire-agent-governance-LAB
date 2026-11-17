@@ -86,6 +86,33 @@ export const DEMO_GUIDE = [
   },
 ];
 
+// The airline pack's own words for the steps that talk about the fare rule (applied when the cast has `castFareRule`; every other pack keeps DEMO_GUIDE byte for byte).
+// The rule in one breath is the same sentence everywhere; its two numbers are the cast's `castFareLimit` and `castFareHold`, never typed here. The limits are the lab's own.
+export const GUIDE_OVERRIDES = {
+  // Step 4: the airline pack runs UC21 on the lab's own steps, where the tier is the persona; no PingOne group of this pack exists to flip (it waits for the Real airline tools).
+  evaluate: {
+    prove: DEMO_GUIDE.find((g) => g.id === "evaluate").prove.replace(/ With a PingOne sign-in the tier is your PingOne group:.*?run it again\./, "").replace("premium customer and as the standard customer", "premium {{castPerson}} and as the standard {{castPerson}}"),
+  },
+  allow: {
+    prove: DEMO_GUIDE.find((g) => g.id === "allow").prove.replace("which of the four controls", "which of the five controls"),
+  },
+  escalate: {
+    prove: "The rule is two limits and one flag, and you can say it in one breath: a domestic booking up to {{castFareLimit}} is allowed as asked; an international booking, or one over {{castFareLimit}} and up to {{castFareHold}}, is booked but only in economy; over {{castFareHold}}, domestic or international, a person approves. Run the buttons in order. {{prompt:UC7|The first booking}} is ALLOWED: business, as asked. {{prompt:UC8|The next booking}} costs the same but is international, so it is CONSTRAINED: the agent asked for business, the traveller gets economy, and the Decision card says exactly that. The booking over {{castFareLimit}} is CONSTRAINED too, by its price. {{prompt:UC6|The largest booking}} goes to a person (ESCALATED: approve it on the phone). A request that only claims a manager's approval cannot show one, so it asks for a second factor first, and a person still approves a booking that large. The third-party call outside what the agent may use, the forged actor and another traveller's {{castAsset}} are refused (DENIED). “Poisoned instructions” makes the agent propose a $2,500 business booking: it is over {{castFareHold}}, so a person must approve it. “Compare two runs” opens the same fare side by side, domestic against international. The limits are the lab's own; Larkspur Air would set the real ones in policy.",
+    say: "Controlled autonomy with one narrowing. A booking inside the limit just goes through. An international booking, or a pricier one, still goes through but only in economy, and the answer says what was narrowed. A very large one waits for a person. A claim of approval gets a second factor, and an out-of-bounds request is refused. A manipulated agent meets the same decision, because the enforcement point is not the model.",
+    ucs: [
+      { uc: "UC7", label: "Allowed as asked: domestic, up to {{castFareLimit}}" },
+      { uc: "UC8", label: "Constrained: international, business becomes economy" },
+      { uc: "UC48", label: "Constrained: over {{castFareLimit}}, business becomes economy" }, // runs from this button (guideRun runs a hand-off use case); picking it in the use-case list shows the hand-off card instead
+      { uc: "UC6", label: "Needs a person's approval: over {{castFareHold}}" },
+      { uc: "UC27", label: "Approval claimed, not proven: needs a second factor" },
+      { uc: "UC31", label: "Out of scope: refused" },
+      { uc: "UC13", label: "Manipulated agent: refused" },
+      { compare: "careful-poisoned", label: "Poisoned instructions: a person must approve" },
+      { compare: "same-fare", label: "Compare: same fare, domestic against international" },
+    ],
+  },
+};
+
 // The session agenda's seven timed topics (the 60 minutes). Only two are run in the lab; the rest are covered in the slide deck.
 export const TOPICS = [
   { time: "0:00", title: "Welcome and objectives", inLab: false },
@@ -109,14 +136,16 @@ export const buttonKey = (b) => b.uc ?? `compare-${b.compare}`;
 
 // The typed prompts (What to type) that belong to a step, in the step's order, from the vertical's own list. `prompts` on a step names use cases; the words
 // come from data/prompts.json, so every vertical (and a future industry pack) follows the same walkthrough.
-export const promptsOfStep = (stepId, list) => {
+// `fare` (the airline pack): a prompt whose use case opens its own app never sits in a step's chips, so every chip under a step runs here (those prompts are listed
+// under "Opens its own app"; the walkthrough's buttons still run them where a step has one).
+export const promptsOfStep = (stepId, list, { fare = false } = {}) => {
   const step = DEMO_GUIDE.find((g) => g.id === stepId);
-  return (step?.prompts || []).map((uc) => (list || []).find((p) => p.uc === uc)).filter(Boolean);
+  return (step?.prompts || []).map((uc) => (list || []).find((p) => p.uc === uc)).filter((p) => p && !(fare && p.route === "Hand off"));
 };
 // The same list grouped by the first step each prompt belongs to, in agenda order, then the prompts no step uses. (A prompt shared by several steps is listed once.)
-export function promptGroups(list) {
+export function promptGroups(list, { fare = false } = {}) {
   const placed = new Set();
-  const groups = DEMO_GUIDE.map((g, i) => ({ id: g.id, n: i + 1, short: g.short, items: promptsOfStep(g.id, list).filter((p) => !placed.has(p.uc) && placed.add(p.uc)) })).filter((g) => g.items.length);
+  const groups = DEMO_GUIDE.map((g, i) => ({ id: g.id, n: i + 1, short: g.short, items: promptsOfStep(g.id, list, { fare }).filter((p) => !placed.has(p.uc) && placed.add(p.uc)) })).filter((g) => g.items.length);
   const more = (list || []).filter((p) => !placed.has(p.uc));
   return { groups, more };
 }
@@ -124,7 +153,7 @@ export function promptGroups(list) {
 
 // ---- Filling the walkthrough for the vertical on screen ----
 // Words used while the cast has not loaded yet, or when a vertical's cast lacks a key. They are vertical-neutral on purpose.
-const CAST_FALLBACK = { castUser: "the signed-in person", castUser2: "the premium person", castAgent: "the agent", castBrand: "the app", castAsset: "resource", castAction: "write", castGroup: "premium-tier" };
+const CAST_FALLBACK = { castPerson: "customer", castUser: "the signed-in person", castUser2: "the premium person", castAgent: "the agent", castBrand: "the app", castAsset: "resource", castAction: "write", castGroup: "premium-tier" };
 const GUIDE_TOKEN = /\{\{(prompt:UC[\d.]+|\w+)(?:\|([^{}]*))?\}\}/g;
 
 // Fill {{castX}} from the vertical's cast and {{prompt:UCn|fallback}} from its What to type list (the prompt in curly quotes; the fallback, never quoted, when
@@ -143,7 +172,8 @@ export function fillGuide(text, ctx = {}) {
 }
 
 // A walkthrough step with its words filled for the vertical: the same shape as the step, so a component reads it exactly as it read the static one.
-export function guideStep(step, ctx) {
-  if (!step) return step;
+export function guideStep(base, ctx) {
+  if (!base) return base;
+  const step = ctx?.cast?.castFareRule && Object.hasOwn(GUIDE_OVERRIDES, base.id) ? { ...base, ...GUIDE_OVERRIDES[base.id] } : base; // fare: the airline pack's words
   return { ...step, title: fillGuide(step.title, ctx), req: fillGuide(step.req, ctx), prove: fillGuide(step.prove, ctx), say: fillGuide(step.say, ctx), ucs: step.ucs.map((b) => ({ ...b, label: fillGuide(b.label, ctx) })) };
 }

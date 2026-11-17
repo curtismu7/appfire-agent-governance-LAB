@@ -155,7 +155,7 @@ describe("run view", () => {
     await u.selectOptions(screen.getByTestId("persona"), "premium");
     await runIt(u);
     const post = api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC1");
-    expect(post.body).toEqual({ vertical: "software", persona: "premium" });
+    expect(post.body).toEqual({ vertical: "airline", persona: "premium" });
     expect(post.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
     expect(screen.getByTestId("outcome").textContent).toBe("PERMIT");
     expect(screen.getByTestId("matches").textContent).toBe("matches the catalog label");
@@ -530,11 +530,11 @@ describe("fix pass 2026-11-01", () => {
     expect(screen.getByTestId("persona").value).toBe("premium");
     expect(screen.getByTestId("lab-inputs").textContent).toMatch(/persona.*premium/);
     await runIt(u);
-    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC21").body).toEqual({ vertical: "software", persona: "premium" });
+    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC21").body).toEqual({ vertical: "airline", persona: "premium" });
     await u.click(screen.getByTestId("uc-UC9"));
     expect(screen.getByTestId("persona").value).toBe("standard");
     await runIt(u);
-    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC9").body).toEqual({ vertical: "software", persona: "standard" });
+    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC9").body).toEqual({ vertical: "airline", persona: "standard" });
     await u.click(screen.getByTestId("uc-UC21"));
     await u.selectOptions(screen.getByTestId("persona"), "standard");
     expect(screen.getByTestId("persona").value).toBe("standard");
@@ -865,6 +865,58 @@ describe("risk strip and compare page", () => {
     await runIt(await pick("UC1"));
     await screen.findByTestId("risk-strip");
     expect(current()).toEqual(["risk-4"]);
+  });
+
+  // The airline pack (Larkspur Air, the default): CONSTRAINED is the lab's own fare rule, shown with its own word, a five-rung strip and a chip in the chat.
+  const FARE = { limit: 400, hold: 1500, from: "business", to: "economy" };
+  const REASON = "the trip is international (the flag alone narrows it; $380 is not over the $400 limit), so business is narrowed to economy (lab-invented limits)";
+  const airlineHops = (decision, extra = {}) => [
+    { n: 1, kind: "llm-plan", verdict: "ok", response: { body: { tool_calls: [{ name: "book_airline_flight", arguments: { flight: "LK 322", cabin: "business" } }] } } },
+    { n: 2, kind: "authorize-decision", verdict: "ok", request: { body: { subject: "elena.novak", action: "book_airline_flight", context: { act: { sub: "travel-assistant" } } } }, response: { body: { decision, reason: REASON, ...extra } } },
+    { n: 3, kind: "tool-dispatched", verdict: "ok", response: { body: { result: { tool: "book_airline_flight", isError: false } } } },
+    { n: 4, kind: "agent-reply", verdict: "ok", response: { body: { reply: "Booked, but in economy instead of business: this trip is international, so the booking rule allows economy only. LK 322 from ORD to Toronto on Friday, confirmation LKR7Q2." } } },
+  ];
+  const constrainedAnswer = () => answer({
+    outcome: "CONSTRAINED", fareRule: FARE, hops: airlineHops("CONSTRAINED", { constraint: { field: "cabin", asked: "business", granted: "economy", because: ["international"], limit: 400 } }),
+    constrained: { field: "cabin", asked: "business", granted: "economy", because: ["international"], limit: 400, by: "the lab's fare rule, not a PingOne Authorize outcome" },
+    booking: { flight: "LK 322", from: "ORD", to: "YYZ", fare: 380, international: true, asked: "business", booked: "economy" },
+  });
+
+  test("an airline CONSTRAINED run: the card word, a five-rung strip with rung two lit, the seat row, the chat chip, and no phone", async () => {
+    await boot({ runAnswer: constrainedAnswer() });
+    await runIt(await pick("UC1"));
+    expect((await screen.findByTestId("decision-word")).textContent).toBe("CONSTRAINED");
+    expect(screen.getByTestId("decision-card").getAttribute("data-tone")).toBe("info");
+    expect(screen.getByTestId("decision-reason").textContent).toBe(`Allowed with a limit: ${REASON}. The booking went through; the agent asked for business and was granted economy.`);
+    expect(screen.getByTestId("decision-policy").textContent).toBe(`the lab's fare rule, not a PingOne Authorize outcome: ${REASON}`);
+    expect(screen.getByTestId("decision-seat").textContent).toBe("business asked, economy booked");
+    const strip = screen.getByTestId("risk-strip");
+    expect(strip.querySelectorAll("li")).toHaveLength(5);
+    expect(strip.getAttribute("aria-label")).toBe("Where this run landed among the five controls");
+    expect(strip.style.getPropertyValue("--risk-n")).toBe("5");
+    expect(current()).toEqual(["risk-2"]);
+    expect(screen.getByTestId("risk-2").textContent).toMatch(/this run · CONSTRAINED/);
+    expect([...strip.querySelectorAll(".risk__word")].map((w) => w.textContent.replace("this run · ", "")).join("|")).toBe("PERMIT|CONSTRAINED|STEP_UP|HITL_REQUIRED|DENY");
+    expect(screen.getByTestId("turn-narrowed").textContent).toBe("Narrowed: business to economy");
+    expect(screen.queryByTestId("mp-deny")).toBeNull(); // a narrowing is not a hold: the phone stays closed
+    expect(document.body.textContent).not.toMatch(/\bUC\d/);
+  });
+
+  test("an airline hold draws five rungs with rung 4 lit and no chip; a four-pack run keeps four rungs", async () => {
+    await boot({ runAnswer: answer({ outcome: "HITL_REQUIRED", fareRule: FARE, hops: airlineHops("HITL_REQUIRED").slice(0, 2), booking: { flight: "LK 704", from: "ORD", to: "CDG", fare: 2400, international: true, asked: "business", booked: null } }) });
+    await runIt(await pick("UC1"));
+    await screen.findByTestId("risk-strip");
+    expect(screen.getByTestId("risk-strip").querySelectorAll("li")).toHaveLength(5);
+    expect(current()).toEqual(["risk-4"]);
+    expect(screen.getByTestId("decision-seat").textContent).toBe("business asked, not booked yet (held)");
+    expect(screen.queryByTestId("turn-narrowed")).toBeNull();
+    cleanup(); vi.unstubAllGlobals();
+    await boot({ runAnswer: answer({ outcome: "PERMIT" }) });
+    await runIt(await pick("UC1"));
+    await screen.findByTestId("risk-strip");
+    expect(screen.getByTestId("risk-strip").querySelectorAll("li")).toHaveLength(4);
+    expect(screen.getByTestId("risk-strip").getAttribute("aria-label")).toBe("Where this run landed among the four controls");
+    expect(screen.queryByTestId("decision-seat")).toBeNull();
   });
 
   test("a guided run has no risk strip", async () => {

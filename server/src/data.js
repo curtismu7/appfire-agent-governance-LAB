@@ -86,9 +86,35 @@ export const NOT_DEMONSTRATED = [
   'Anything about how a real identity provider, gateway or policy engine behaves: nothing here ran against one.',
   'The identity-provider-only path reaches the identity provider only (discovery and the agent\'s client-credentials token). Sign-in, token exchange, gateway, authorize and tool steps are not run on it, and it does not recompute the use case\'s outcome.',
   'The path through a real tenant has not been run by the builder: UNVERIFIED. The owner runs it.',
-  'The thresholds that decide step-up, approval and deny (lab-invented), the events that stage each attack, and the persona that drives group checks.',
-  'Seven verticals are data stubs (a name only); only software, banking, healthcare and retail have full packs.',
+  'The thresholds that decide step-up, approval and deny (lab-invented), the events that stage each attack, the persona that drives group checks, and the two fare limits and the international flag.',
+  'The outcome word CONSTRAINED and the narrowing of a request argument: the lab\'s own rule, not a PingOne Authorize outcome; how a product policy would express it is not claimed.',
+  'The airline booking limits: the lab\'s own two limits and international flag. Read from the product\'s code and docs, not run (UNVERIFIED): its reference airline setup holds bookings for a person\'s consent and refuses on its own spend limits (a different rule), so none of the booking outcomes here may be what that setup would answer.',
+  'Six verticals are data stubs (a name only); only airline, software, banking, healthcare and retail have full packs.',
   'Guided use cases (learning pages, presenter guides, A2A reviews, the NHI inventory): the lab opens a stand-in step and does not recompute their outcome.',
 ];
+
+// The airline pack's own words for the three talk-track entries whose base text describes the banking-style bands (MFA step-up, MFA + HITL consent, a
+// refusal above a limit), and for the honesty entry. Applied by buildStory (story.js) when the cast carries castFareRule; the entries' ids, order and
+// steps never change (talkTrack.test.js). Only the entries listed here are replaced: every other pack keeps the base text byte for byte.
+// The one-breath rule below is the same sentence as the walkthrough's and the README's; the two numbers are cast keys (castFareLimit, castFareHold), never typed twice.
+export const TALK_TRACK_OVERRIDES = {
+  airline: {
+    'step-allow': {
+      say: 'Run a low-risk read, then a domestic booking up to {{castFareLimit}}: the decision card says ALLOWED, the tool ran as asked and nobody was asked. The risk strip shows it landed on the first of its five controls. The record is still written. Where the vertical lists a third-party MCP call the agent may use, run it next: the gateway lets it through, and step 6 shows the same kind of call refused.',
+      run: [{ uc: 'UC1', label: 'Run a low-risk read' }, { uc: 'UC7', label: 'Run a booking within the limit' }, { uc: 'UC30', label: 'Run the allowed third-party call' }],
+    },
+    'theme-hitl': {
+      title: 'Step 6 · A higher-risk request is denied, constrained or approved',
+      say: 'A domestic booking up to {{castFareLimit}} is allowed as asked. An international booking, or any booking over {{castFareLimit}} and up to {{castFareHold}}, is booked but only in economy. Over {{castFareHold}}, domestic or international, a person approves. Run them in that order. “Booking within the limit” is ALLOWED: business, as asked, and nobody is asked. “International booking, economy only” costs the same but is international, so it is CONSTRAINED: the agent asked for business, the traveller gets economy, and the answer and the Decision card say exactly that. “Consumer Agent — governed flight booking” is over {{castFareLimit}} by its price alone and is CONSTRAINED the same way. “Booking over the higher limit” goes to a person: approve it on the phone. “Approval claimed, not proven” says a manager already approved, but a claim is not an approval: it asks for a second factor first and, because the booking is over {{castFareHold}}, a person still approves. The two limits and the international flag are the lab\'s own, and CONSTRAINED is the lab\'s own fare rule, not a PingOne Authorize outcome: {{castBrand}} would set the real limits in policy.',
+      run: [{ uc: 'UC7', label: 'Run the booking within the limit' }, { uc: 'UC8', label: 'Run the international booking' }, { uc: 'UC48', label: 'Run the booking over the limit' }, { uc: 'UC6', label: 'Run the booking over the higher limit' }, { uc: 'UC27', label: 'Run the claimed approval' }],
+    },
+    attacks: {
+      say: 'Run “confused-deputy actor injection” (a forged actor claim is refused), “intent exceeded” (the agent tries more than the pushed authorization allows), “raw user-token forwarding” (zero-trust refusal), “token theft / replay”, and a request for another person\'s private {{castAsset}} (refused: the token\'s subject does not own it). Eleven attacks run here and every one ends in DENY with nothing dispatched. Then poison the agent\'s instructions: it proposes a $2,500 business booking, over {{castFareHold}}, so a person must approve it. That run is not one of the eleven; it shows that the decision comes from the call, never from the prompt. A manipulated agent cannot talk its way past the tool, data and action layers: permissions are enforced there, not left to the model to follow instructions.',
+    },
+    honesty: {
+      say: 'HIVE is Appfire\'s platform and is never called: its side of the split is represented, not run. The thresholds, personas and amounts are the lab\'s own (lab-invented). The two limits, the international flag and the CONSTRAINED word are the lab\'s own. The step-up second factor is not completed here, and a use case that needs a feature flag or a trusted-caller header keeps running on the lab\'s own steps (the picker tags the flag).',
+    },
+  },
+};
 
 export function rawStory() { return { title: TITLE, banner: BANNER, labels: LABELS, talkTrack: TALK_TRACK, why: WHY, notDemonstrated: NOT_DEMONSTRATED }; }
