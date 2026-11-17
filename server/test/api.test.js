@@ -147,9 +147,9 @@ test('POST /api/run/:id runs a use case in mock and returns the full record', as
     const r = body.run;
     assert.equal(r.mode, 'mock'); assert.equal(r.outcome, 'PERMIT'); assert.equal(r.matchesExpected, true); assert.equal(r.vertical, 'retail');
     assert.equal(r.hops.find((h) => h.kind === 'tool-dispatched').request.body.params.name, 'list_orders');
-    assert.ok(r.tokens.every((t) => t.mock && /MOCK/.test(t.label)));
-    assert.ok(r.tokens.every((t) => t.notice === 'MOCK token, issued by this lab and signed with a public mock key'), 'the notice reaches the client unmangled by the response mask');
-    assert.ok(r.tokens[0].raw.startsWith('eyJ'), 'rule 4: the MOCK token is shown raw, not masked');
+    assert.ok(r.tokens.every((t) => t.mock === true && !/mock/i.test(t.label)), 'the data says mock, the label does not');
+    assert.ok(r.tokens.every((t) => t.notice === 'Shown raw for teaching.'), 'the notice reaches the client unmangled by the response mask');
+    assert.ok(r.tokens[0].raw.startsWith('eyJ'), 'rule 4: the token is shown raw, not masked');
     const signIn = r.hops.find((h) => h.kind === 'sign-in');
     assert.ok(signIn.response.body.access_token.startsWith('eyJ') && !signIn.response.body.access_token.includes('masked'));
     assert.match(JSON.stringify(r.hops), /Bearer eyJ/);
@@ -198,7 +198,7 @@ test('persona on /run overrides the lab default and the record says it did not m
 test('rule 11: a mock run is refused (403) unless ALLOW_MOCK_SIGNIN=1, IDP is mock, no proxy header, loopback bind; Docker\'s publish flag is the one exception', async () => {
   const cases = [
     [{ env: {} }, 403, /ALLOW_MOCK_SIGNIN=1/],
-    [{ env: { ALLOW_MOCK_SIGNIN: '1', IDP: 'live' } }, 403, /IDP is not mock/],
+    [{ env: { ALLOW_MOCK_SIGNIN: '1', IDP: 'live' } }, 403, /IDP is set to another provider/],
     [{ env: { ALLOW_MOCK_SIGNIN: '1' }, bind: '0.0.0.0' }, 403, /non-loopback/],
     [{ env: { ALLOW_MOCK_SIGNIN: '1', AAG_PUBLISH: 'loopback' }, bind: '0.0.0.0' }, 200, null],
     [{ env: { ALLOW_MOCK_SIGNIN: '1', NODE_ENV: 'production' } }, 200, null],
@@ -213,6 +213,18 @@ test('rule 11: a mock run is refused (403) unless ALLOW_MOCK_SIGNIN=1, IDP is mo
     const r = await post(url, '/api/run/UC1', {}, { 'x-forwarded-for': '203.0.113.9' }); assert.equal(r.status, 403); assert.match((await r.json()).detail, /proxy/);
     assert.equal((await get(url, '/api/usecases', { 'x-forwarded-for': '203.0.113.9' })).status, 200, 'reads need no sign-in guard');
   });
+});
+
+test('a workspace that opened on Real answers on the lab\'s own steps for a request the live guard refuses; an explicit body.mode keeps its 403', async () => {
+  const workspaces = createWorkspaces({ defaultMode: 'live' });
+  await withServer(async (url) => {
+    const proxied = { 'x-forwarded-for': '203.0.113.9' };
+    assert.equal((await (await get(url, '/api/mode')).json()).mode, 'live', 'a plain request sees the opening Real');
+    const m = await (await get(url, '/api/mode', proxied)).json();
+    assert.equal(m.mode, 'mock', 'a refused request is told the lab\'s own steps'); assert.equal(m.live, 'refused');
+    assert.equal((await (await get(url, '/api/info', proxied)).json()).source, 'mock');
+    const direct = await run(url, 'UC1', { mode: 'live' }, proxied); assert.equal(direct.status, 403); assert.equal(direct.body.error, 'live_not_allowed');
+  }, { workspaces, env: { ...MOCK_OK, ALLOW_MOCK_SIGNIN: '1' } });
 });
 
 test('live mode: selecting it is refused (403) unless every guard is satisfied; when satisfied but the lab has no PingOne settings a live run is refused honestly (503)', async () => {
@@ -448,7 +460,7 @@ test('reel depth: the run API takes brain and said; bad types are refused; a hos
     assert.deepEqual(hops.filter((h) => JSON.stringify(h).includes('<script>')).map((h) => h.kind), ['prompt']);
     const { narration, tokens } = r.body.run;
     assert.ok(!JSON.stringify({ narration, tokens }).includes('<script>'));
-    assert.equal(hops.find((h) => h.kind === 'agent-receive').response.body.routing, 'llama.cpp picked “Delegated access (consent only)” (local model, mock run)');
+    assert.equal(hops.find((h) => h.kind === 'agent-receive').response.body.routing, 'llama.cpp picked “Delegated access (consent only)” (local model)');
     const ok = await run(url, 'UC1', { said: 'x'.repeat(400), brain: 'scripted' });
     assert.equal(ok.status, 200);
   });

@@ -33,7 +33,7 @@ export default function Turn({ turn, onHop, onPreview, userId, running }) {
           {who && (run || handoff || guide) && <p className="turn__who kicker" data-testid="turn-who">{who}</p>}
           {turn.status === "nomatch" && turn.brainNote && <p className="muted" data-testid="turn-brain-note">{visible(turn.brainNote)}</p>}
           {turn.status === "nomatch" && (
-            <p data-testid="turn-nomatch">I have no scripted answer for that. Try one of the prompts under What to type, or pick a use case on the left. (The Scripted brain matches your words to a use case; it never makes an answer up.)</p>
+            <p data-testid="turn-nomatch">I have no answer for that. Try one of the prompts under What to type, or pick a use case on the left. (The brain matches your words to a use case; it never makes an answer up.)</p>
           )}
           {handoff && <HandoffCard uc={uc} vertical={turn.vertical} userId={userId} canPreview={!uc.guided} onPreview={() => onPreview?.(turn)} previewing={running} />}
           {restoredRun && (
@@ -55,7 +55,7 @@ export default function Turn({ turn, onHop, onPreview, userId, running }) {
           {reply && !reply.approval && (
             <div className="turn__answer" data-testid="turn-answer">
               <p data-testid="turn-answer-text">{visible(reply.text)}</p>
-              <span><Tag state={outcomeState(run.outcome)} testId="turn-outcome">{run.outcome}</Tag>{turn.preview && <> <Tag state="info">preview, mock engine</Tag></>}{run.realGate?.real === false && <> <Tag state="info" testId="turn-mock-in-real">mock engine: cannot run Real</Tag></>}</span>
+              <span><Tag state={outcomeState(run.outcome)} testId="turn-outcome">{run.outcome}</Tag></span>
             </div>
           )}
           {run && <button type="button" className="turn__ev" onClick={() => onHop?.(turn, null)} data-testid="turn-evidence">See evidence →</button>}

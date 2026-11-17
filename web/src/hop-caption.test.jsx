@@ -32,10 +32,11 @@ describe("presenter caption", () => {
     await userEvent.click(screen.getByTestId("caption-prev"));
     expect(screen.getByTestId("caption-say").textContent).toBe(CAPTIONS["token-exchange"].say);
   });
-  test("it names the walkthrough step and says whether the call was real", () => {
+  test("it names the walkthrough step and carries no REAL or simulated chip", () => {
     render(<Harness start={2} />);
     expect(screen.getByTestId("caption-agenda").textContent).toBe("Walkthrough 2 · Identity");
-    expect(screen.getByText("REAL call")).toBeTruthy();
+    expect(screen.queryByText("REAL call")).toBeNull();
+    expect(screen.queryByText(/simulated by the lab/)).toBeNull();
   });
   test("a step that did not run says so", () => {
     render(<Harness start={4} />);

@@ -6,8 +6,8 @@ import { overridesIn } from "./instructions";
 // Hop and token shapes copied from real mock runs of the engine (UC1, UC7, UC8, UC13, UC16b, UC31); only the fields the card reads are kept.
 const hop = (kind, body, extra = {}) => ({ n: 1, kind, verdict: "ok", response: { body }, ...extra });
 const tokens = [
-  { label: "user token (MOCK)", claims: { sub: "alex.morgan", scope: "openid accounts:read transfers:write" } },
-  { label: "exchanged token (MOCK)", claims: { sub: "alex.morgan", aud: "https://mcp.example", scope: "accounts:read", client_id: "triage-agent", act: { sub: "triage-agent" } } },
+  { label: "user token", claims: { sub: "alex.morgan", scope: "openid accounts:read transfers:write" } },
+  { label: "exchanged token", claims: { sub: "alex.morgan", aud: "https://mcp.example", scope: "accounts:read", client_id: "triage-agent", act: { sub: "triage-agent" } } },
 ];
 const plan = (name) => hop("llm-plan", { tool_calls: [{ name, arguments: {} }] });
 const authz = (decision, reason, action) => hop("authorize-decision", { decision, reason }, { request: { body: { subject: "alex.morgan", action, context: { act: { sub: "triage-agent" } } } } });
@@ -169,15 +169,15 @@ describe("steered runs", () => {
 });
 
 describe("privilegeOf", () => {
-  const user = { label: "user token (MOCK)", claims: { sub: "alex.morgan", scope: "openid accounts:read transfers:write accounts:sensitive portfolio:read", groups: ["wp-a2a-users"] } };
-  const delegated = { label: "exchanged token (MOCK)", claims: { sub: "alex.morgan", aud: "https://mcp.example", scope: "accounts:read", client_id: "triage-agent", iat: 1000, exp: 1300, act: { sub: "triage-agent" } } };
+  const user = { label: "user token", claims: { sub: "alex.morgan", scope: "openid accounts:read transfers:write accounts:sensitive portfolio:read", groups: ["wp-a2a-users"] } };
+  const delegated = { label: "exchanged token", claims: { sub: "alex.morgan", aud: "https://mcp.example", scope: "accounts:read", client_id: "triage-agent", iat: 1000, exp: 1300, act: { sub: "triage-agent" } } };
   const gw = (checks) => hop("gateway-check", { forwarded: true, checks });
   const base = { kind: "flow", computed: true, outcome: "PERMIT", tokens: [user, delegated], hops: [authz("PERMIT", "no rule restricts this call", "get_account_balance"), gw([{ check: "signature", ok: true }, { check: "aud", ok: true }, { check: "act", ok: true }, { check: "scope", ok: true }])] };
   const value = (p, key) => p.rows.find((r) => r.key === key).value;
 
   it("reads the agent identity, the person, the groups, how scopes were narrowed, the audience, the lifetime, the gateway checks and the decision", () => {
     const p = privilegeOf(base);
-    expect(p.source).toBe("mock");
+    expect(p.source).toBeUndefined(); // where it ran is data in the run, not a label on the panel
     expect(value(p, "agent")).toBe("triage-agent");
     expect(value(p, "person")).toBe("alex.morgan");
     expect(value(p, "groups")).toBe("wp-a2a-users (claim groups)");
@@ -189,9 +189,8 @@ describe("privilegeOf", () => {
     expect(p.summary).toBe("agent triage-agent · for alex.morgan · 1 of 5 scopes · 4 of 4 gateway checks");
   });
 
-  it("a refusal shows where the gateway stopped; a Real run is marked REAL and says what the token does not carry", () => {
+  it("a refusal shows where the gateway stopped; a Real run reads the same way and says what the token does not carry", () => {
     const p = privilegeOf({ ...base, kind: "real", outcome: "REAL_DENY", tokens: [{ claims: { sub: "u-1" } }, { claims: { sub: "u-1", act: { sub: "agent-1" } } }], hops: [gw([{ check: "scope", ok: false, why: "scope not granted" }])] });
-    expect(p.source).toBe("real");
     expect(value(p, "gateway")).toBe("stopped at scope: scope not granted");
     expect(value(p, "groups")).toBe("no group claim in the user's token");
     expect(value(p, "lifetime")).toBe("not in this run");

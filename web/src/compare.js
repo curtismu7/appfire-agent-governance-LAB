@@ -1,4 +1,4 @@
-// The side-by-side comparisons the Compare page offers: two runs of the same lab, in Mock, with the facts that differ called out.
+// The side-by-side comparisons the Compare page offers: two runs of the same lab, with the facts that differ called out.
 // Each side names a use case and (when it matters) the persona; nothing here decides anything, it only says what to run.
 // The words are vertical-neutral and may carry {{castAction}}-style tokens; `presetFor` fills them from the vertical on screen (see demoGuide.js `fillGuide`).
 import { fillGuide } from "./demoGuide";
@@ -26,7 +26,7 @@ export const PRESETS = [
   },
   {
     id: "careful-poisoned", title: "Careful vs poisoned instructions",
-    why: "{{castUser}} asks for a low-risk read both times. Poisoned instructions make the simulated agent propose a much larger {{castAction}} instead (lab-simulated obedience); Agent Authorize refuses it. The decision comes from the call, never from the prompt.",
+    why: "{{castUser}} asks for a low-risk read both times. Poisoned instructions make the agent propose a much larger {{castAction}} instead; Agent Authorize refuses it. The decision comes from the call, never from the prompt.",
     sides: [{ uc: "UC1", label: "default instructions" }, { uc: "UC1", instructionsPreset: "poisoned", label: "poisoned instructions" }],
   },
 ];

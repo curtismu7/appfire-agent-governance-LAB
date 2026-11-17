@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APP_ENV_FILE, LIVE_KEYS, SETTINGS_KEYS, applySharedSettings, missingLiveSettings, readLiveSettings, readSharedSettings, settingsPath } from '../src/settings.js';
-import { modeFrom, modeOf } from '../src/config.js';
+import { modeFrom, modeOf, openingMode } from '../src/config.js';
 
 const withFile = (text, fn) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cal-set-'));
@@ -29,6 +29,24 @@ test('the environment wins over the file; a missing, empty or unreadable file is
   withFile('', (f) => assert.deepEqual(readSharedSettings(f), {}));
   withFile('AAG_LAB_MODE=\n', (f) => assert.deepEqual(readSharedSettings(f), {}));
   assert.deepEqual(readSharedSettings(os.tmpdir()), {}, 'a directory is not a settings file');
+});
+
+test('openingMode (owner 2026-11-16): explicit mock|live wins; unset or empty is Real only when the full settings are there, the build is local and nothing refuses Real', () => {
+  const real = { realFull: true, liveRefusal: null };
+  for (const unset of [{}, { AAG_LAB_MODE: '' }]) {
+    assert.equal(openingMode(unset, real), 'live', 'full Real settings, local, not refused');
+    assert.equal(openingMode(unset, { realFull: false, liveRefusal: null }), 'mock', 'no full Real settings (an identity-provider-only worker client counts as none)');
+    assert.equal(openingMode(unset, {}), 'mock', 'nothing known: the lab\'s own steps');
+    assert.equal(openingMode(unset, { realFull: true, liveRefusal: 'Real is switched off on this machine (AAG_ALLOW_LIVE=0). Remove it to allow Real.' }), 'mock', 'a refusing guard');
+    assert.equal(openingMode(unset, { hosted: true, realFull: true, liveRefusal: null }), 'mock', 'hosted never opens in Real');
+    assert.equal(openingMode({ ...unset, AAG_DEPLOY_MODE: 'hosted' }, real), 'mock', 'hosted by the environment too');
+  }
+  assert.equal(openingMode({ AAG_LAB_MODE: 'mock' }, real), 'mock', 'explicit mock wins over complete Real settings');
+  assert.equal(openingMode({ AAG_LAB_MODE: 'live' }, { realFull: false }), 'live', 'explicit live with nothing said about usability is unchanged');
+  assert.equal(openingMode({ AAG_LAB_MODE: 'live' }, { realFull: false, liveUsable: false }), 'mock', 'explicit live with no usable Real path opens on the lab\'s own steps (the page has no control to leave a refused Real)');
+  assert.equal(openingMode({ AAG_LAB_MODE: 'live' }, { realFull: false, liveUsable: true }), 'live', 'explicit live with a usable path (the identity-provider-only client too) wins');
+  assert.throws(() => openingMode({ AAG_LAB_MODE: 'prod' }, real), /not available/);
+  assert.throws(() => openingMode({ AAG_DEPLOY_MODE: 'hosted', AAG_LAB_MODE: 'live' }, real), /mock only/, 'hosted plus an explicit live still throws');
 });
 
 test('the mode is mock or live; mock is the default; a bare MODE (another app\'s) is ignored; anything else is an error, not a fallback', () => {
@@ -81,7 +99,7 @@ test('Live config loading from the app\'s .env: present, missing and partial (fa
   });
   withFile(fs.readFileSync(path.join(REPO_ROOT, '.env.example'), 'utf8'), (f) => {
     assert.deepEqual(missingLiveSettings(f), ['PINGONE_ENVIRONMENT_ID', 'PINGONE_CLIENT_ID', 'PINGONE_CLIENT_SECRET'], 'an unfilled copy of .env.example still counts as missing');
-    assert.deepEqual(readSharedSettings(f), { AAG_LAB_MODE: 'live' }, 'empty placeholders are not taken; the example defaults to live (owner 2026-11-13)');
+    assert.deepEqual(readSharedSettings(f), {}, 'empty placeholders are not taken; the example leaves AAG_LAB_MODE empty (owner 2026-11-16: the lab derives it)');
   });
 });
 
@@ -89,7 +107,7 @@ test('.env.example lists the names with placeholder values only; .env is git-ign
   const ex = fs.readFileSync(path.join(REPO_ROOT, '.env.example'), 'utf8');
   const parsed = Object.fromEntries(ex.split('\n').filter((l) => /^[A-Z_]+=/.test(l)).map((l) => l.split(/=(.*)/s).slice(0, 2)));
   for (const k of [...LIVE_KEYS, ...SETTINGS_KEYS]) assert.ok(k in parsed, k);
-  assert.equal(parsed.LAB_ALLOWED_HOSTS, ''); assert.equal(parsed.AAG_LAB_MODE, 'live');
+  assert.equal(parsed.LAB_ALLOWED_HOSTS, ''); assert.equal(parsed.AAG_LAB_MODE, '', 'the example leaves the opening mode to the lab');
   assert.equal(parsed.PINGONE_ENVIRONMENT_ID, '00000000-0000-0000-0000-000000000000'); assert.equal(parsed.PINGONE_CLIENT_ID, '00000000-0000-0000-0000-000000000000');
   assert.equal(parsed.PINGONE_CLIENT_SECRET, 'replace-me'); assert.equal(parsed.SHELF_URL, '');
   for (const f of ['.gitignore', '.dockerignore']) assert.match(fs.readFileSync(path.join(REPO_ROOT, f), 'utf8'), /^\.env$/m, f);

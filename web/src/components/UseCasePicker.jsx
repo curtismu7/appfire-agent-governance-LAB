@@ -18,9 +18,9 @@ export function UseCaseRow({ u, selected, onPick, slim = false }) {
       <button type="button" className="pick__item" aria-pressed={selected} onClick={() => onPick(u.id)} data-testid={`uc-${u.id}`} data-route={routeOf(u).route}>
         <span className="pick__head"><span className="pick__title">{u.title}</span> <RouteTag u={u} /></span>
         {!slim && <span className="pick__badges">
-          {u.guided ? <Tag state="info" title="The lab opens the product's page and does not compute the outcome">guided</Tag> : <Tag state="ok" title="The lab's engine computes the outcome">computed</Tag>}
+          {u.guided ? <Tag state="info" title="The lab opens the product's page and does not compute the outcome">guided</Tag> : <Tag state="ok" title="The lab computes the outcome">computed</Tag>}
           {u.needs.map((n) => <Tag key={n} title={`needs: ${NEEDS_LABELS[n] || n}`}>{n}</Tag>)}
-          {u.flag && <Tag state="warn" title="Needs this live feature flag">flag: {u.flag}</Tag>}
+          {u.flag && <Tag state="warn" title="Needs this feature flag">flag: {u.flag}</Tag>}
           {u.maturity === "needs-build" && <Tag state="warn" title="The source marks this needs-build: lab-simulated">lab-simulated</Tag>}
           {u.opens !== "none" && Object.hasOwn(EXTRAS, u.opens) && <Tag state="info" title="Running it opens an extra page">opens: {EXTRAS[u.opens].label}</Tag>}
         </span>}

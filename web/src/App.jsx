@@ -12,7 +12,7 @@ import QuickConfig from "./components/QuickConfig";
 import SetupSidebar, { VerticalSelect } from "./components/SetupSidebar";
 import Rail from "./rail/Rail";
 import { getJson, postJson, resetWorkspace } from "./api";
-import { DEFAULT_VERTICAL, EXTRAS, HOSTED_REAL_NOTE, MOCK_ONLY_VERTICALS, focusHop, holdWords, newTraceparent, setUseCaseTitles, titleOfUc } from "./lib";
+import { BANNER_HOSTED, BANNER_LOCAL, DEFAULT_VERTICAL, EXTRAS, MOCK_ONLY_VERTICALS, focusHop, holdWords, newTraceparent, setUseCaseTitles, titleOfUc } from "./lib";
 import { matchPrompt, reasoningOf } from "./chat";
 import { isHandoff } from "./handoff";
 import { chooseTab, cleanConfig, loadConfig, saveConfig, setView } from "./quickConfig";
@@ -42,8 +42,6 @@ export const BASE_NAV = [
 const EXTRA_PREFIX = "page-";
 // Full-page evidence views of the agent area (#sequence, #reel, #compare): the nav keeps Agent selected.
 export const FULL_PAGES = ["sequence", "reel", "compare"];
-// The banner is never blank and never claims one mode before it knows: until the story answers it says both, honestly.
-export const BANNER_UNKNOWN = "SIMULATED in MOCK mode, REAL only in REAL mode (loopback only). Mock: an engine produces every token, hop and decision offline. Real: a real sign-in, token exchange and Agent Gateway call to the owner's PingOne and SE, for the use cases SE serves; every hop says REAL or MOCK.";
 // Talk-track entry ids shown under the step bar on the pages other than Agent; on the Agent page the notes are the entries whose `step` is the current walkthrough step.
 const PRESENTER_TALK = { runs: ["audit", "honesty"], diagram: ["say-first"], talk: [], extra: ["honesty"] };
 const THEME_KEY = "cal.theme";
@@ -63,7 +61,7 @@ export default function App() {
   const [info, setInfo] = useState(null);
   const [story, setStory] = useState(null);
   const [mode, setMode] = useState(null);
-  const [liveReason, setLiveReason] = useState(null);
+  const [servedBanner] = useState(() => { try { return document.querySelector('[data-testid="banner"][data-state="hosted"]')?.textContent || null; } catch { return null; } });
   const [modeMsg, setModeMsg] = useState("");
   const [modeFailed, setModeFailed] = useState(false);
   const [vertical, setVertical] = useState(resumed?.vertical || DEFAULT_VERTICAL);
@@ -125,8 +123,8 @@ export default function App() {
   useEffect(() => { applyTheme(theme); }, [theme]);
   const setTheme = (t) => { setThemeState(t); try { window.localStorage.setItem(THEME_KEY, t); } catch { /* storage blocked */ } };
 
-  // If the server does not answer, the mode stays unknown (the chip and the banner say so); a mode it never told us is not claimed.
-  const loadMode = useCallback(() => getJson("/api/mode").then((m) => { setMode(m.mode); setModeFailed(false); setLiveReason(m.live === "allowed" ? null : m.liveReason); }, () => setModeFailed(true)), []);
+  // The lab opens in the mode the server derived (Real when it is fully configured). If the server does not answer, the mode stays unknown and the page says so.
+  const loadMode = useCallback(() => getJson("/api/mode").then((m) => { setMode(m.mode); setModeFailed(false); }, () => setModeFailed(true)), []);
   useEffect(() => { getJson("/api/info").then(setInfo, (e) => setError(e.message)); loadMode(); }, [loadMode]);
   const realLevel = info?.real?.level ?? null;
   const loadSignin = useCallback(() => getJson("/api/signin").then(setSignin, () => setSignin(null)), []);
@@ -237,12 +235,12 @@ export default function App() {
     // A typed or chip turn tells the server what was said and which brain actually picked the use case ("llama" only when llama.cpp did;
     // a fallback is "scripted"). A picked or previewed run sends neither.
     const typed = turn && turn.how !== "picked" ? { said: String(turn.said).slice(0, 400), brain: turn.how === "llm" ? "llama" : "scripted" } : {};
-    const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(mode !== "live" && instrEdit !== null ? { instructions: instrEdit } : {}), ...(extra ?? {}) }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
+    const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(instrEdit !== null ? { instructions: instrEdit } : {}), ...(extra ?? {}) }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
     if (mine !== runSeq.current) return; // a Reset or a newer run took over
     setRunning(false);
     // Real runs as the person: no sign-in yet opens the Sign in dialog, and the run goes again once it succeeds.
     if (res.status === 401 && res.body?.error === "sign_in_required") { pendingRun.current = { u, turn: turn ? { said: turn.said, how: turn.how, source: turn.source } : null, who }; setSignOpen(true); }
-    // A use case that cannot run Real runs on the labelled mock engine (owner 2026-11-16); this refusal only happens when the mock engine is not available here.
+    // A use case the gateway cannot serve runs wholly on the lab's own engine; this refusal only happens when that engine is not available here (the server's words, shown as they are).
     if (res.status === 403 && res.body?.error === "mock_in_real_refused") setModeMsg(res.body.detail);
     setResults((r) => ({ ...r, [key]: res }));
     setRunCount((n) => n + 1);
@@ -341,30 +339,12 @@ export default function App() {
     const m = matchPrompt(said, prompts);
     return answer(said, source, m, `${why} Used the Scripted brain instead.`);
   };
-  const preview = (turn) => { setSelectedId(turn.uc.id); startRun(turn.uc, { said: `Preview “${turn.uc.title}” here (mock engine)`, how: "picked", preview: true }); };
+  const preview = (turn) => { setSelectedId(turn.uc.id); startRun(turn.uc, { said: `Preview “${turn.uc.title}” here`, how: "picked", preview: true }); };
   const onHop = (turn, n) => {
     if (turn?.uc && turn.uc.id !== selectedId) setSelectedId(turn.uc.id);
     setSelHop(n ?? (turn?.result?.ok ? focusHop(turn.result.body.run) : null)); // See evidence (no hop): the run's own focus hop
     if (!["sequence", "reel"].includes(cfg.tab) || cfg.views[cfg.tab] !== "embedded") setCfg((c) => chooseTab(c, "sequence"));
     setQcOpen(false);
-  };
-
-  // The Mock | Live toggle. The server decides: when it says Real is refused (not configured, switched off, a guard) the Real button is disabled and its
-  // tooltip is the server's how-to; a refused switch stays Mock and says why, in the server's own words.
-  // The hosted build is mock only: its Real button is disabled with a note, and Real never asks the server there.
-  const hostedOnly = info?.hosted === true;
-  const chooseMode = async (m) => {
-    if (m === mode || (m === "live" && hostedOnly)) return;
-    const res = await postJson("/api/mode", { source: m === "live" ? "real" : "mock" }).catch(() => ({ ok: false, status: 0, body: { detail: "The server did not answer." } }));
-    if (res.ok) {
-      setMode(res.body.source === "real" ? "live" : "mock");
-      setModeMsg(res.body.source !== "real" ? "Mock selected." : realLevel === "full"
-        ? "Real selected. Sign in (pi.flow), then a run calls PingOne (agent token, token exchange) and the Agent Gateway for the use cases SE serves; the others run on the labelled mock engine, and every hop says MOCK (the Demo guide lists both lists)."
-        : "Real selected, identity provider only. A run makes two real calls to your PingOne environment (its discovery document and the worker client's token) and runs nothing else.");
-      if (res.body.source === "real" && realLevel === "full") loadSignin();
-    }
-    else setModeMsg(`${m === "live" ? "Real" : "That mode"} was refused (HTTP ${res.status || "none"}): ${res.body?.message || res.body?.detail || "no reason given"}`);
-    loadMode();
   };
 
   // Reset: the server clears this workspace's mode and runs; results, the chat, extra pages and the diagram go back to the start.
@@ -391,7 +371,6 @@ export default function App() {
     if (p?.u) startRun(p.u, p.turn, p.who);
   };
   const signOut = async () => { await postJson("/api/signout", {}).catch(() => null); pendingRun.current = null; loadSignin(); setModeMsg("Signed out."); };
-  const realTitle = info?.real?.label || "Real";
 
   const onKeyNav = (e, i) => {
     const fwd = e.key === "ArrowDown" || e.key === "ArrowRight";
@@ -402,9 +381,10 @@ export default function App() {
     document.getElementById(`tab-${next.id}`)?.focus();
   };
 
-  // The hosted build (mock only) has its own banner, from the server: it says hosted and simulated whatever the mode chip shows.
-  const hosted = info?.hosted === true && typeof info.hostedBanner === "string";
-  const banner = hosted ? info.hostedBanner : story && mode ? story.banner[mode] : BANNER_UNKNOWN;
+  // One neutral banner line for every page (rule 2). The hosted copy has its own, from the server; until /api/info answers, a hosted page keeps the banner the
+  // server put in the HTML, so it never shows the local sentence first.
+  const hosted = info?.hosted === true;
+  const banner = !info ? (servedBanner || BANNER_LOCAL) : hosted ? (typeof info.hostedBanner === "string" ? info.hostedBanner : BANNER_HOSTED) : BANNER_LOCAL;
   const extraKey = current.startsWith(EXTRA_PREFIX) ? current.slice(EXTRA_PREFIX.length) : null;
   const sayNotes = (story?.talkTrack || []).filter((t) => (current === "agent" ? t.step === DEMO_GUIDE[agendaStep]?.id : (PRESENTER_TALK[extraKey ? "extra" : current] || []).includes(t.id)));
   const verticalLabel = verticalInfo?.label || vertical;
@@ -440,7 +420,6 @@ export default function App() {
         )}
         <div className="shell-right">
           <TopMenu
-            mode={{ value: mode === "live" ? "real" : "mock", onChange: (m) => chooseMode(m === "real" ? "live" : "mock"), realAvailable: hostedOnly ? false : Boolean(liveReason) && mode !== "live" ? false : null, realHintAlways: true, realHint: liveReason || (hostedOnly ? HOSTED_REAL_NOTE : realTitle) }}
             theme={{ value: theme, onChange: setTheme }}
             fontSize={{ value: fontStep, onChange: setFontStep }}
             present={{ active: presenter, onToggle: () => setPresenter((v) => !v), label: "Presenter (P)" }}
@@ -454,16 +433,16 @@ export default function App() {
             <ShelfLink url={info?.shelfUrl} headers={() => ({ "x-workspace": workspaceId() })} />
             <VerifyMark id="appfire-agent-governance-lab" headers={() => ({ "x-workspace": workspaceId() })} />
           </TopMenu>
-          {hostedOnly && <span className="seg__note" id="real-hosted-note" data-testid="real-hosted-note">{HOSTED_REAL_NOTE}</span>}
           {/* rule 19 (2026-11-03): the conformance gate greps for a mode-real testid in the UI; this hidden marker aliases the Real button. */}
           <span hidden aria-hidden="true" data-testid="mode-real" />
+          {/* The opening mode is the server's; tests and scripts read it here (no words) and switch it with POST /api/mode. */}
+          <span hidden aria-hidden="true" data-testid="mode" data-mode={mode || ""} />
         </div>
       </header>
-      <p className="banner" role="note" data-state={hosted ? "hosted" : mode === "live" ? "live" : "mock"} data-testid="banner">{banner}</p>
+      <p className="banner" role="note" data-state={hosted ? "hosted" : "info"} data-testid="banner">{banner}</p>
       <div className="statusline">
-        <span className="chip" data-testid="mode">Mode: {mode || (modeFailed ? "unknown" : "...")}{mode === "live" ? (realLevel === "full" ? " (real: sign-in, token exchange, Agent Gateway)" : " (real calls, identity provider only)") : mode === "mock" ? " (engine, offline)" : modeFailed ? " (server did not answer)" : ""}</span>
         <span className="chip" data-testid="workspace">Workspace: {workspaceId()}</span>
-        {modeMsg && <p className="notice" role="status" data-testid="mode-msg">{modeMsg}</p>}
+        {(modeMsg || modeFailed) && <p className="notice" role="status" data-testid="mode-msg">{modeMsg || "Server did not answer."}</p>}
       </div>
       <p className="sr-only" role="status" aria-live="polite">{resetMsg}</p>
       <main className="content" id="main" tabIndex={-1}>
@@ -485,7 +464,7 @@ export default function App() {
             <div className="agno" data-several={several ? "true" : undefined}>
               {!presenter && (
                 <Rail storageKey="aag.setup" label="Setup">
-                <SetupSidebar onNewChat={() => { dropPick(); setTurns([]); setSelHop(null); }} mode={mode} host={cast.castHost} several={several} setSeveral={setSeveral} agent={cast.castAgent}
+                <SetupSidebar onNewChat={() => { dropPick(); setTurns([]); setSelHop(null); }} host={mode !== "live" || (realLevel === "full" && uc?.realGate?.real === false) ? cast.castHost : null} several={several} setSeveral={setSeveral} agent={cast.castAgent}
                   vertical={vertical} verticals={verticals} onVertical={setVertical} sessions={sessions} onSession={pick}
                   brain={cfg.brain} brainInfo={brainInfo} onBrain={(b) => setCfg((c) => ({ ...c, brain: b }))}>
                   <UseCasePicker catalog={catalog} selectedId={selectedId} onPick={pick} failed={!catalog && !!error} keep={several ? isHandoff : null} />
@@ -496,9 +475,9 @@ export default function App() {
                 <AgentColumn agent={cast.castAgent} brand={cast.castBrand} userId={userId} vertical={vertical} verticalLabel={verticalLabel} verticals={verticals} stub={stub} prompts={prompts} turns={shownTurns}
                   status={busy ? "running" : statusOf(lastTurn)} onSay={say} onHop={onHop} onPreview={preview} running={busy}
                   step={presenter ? DEMO_GUIDE[agendaStep] || DEMO_GUIDE[0] : null} onNextStep={() => setAgendaStep((i) => Math.max(0, Math.min(DEMO_GUIDE.length - 1, i + 1)))}
-                  instructions={<AgentInstructions config={instrConfig} text={instrEdit} onText={setInstrEdit} mode={mode} />} />
+                  instructions={<AgentInstructions config={instrConfig} text={instrEdit} onText={setInstrEdit} />} />
                 {qcOpen ? (
-                  <QuickConfig id="quick-config" mode={mode} liveReason={liveReason} realTitle={realTitle} hostedOnly={hostedOnly} onMode={chooseMode} config={cfg}
+                  <QuickConfig id="quick-config" config={cfg}
                     brainInfo={brainInfo} onBrain={(b) => setCfg((c) => ({ ...c, brain: b }))} onRouting={(r) => setCfg((c) => ({ ...c, routing: r }))}
                     onView={(v, s) => setCfg((c) => setView(c, v, s))} onText={(t) => setCfg((c) => ({ ...c, text: t }))} onPresenter={setPresenter}
                     onReset={() => setCfg(cleanConfig(null))} onClose={() => { setQcOpen(false); document.querySelector('[data-testid="qc-open"]')?.focus(); }} />
@@ -508,7 +487,7 @@ export default function App() {
                     {uc && (
                       <details className="ucpanel" open ref={runRef} data-testid="uc-panel">
                         <summary>{uc.title}: inputs, persona, Run and the raw result</summary>
-                        <RunPanel uc={uc} vertical={vertical} verticals={verticals} persona={persona} setPersona={setPersona} personas={personas} onRun={run} running={busy} result={result} mode={mode} />
+                        <RunPanel uc={uc} vertical={vertical} verticals={verticals} persona={persona} setPersona={setPersona} personas={personas} onRun={run} running={busy} result={result} mode={mode} realLevel={realLevel} />
                       </details>
                     )}
                   </EvidenceColumn>

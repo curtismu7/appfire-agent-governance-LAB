@@ -50,14 +50,8 @@ export const REAL_LABELS = {
 };
 // Every hop of the mock engine says where it ran (rule 19: REAL or MOCK by what actually ran, never mixed within a hop).
 const withSource = (run) => ({ ...run, hops: run.hops.map((h) => ({ ...h, source: h.verdict === 'skip' ? 'not-run' : 'mock' })) });
-// Real mode, a use case that stays Mock: the mock engine's run, every hop labelled MOCK with the reason.
-const mockInReal = (run, reason) => ({
-  ...run, realGate: { real: false, reason },
-  hops: run.hops.map((h) => ({ ...h, source: h.verdict === 'skip' ? 'not-run' : 'mock', label: `${h.label ?? h.title} [MOCK]`, note: `MOCK in Real mode: ${reason}.${h.note ? ` ${h.note}` : ''}` })),
-});
-
 export function createApp({
-  health = createHealth(), configFile = CONFIG, env = process.env, bind = '127.0.0.1', workspaces = createWorkspaces({ defaultMode: defaultMode() }), webDist = WEB_DIST, live = createLive(), brain = createBrain(), real = createReal(),
+  health = createHealth(), configFile = CONFIG, env = process.env, bind = '127.0.0.1', openingMode = defaultMode(), workspaces = createWorkspaces({ defaultMode: openingMode }), webDist = WEB_DIST, live = createLive(), brain = createBrain(), real = createReal(),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -118,6 +112,10 @@ export function createApp({
   // scheme) and nothing else that names a proxy or a client address, the pair is dropped before the live guard runs. Any other
   // proxy header, or a mismatch, keeps the headers whole and Real stays refused — an untrusted caller cannot forge the pair.
   const realCtx = (req) => ({ env, bind, headers: trustedProxyHeaders(req.headers, proxyOrigin()) });
+  // The opening mode is derived once at start-up, but the live guard decides per request (a proxy header, say). A workspace that sits on Real answers on the
+  // lab's own steps for a request the guard refuses, so the page is never left with only refusals and no control to leave them. An explicit body.mode is
+  // never changed by this (it keeps its 403).
+  const modeFor = (req, m) => (m === 'live' && liveRefusal(realCtx(req)) ? 'mock' : m);
   // vertical: absent means the default; present must be a known id. Returns the id, or null after answering.
   const verticalOf = (v, res) => {
     if (v === undefined) return DEFAULT_VERTICAL;
@@ -142,11 +140,11 @@ export function createApp({
     noStore(res);
     const realAvailable = realRefusal(req) === null;
     res.json({
-      mode: defaultMode(), modes: MODES, simulated: true,
+      mode: modeFor(req, openingMode), modes: MODES, simulated: true,
       version: (() => { try { return JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || null; } catch { return null; } })(),
       hosted: isHosted(env), hostedBanner: isHosted(env) ? HOSTED_BANNER : null, // the hosted build (mock only) and the banner the page shows for it
       total: MANIFEST.meta.total, counts: MANIFEST.meta.counts, sourceRef: MANIFEST.source, personas: PERSONAS, verticals: verticalList(),
-      source: workspaces.peek('default').mode === 'live' ? 'real' : 'mock', // rule 19: the default workspace's current source
+      source: modeFor(req, workspaces.peek('default').mode) === 'live' ? 'real' : 'mock', // rule 19: the default workspace's current source
       realAvailable, // rule 19: whether Real (this app's live PingOne path) is configured
       guards: { mockSignIn: mockSignInRefusal(mockCtx(req)) === null ? 'allowed' : 'refused', live: realAvailable ? 'allowed' : 'refused' },
       shelfUrl: shelfInfo(env).shelfUrl, // the header Shelf button uses this one (a proxy-mounted page cannot reach /api/shelf with cookies omitted)
@@ -296,7 +294,7 @@ export function createApp({
     noStore(res);
     const s = workspaces.peek(id);
     const why = realRefusal(req);
-    res.json({ workspace: id, mode: s.mode, modes: MODES, live: why === null ? 'allowed' : 'refused', liveReason: why });
+    res.json({ workspace: id, mode: modeFor(req, s.mode), modes: MODES, live: why === null ? 'allowed' : 'refused', liveReason: why });
   });
 
   // ---- The approval service (owner 2026-11-13): the mock phone, reusable for any hold ----
@@ -356,7 +354,7 @@ export function createApp({
     const id = ws(req, res); if (!id) return;
     noStore(res);
     const s = workspaces.peek(id);
-    res.json({ workspace: id, mode: s.mode, count: s.runs.length, max: MAX_RUNS, runs: s.runs });
+    res.json({ workspace: id, mode: modeFor(req, s.mode), count: s.runs.length, max: MAX_RUNS, runs: s.runs });
   });
 
   api.post('/run/:id', jsonWrites, async (req, res, next) => {
@@ -375,7 +373,7 @@ export function createApp({
       if (body.said !== undefined && (typeof body.said !== 'string' || body.said.length > 400)) return res.status(400).json({ error: 'bad_said', detail: 'said must be a string of at most 400 characters' });
       // The agent's instructions (Mock only: a Real run sends no instructions to anything). Free text: cleaned like `said`.
       if (body.instructions !== undefined && (typeof body.instructions !== 'string' || body.instructions.length > MAX_INSTRUCTIONS)) return res.status(400).json({ error: 'bad_instructions', detail: `instructions must be a string of at most ${MAX_INSTRUCTIONS} characters` });
-      const requested = body.mode === undefined ? workspaces.peek(id).mode : modeOf(body.mode);
+      const requested = body.mode === undefined ? modeFor(req, workspaces.peek(id).mode) : modeOf(body.mode);
       if (!requested) return res.status(400).json({ error: 'bad_mode', detail: 'mode must be mock or live' });
       if (!isFullVertical(vertical)) return res.status(501).json({ error: 'vertical_stub', detail: 'this vertical is a data stub: it has a name and no pack yet' });
       // The mock engine's run. `gate` is set when this is a Real-mode request for a use case that cannot run Real: it runs here, labelled.
@@ -383,7 +381,7 @@ export function createApp({
         const why = mockSignInRefusal(mockCtx(req));
         if (why) {
           // A use case that cannot run Real is run on the mock engine instead (owner 2026-11-16); if the mock engine is not available here, say so.
-          if (gate) return res.status(403).json({ error: 'mock_in_real_refused', detail: `“${uc.title}” cannot run Real (${gate.reason}) and the mock engine is not available here to run it instead: ${why}`, live: liveNote(uc) });
+          if (gate) return res.status(403).json({ error: 'mock_in_real_refused', detail: `“${uc.title}” cannot run Real (${gate.reason}) and sign-in is not available here to run it on the lab's own steps instead: ${why}`, live: liveNote(uc) });
           return res.status(403).json({ error: 'mock_signin_refused', detail: why });
         }
         const out = await workspaces.write(id, (s) => {
@@ -414,7 +412,7 @@ export function createApp({
             return await runMock(gate);
           }
           const session = await real.ensureSession(id, traceparent);
-          if (!session) return res.status(401).json({ error: 'sign_in_required', detail: 'Sign in first: Real runs as you. Use Sign in (pi.flow, the username is filled in for you).' });
+          if (!session) return res.status(401).json({ error: 'sign_in_required', detail: 'Sign in first: this run is made as you. Use Sign in (pi.flow, the username is filled in for you).' });
           let run;
           // Owner 2026-11-13: body.approvalId carries an APPROVED HITL session id; the lab swaps it for the gateway's
           // challenge id (server-side only) so the retry discharges the consent. The approval must belong to this
@@ -460,7 +458,7 @@ export function createApp({
   if (fs.existsSync(path.join(webDist, 'index.html'))) {
     if (isHosted(env)) {
       // Hosted: the served HTML already carries the hosted banner inside #root (fixed text, React replaces it on load), so the page says it is
-      // hosted and simulated before any script runs and to a reader without scripts.
+      // hosted before any script runs and to a reader without scripts.
       const html = fs.readFileSync(path.join(webDist, 'index.html'), 'utf8')
         .replace('<div id="root"></div>', `<div id="root"><p class="banner" role="note" data-state="hosted" data-testid="banner">${HOSTED_BANNER.replace(/'/g, '&#39;')}</p></div>`);
       const page = (_req, res) => { res.set('Cache-Control', 'no-store'); res.type('html').send(html); };

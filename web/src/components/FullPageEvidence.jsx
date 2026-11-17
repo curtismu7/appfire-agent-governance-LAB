@@ -3,7 +3,7 @@ import MovieReel from "../evidence/MovieReel";
 import StepDetailPanel from "../evidence/StepDetailPanel";
 import UseCasePicker from "./UseCasePicker";
 import { outcomeState } from "../lib";
-import { Tag, chipsNeeded } from "./Bits";
+import { Tag } from "./Bits";
 
 const runnable = (u) => !u.guided;
 
@@ -33,8 +33,8 @@ export default function FullPageEvidence({ page, onPage, onBack, catalog, select
           </div>
         </header>
         {!run && <p className="muted" data-testid="full-empty">Nothing has run yet. Pick a use case on the left: it runs and draws here.</p>}
-        {run && (page === "reel" ? <MovieReel hops={hops} selected={selHop} onSelect={onSelect} /> : <SequenceView hops={hops} selected={selHop} onSelect={onSelect} showSources={chipsNeeded(run)} />)}
-        {run && selHop != null && <StepDetailPanel hops={hops} selected={selHop} onSelect={onSelect} onClose={() => onSelect(null)} showSources={chipsNeeded(run)} />}
+        {run && (page === "reel" ? <MovieReel hops={hops} selected={selHop} onSelect={onSelect} /> : <SequenceView hops={hops} selected={selHop} onSelect={onSelect} />)}
+        {run && selHop != null && <StepDetailPanel hops={hops} selected={selHop} onSelect={onSelect} onClose={() => onSelect(null)} />}
       </section>
     </div>
   );

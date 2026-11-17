@@ -2,7 +2,7 @@ import { installNetguard } from './netguard.js';
 import { startHttpServer, createApp } from './app.js';
 import { allPassed, runChecks } from './doctor.js';
 import { assertBindAllowed, bindHost, isLoopbackHost, liveRefusal, resolvePort } from './safety.js';
-import { defaultMode, deployModeFrom, modeFrom } from './config.js';
+import { deployModeFrom, modeFrom, openingMode } from './config.js';
 import { applySharedSettings, fullWanted, liveSettingsFor, missingFull, missingIn, takeLiveSettingsFromEnv } from './settings.js';
 import { createReal, realConfig } from './real.js';
 import { createLive, hostToAllow, liveConfig } from './live.js';
@@ -25,7 +25,7 @@ if (!allPassed(checks)) {
   for (const c of checks.filter((x) => x.level === 'fail')) console.error(`[appfire-agent-governance-lab] refusing to start: ${c.id}: ${c.detail}`);
   process.exit(1);
 }
-const mode = modeFrom(process.env); // refuses anything but mock or live
+modeFrom(process.env); // refuses anything but mock or live (an explicit AAG_LAB_MODE)
 const host = assertBindAllowed(bindHost(), process.env);
 // Real (step 3): the worker client and environment come from the app's .env (host run) or from compose substitution of it (Docker), and stay in live.js
 // (never in process.env). When they are complete and no guard refuses, the netguard allows the one PingOne host; with AAG_ALLOW_LIVE=0, no configuration,
@@ -38,7 +38,11 @@ const real = hosted ? createReal() : createReal({ config: realConfig(liveSetting
 const live = hosted || wanted ? createLive() : createLive({ config: liveConfig(liveSettings, process.env), missing: missingIn(liveSettings) });
 const liveRefused = liveRefusal({ env: process.env, bind: host, headers: {} });
 const fullOn = real.configured() && liveRefused === null;
+// The mode a new workspace opens in: an explicit AAG_LAB_MODE, else Real when the full Real settings are complete and nothing refuses it, else the engine.
+// An identity-provider-only worker client keeps opening on the engine.
 const liveOn = fullOn || (live.configured() && liveRefused === null);
+const mode = openingMode(process.env, { hosted, realFull: real.configured(), liveRefusal: liveRefused, liveUsable: liveOn });
+if (process.env.AAG_LAB_MODE === 'live' && mode !== 'live') console.log('[appfire-agent-governance-lab] AAG_LAB_MODE=live is set but Real is not usable here (settings incomplete or a guard refuses it): opening on the lab\'s own steps. Run npm run doctor.');
 // The netguard: in full Real, the PingOne auth host and the Agent Gateway host (loopback is always allowed); in the old path, the one PingOne host;
 // otherwise nothing. Mock runs never use them (a test asserts zero attempts).
 const allowHosts = fullOn ? real.hosts().filter((h) => !isLoopbackHost(h)) : [hostToAllow(live, liveRefused)].filter(Boolean);
@@ -48,7 +52,7 @@ for (const h of allowHosts) guard.allowHost(h);
 const brainCfg = brainConfig(process.env);
 allowBrainHost(guard, brainCfg);
 const brain = createBrain({ config: brainCfg });
-const app = createApp({ bind: host, workspaces: createWorkspaces({ defaultMode: defaultMode() }), live, real, brain, health: createHealth({ runtime: () => (liveOn ? 'live' : 'offline') }) });
+const app = createApp({ bind: host, openingMode: mode, workspaces: createWorkspaces({ defaultMode: mode }), live, real, brain, health: createHealth({ runtime: () => (liveOn ? 'live' : 'offline') }) });
 const { url } = await startHttpServer({ port: resolvePort(), host, app });
 console.log(`[appfire-agent-governance-lab] lab at ${url} (opens in ${mode} mode; ${hosted ? 'hosted build, mock only' : 'loopback'}; ${fullOn ? `full Real is on: outbound only to ${real.origins().join(' and ')}` : liveOn ? `Real (identity provider only) is on: outbound only to ${live.origin()}` : 'no outbound network'}${brain.configured() ? `; brain: ${brain.label()}` : ''})`);
 console.log(`[appfire-agent-governance-lab] health: ${url}api/health`);

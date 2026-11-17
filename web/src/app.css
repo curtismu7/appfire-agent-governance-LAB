@@ -181,13 +181,6 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 /* One diagram, not two (owner 2026-11-14): the actor tiles and the progress bar above the sequence repeat the lane headers, so only the sequence shows. */
 .sq .sq-actors, .sq .sq-prog { display: none; }
 
-/* ===== Demo guide: Real-help lists ===== */
-.guide__subhead { margin: 10px 0 4px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
-.guide__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.guide__list--blocked li { font-size: 12.5px; color: var(--text-body); }
-.guide__runlink { font: inherit; font-size: 13px; text-align: left; padding: 2px 6px; border-radius: 6px; min-height: 0; background: transparent; color: var(--accent); border-color: transparent; }
-.guide__runlink[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-
 /* ===== Talk track: per-step run links ===== */
 .talk__runs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 /* The Run buttons in the talk track are real buttons (the global button style), a little smaller than a form button; the pressed one fills with the accent. */

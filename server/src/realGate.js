@@ -42,18 +42,18 @@ export function realGate(uc, cast, { a2a = false, a2aWhy = null } = {}) {
   // Owner 2026-11-13: UC7/UC8 (the hitl track, tool create_transfer) run REAL — the SE gateway's HITL pipeline
   // (428 + challenge, the HITL service, the receipt retry) is live and this lab drives it with the mock phone.
   // The other approval kinds stay simulated: CIBA needs an out-of-band device flow, elicitation an interactive answer.
-  if (uc.track === 'hitl' && !['UC7', 'UC8'].includes(uc.id)) return { real: false, reason: 'its human approval (CIBA or elicitation) is simulated in this lab' };
-  if (uc.track !== 'hitl' && chain.some((k) => APPROVAL.has(k))) return { real: false, reason: 'its human approval (CIBA or elicitation) is simulated in this lab' };
+  if (uc.track === 'hitl' && !['UC7', 'UC8'].includes(uc.id)) return { real: false, reason: 'its human approval (CIBA or elicitation) is staged by the lab only' };
+  if (uc.track !== 'hitl' && chain.some((k) => APPROVAL.has(k))) return { real: false, reason: 'its human approval (CIBA or elicitation) is staged by the lab only' };
   if (Object.hasOwn(TRUSTED_FEATURE, uc.id)) return { real: false, reason: `${TRUSTED_FEATURE[uc.id]} is a trusted-caller feature, and this lab never sends trusted-caller headers` };
   if (/\btrat\b|transaction token/i.test(`${uc.title} ${uc.pingOneSolution}`)) return { real: false, reason: 'transaction tokens (TraT) are a trusted-caller feature, and this lab never sends trusted-caller headers' };
   if (chain.some((k) => A2A.test(k)) || uc.primaryTool === 'get_portfolio_summary') {
-    if (uc.primaryTool !== 'get_portfolio_summary' || !chain.every((k) => A2A_REAL_CHAIN.has(k))) return { real: false, reason: 'its agent-to-agent (A2A) steps (the agent card, the protocol messages, a mismatch probe or a signed assertion) are staged by the mock engine only' };
+    if (uc.primaryTool !== 'get_portfolio_summary' || !chain.every((k) => A2A_REAL_CHAIN.has(k))) return { real: false, reason: 'its agent-to-agent (A2A) steps (the agent card, the protocol messages, a mismatch probe or a signed assertion) are staged by the lab only' };
     if (!a2a) return { real: false, reason: a2aWhy || 'the agent-to-agent (A2A) chain needs the specialist agent\'s PingOne settings (AAG_A2A_*), which are not set' };
     return { real: true, tool: toolFor(cast, uc.primaryTool), a2a: true };
   }
   if (chain.some((k) => PRIVILEGE_LANE.test(k)) || (uc.needs || []).includes('privilege')) return { real: false, reason: 'the Privilege, PingFederate and ID-JAG lanes are not part of this Real path' };
   if (chain.includes('personal-agent-lookup')) return { real: false, reason: 'the personal-agent lane is not part of this Real path' };
-  if (chain.some((k) => k.startsWith('sim-'))) return { real: false, reason: 'it stages an attack, which only the mock engine can stage' };
+  if (chain.some((k) => k.startsWith('sim-'))) return { real: false, reason: 'it stages an attack, which only the lab can stage' };
   if (uc.flag) return { real: false, reason: `it needs the AI-DEMO2 feature flag ${uc.flag}, which is not known to be on in SE` };
   if (!uc.primaryTool) return { real: false, reason: 'it calls no tool, so there is nothing for the SE MCP server to run' };
   const tool = toolFor(cast, uc.primaryTool);
@@ -69,7 +69,7 @@ export function toolArgs(tool, { vertical, accounts = [], amount, args }) {
   const amt = Number.isFinite(amount) ? amount : 25;
   switch (tool) {
     case 'get_account_balance': return { account_id: a0 };
-    case 'create_transfer': return { from_account_id: a0, to_account_id: a1, amount: amt, description: 'Customer Agent LAB (Real)' };
+    case 'create_transfer': return { from_account_id: a0, to_account_id: a1, amount: amt, description: 'Customer Agent LAB' };
     case 'request_fee_waiver': return { account_id: a0, reason: 'Customer request' };
     case 'get_branch_hours': return { vertical };
     case 'pay_bill': case 'checkout': return { amount: amt };

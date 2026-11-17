@@ -11,7 +11,7 @@ export const DEMO_GUIDE = [
     short: "Start",
     title: "1 · A person or application starts an AI-assisted workflow",
     req: "An authenticated user or application starts an AI-assisted workflow.",
-    prove: "Run {{prompt:UC1|a low-risk read}}. The sequence opens with the sign-in and prompt hops: {{castUser}} signs in to {{castBrand}} and asks {{castAgent}} for something. The simulation banner says what is mock; HIVE is never called.",
+    prove: "Run {{prompt:UC1|a low-risk read}}. The sequence opens with the sign-in and prompt hops: {{castUser}} signs in to {{castBrand}} and asks {{castAgent}} for something. HIVE is never called.",
     say: "The workflow starts the way it does today: a person signs in to an application and asks for something. Nothing about the agent is trusted yet.",
     ucs: [{ uc: "UC1", label: "Start the workflow: a low-risk read" }],
   },
@@ -41,7 +41,7 @@ export const DEMO_GUIDE = [
     short: "Evaluate",
     title: "4 · Ping evaluates the call",
     req: "Ping evaluates the request using agent identity, delegated permissions, the requested action, the resource and risk context.",
-    prove: "The highlighted step in the sequence is the decision. Run {{prompt:UC21|“Entitlement-tiered capability”}} twice, as the premium customer and as the standard customer: same tool, same {{castAsset}}, a different person, a different decision. In Real mode the tier is your PingOne group: flip your user in or out of the {{castGroup}} group in PingOne, Sign out, sign in again and run it again. The Decision card names the policy that applied.",
+    prove: "The highlighted step in the sequence is the decision. Run {{prompt:UC21|“Entitlement-tiered capability”}} twice, as the premium customer and as the standard customer: same tool, same {{castAsset}}, a different person, a different decision. With a PingOne sign-in the tier is your PingOne group: flip your user in or out of the {{castGroup}} group in PingOne, Sign out, sign in again and run it again. The Decision card names the policy that applied.",
     say: "Every call gets its own decision: identity, entitlement, action, resource, risk. It is a policy evaluation you can audit, not a prompt the model answers.",
     ucs: [{ uc: "UC21", label: "Evaluate a call: entitlement tiers" }],
   },
@@ -61,7 +61,7 @@ export const DEMO_GUIDE = [
     short: "Risk",
     title: "6 · A higher-risk request is denied, constrained or sent for approval",
     req: "A higher-risk write or sensitive-data request is denied, constrained or routed for approval, based on policy.",
-    prove: "Run the buttons in order. {{prompt:UC7|The first write}} steps up (ESCALATED: a second factor). {{prompt:UC8|The next write}} needs a person (ESCALATED: approve it on the mock phone). {{prompt:UC6|The largest write}} is refused (DENIED), and so is the third-party call outside what the agent may use. The actor-injection attack is refused too: nothing is dispatched. The typed prompts for this step add more refusals where the vertical lists them: another person's private {{castAsset}}, an approval the agent forged, and a lower rung of human approval. “Poisoned instructions” and “Compare two runs” open the Compare page (always Mock) side by side: a careful agent against one told to ignore its limits, and a held write against a refused one. The amounts are the lab's own; Appfire sets the real ones in policy.",
+    prove: "Run the buttons in order. {{prompt:UC7|The first write}} steps up (ESCALATED: a second factor). {{prompt:UC8|The next write}} needs a person (ESCALATED: approve it on the phone). {{prompt:UC6|The largest write}} is refused (DENIED), and so is the third-party call outside what the agent may use. The actor-injection attack is refused too: nothing is dispatched. The typed prompts for this step add more refusals where the vertical lists them: another person's private {{castAsset}}, an approval the agent forged, and a lower rung of human approval. “Poisoned instructions” and “Compare two runs” open the Compare page side by side: a careful agent against one told to ignore its limits, and a held write against a refused one. The amounts are the lab's own; Appfire sets the real ones in policy.",
     say: "Controlled autonomy. A risky write stops for a second factor, a riskier one for a person, and an out-of-bounds one is refused. A manipulated agent still meets the same decision, because the enforcement point is not the model.",
     ucs: [
       { uc: "UC7", label: "Higher risk: needs a second factor" },
@@ -69,7 +69,7 @@ export const DEMO_GUIDE = [
       { uc: "UC6", label: "Out of bounds: refused" },
       { uc: "UC31", label: "Out of scope: refused" },
       { uc: "UC13", label: "Manipulated agent: refused" },
-      // These two do not run a use case: they open the Compare page (always Mock) at the named pair.
+      // These two do not run a use case: they open the Compare page at the named pair.
       { compare: "careful-poisoned", label: "Poisoned instructions: refused" },
       { compare: "ask-refuse", label: "Compare two runs" },
     ],

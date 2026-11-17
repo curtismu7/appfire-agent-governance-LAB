@@ -43,7 +43,7 @@ test('UC1 banking: the exact AI-DEMO2 order of the hops that ran, then the not-i
   const said = r.hops.find((h) => h.kind === 'agent-reply').response.body.reply;
   assert.equal(said, 'Your checking balance is $4,250.00, and your savings balance is $12,800.00.');
   assert.equal(r.hops.find((h) => h.kind === 'tool-dispatched').request.body.params.name, 'get_account_balance');
-  assert.equal(r.hops.find((h) => h.kind === 'tool-dispatched').response.body.result.content[0].text, `${said} (lab-invented values, mock tool)`);
+  assert.equal(r.hops.find((h) => h.kind === 'tool-dispatched').response.body.result.content[0].text, `${said} (lab-invented values)`);
 });
 
 test('every flow use case in every full vertical keeps the AI-DEMO2 shape', () => {
@@ -99,7 +99,7 @@ test('every flow use case in every full vertical keeps the AI-DEMO2 shape', () =
         const toolText = ran(r)[td].response.body.result.content[0].text;
         assert.doesNotMatch(text, /mock result|Here is what I found|\(synthetic\)|\{\{/, `${at}: ${text}`);
         assert.ok(toolText.startsWith(text.split(' A different agent')[0]), `${at}: the reply is the tool's answer`);
-        assert.ok(toolText.endsWith('(lab-invented values, mock tool)'), `${at}: the tool result says its values are lab-invented`);
+        assert.ok(toolText.endsWith('(lab-invented values)'), `${at}: the tool result says its values are lab-invented`);
       }
     }
     // A use case that reaches the MCP server in AI-DEMO2 reaches it here when the run is not refused or held.
@@ -187,7 +187,7 @@ test('fidelity: UC3 runs the dispatch leg; UC40 has the agent token first and th
   }
   const seven = go('UC7');
   const su = seven.hops.find((h) => h.kind === 'step-up');
-  assert.equal(su.response.status, 428); assert.equal(su.verdict, 'obligation'); assert.equal(su.response.body.obligation, 'STEP_UP'); assert.match(su.response.body.note, /simulates the approval/);
+  assert.equal(su.response.status, 428); assert.equal(su.verdict, 'obligation'); assert.equal(su.response.body.obligation, 'STEP_UP'); assert.match(su.response.body.note, /does not complete the approval/);
   assert.equal(go('UC8').hops.find((h) => h.kind === 'step-up').verdict, 'held');
   assert.equal(go('UC22').hops.find((h) => h.kind === 'step-up').response.status, 202);
 });
@@ -212,7 +212,7 @@ test('brain and said: the prompt hop carries what was typed, the agent names the
     const text = JSON.stringify(r);
     assert.equal(text.split(JSON.stringify(said).slice(1, -1)).length - 1, 1, 'said appears once: on the prompt hop');
     assert.ok(!text.includes('<script>alert(1)') || r.hops.filter((h) => JSON.stringify(h).includes('<script>')).map((h) => h.kind).join() === 'prompt');
-    const routing = brain === 'llama' ? 'llama.cpp picked “Delegated access (consent only)” (local model, mock run)' : 'Scripted intent match';
+    const routing = brain === 'llama' ? 'llama.cpp picked “Delegated access (consent only)” (local model)' : 'Scripted intent match';
     assert.equal(r.hops.find((h) => h.kind === 'agent-receive').response.body.routing, routing);
     assert.match(r.hops.find((h) => h.kind === 'llm-plan').note, new RegExp(`^${routing.replace(/[().]/g, '\\$&')}`));
   }

@@ -18,15 +18,14 @@
       "step-up",
       "hitl",
       "ciba",
-      "attacks",
-      "simulated"
+      "attacks"
     ]
   },
   "glossary": [
     {
       "id": "appfire-agent-governance",
       "term": "Customer-facing agent",
-      "definition": "An AI agent that acts for a customer: it asks for an open-issue list, a bulk edit, an order. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "definition": "An AI agent that acts for a customer: it asks for an open-issue list, a bulk edit, an order. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "customer agent"
       ]
@@ -34,7 +33,7 @@
     {
       "id": "delegation",
       "term": "Delegation with an act claim",
-      "definition": "RFC 8693 token exchange mints a delegated token whose sub is the customer and whose act claim names the agent. Delegation, not impersonation. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "definition": "RFC 8693 token exchange mints a delegated token whose sub is the customer and whose act claim names the agent. Delegation, not impersonation. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "act claim",
         "on behalf of"
@@ -43,7 +42,7 @@
     {
       "id": "consent",
       "term": "Consent (may_act)",
-      "definition": "The customer lets a named agent act for them before the exchange. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "definition": "The customer lets a named agent act for them before the exchange. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "may_act"
       ]
@@ -51,7 +50,7 @@
     {
       "id": "authorize-decision",
       "term": "Authorize decision",
-      "definition": "A policy decision on every call: PERMIT, DENY, or an obligation (step-up, human approval, CIBA). The lab's thresholds are lab-invented, fitted to the catalog's example amounts. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "definition": "A policy decision on every call: PERMIT, DENY, or an obligation (step-up, human approval, CIBA). The lab's thresholds are lab-invented, fitted to the catalog's example amounts. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "PDP"
       ]
@@ -59,7 +58,7 @@
     {
       "id": "step-up-hitl",
       "term": "Step-up and human approval",
-      "definition": "A risky write returns an obligation instead of running: MFA step-up, or a verified human approval receipt. A boolean \"approved\" flag from the client does not count. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "definition": "A risky write returns an obligation instead of running: MFA step-up, or a verified human approval receipt. A boolean \"approved\" flag from the client does not count. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "HITL",
         "step up"
@@ -68,7 +67,7 @@
     {
       "id": "ciba",
       "term": "CIBA out-of-band approval",
-      "definition": "The agent asks the identity provider to authenticate the customer on another device and polls until they approve. Needs a live feature flag; runs in mock here. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "definition": "The agent asks the identity provider to authenticate the customer on another device and polls until they approve. Needs a feature flag; the lab runs it on its own steps here. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "back-channel authentication"
       ]
@@ -76,7 +75,7 @@
     {
       "id": "gateway-check",
       "term": "Gateway check",
-      "definition": "The gateway validates signature, audience, expiry, act claim and scope, applies rate limits and edge policy, and fails closed. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "definition": "The gateway validates signature, audience, expiry, act claim and scope, applies rate limits and edge policy, and fails closed. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "agent gateway"
       ]
@@ -84,23 +83,23 @@
     {
       "id": "a2a-chain",
       "term": "A2A delegation chain",
-      "definition": "A nested act claim when one agent hands work to another: scope is narrowed at each hop and an unregistered agent in the chain is denied. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "definition": "A nested act claim when one agent hands work to another: scope is narrowed at each hop and an unregistered agent in the chain is denied. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "nested act"
       ]
     },
     {
-      "id": "live-mode",
-      "term": "Live mode (identity provider only)",
-      "definition": "Simulated in mock; in live (the owner's opt-in) a run makes two real calls to one PingOne environment: its discovery document and the agent's own client-credentials token (shown masked). It runs nothing else: no customer sign-in, token exchange, gateway check, policy decision or tool call, and it lists the steps it did not run. The path has not been run against a real tenant by the builder: UNVERIFIED.",
+      "id": "idp-only-path",
+      "term": "Identity-provider-only path",
+      "definition": "On this path (the owner's opt-in) a run makes two real calls to one PingOne environment: its discovery document and the agent's own client-credentials token (shown masked). It runs nothing else: no customer sign-in, token exchange, gateway check, policy decision or tool call, and it lists the steps it did not run. The path has not been run against a real tenant by the builder: UNVERIFIED.",
       "aliases": [
-        "live"
+        "identity provider only"
       ]
     },
     {
-      "id": "mock-token",
-      "term": "MOCK token",
-      "definition": "Every token in this lab is issued by the lab, labelled MOCK and signed ES256 with a public mock key. It protects nothing and is shown raw for education.",
+      "id": "lab-tokens",
+      "term": "Lab-issued tokens",
+      "definition": "Tokens in this lab are issued by the lab and signed ES256 with a public key. They protect nothing and are shown raw for education.",
       "aliases": []
     }
   ],
@@ -119,7 +118,7 @@
     {
       "id": "try-foundations",
       "label": "Foundations track (15 use cases)",
-      "description": "Delegation basics: consent, token exchange with an act claim, A2A delegation, personal and workload agents. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "description": "Delegation basics: consent, token exchange with an act claim, A2A delegation, personal and workload agents. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "group": "try-it",
       "action": {
         "type": "route",
@@ -133,7 +132,7 @@
     {
       "id": "try-learn",
       "label": "Learn track (23 use cases)",
-      "description": "Guided learning pages. The lab lists them and links out to a sibling standalone where one covers the same thing (lab reading). Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "description": "Guided learning pages. The lab lists them and links out to a sibling standalone where one covers the same thing (lab reading). The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "group": "try-it",
       "action": {
         "type": "route",
@@ -147,7 +146,7 @@
     {
       "id": "try-controls",
       "label": "Controls track (16 use cases)",
-      "description": "Policy controls: authorization denies, group and tier checks, third-party servers scoped at the gateway, enterprise-managed MCP. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "description": "Policy controls: authorization denies, group and tier checks, third-party servers scoped at the gateway, enterprise-managed MCP. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "group": "try-it",
       "action": {
         "type": "route",
@@ -161,7 +160,7 @@
     {
       "id": "try-hitl",
       "label": "Hitl track (4 use cases)",
-      "description": "Step-up, human approval and CIBA for risky writes. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "description": "Step-up, human approval and CIBA for risky writes. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "group": "try-it",
       "action": {
         "type": "route",
@@ -175,7 +174,7 @@
     {
       "id": "try-demo",
       "label": "Demo track (8 use cases)",
-      "description": "Presenter guides and sign-in flows. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "description": "Presenter guides and sign-in flows. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "group": "try-it",
       "action": {
         "type": "route",
@@ -189,7 +188,7 @@
     {
       "id": "try-attacks",
       "label": "Attacks track (11 use cases)",
-      "description": "Eleven attacks and the refusal each one ends in. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "description": "Eleven attacks and the refusal each one ends in. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "group": "try-it",
       "action": {
         "type": "route",
@@ -203,7 +202,7 @@
     {
       "id": "try-tools",
       "label": "Tools track (8 use cases)",
-      "description": "Protected tools and agent-to-agent access review. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "description": "Protected tools and agent-to-agent access review. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "group": "try-it",
       "action": {
         "type": "route",
@@ -217,7 +216,7 @@
     {
       "id": "try-nhi",
       "label": "Nhi track (2 use cases)",
-      "description": "Non-human identity: the source-tagged roster and the joiner-mover-leaver feed. Simulated in mock; the use case is from the AI-DEMO2 catalog, the amounts and events are lab-invented.",
+      "description": "Non-human identity: the source-tagged roster and the joiner-mover-leaver feed. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "group": "try-it",
       "action": {
         "type": "route",
@@ -231,7 +230,7 @@
     {
       "id": "try-delegation",
       "label": "Run delegated access (UC1)",
-      "description": "Sign in as the mock customer, consent, exchange, gateway check, authorize, dispatch: seven hops, each with its raw request and response.",
+      "description": "Sign in as the demo customer, consent, exchange, gateway check, authorize, dispatch: seven hops, each with its raw request and response.",
       "group": "try-it",
       "action": {
         "type": "route",
@@ -260,7 +259,7 @@
     {
       "id": "try-replay",
       "label": "Run the DPoP replay attack (UC12)",
-      "description": "The first proof is accepted and the replay is refused with 401. Needs the live feature ff_dpop; runs in mock here.",
+      "description": "The first proof is accepted and the replay is refused with 401. Needs the feature ff_dpop; the lab runs it on its own steps here.",
       "group": "try-it",
       "action": {
         "type": "route",
@@ -286,29 +285,29 @@
       ]
     },
     {
-      "id": "concept-live-mode",
-      "label": "Mock and live",
-      "description": "Mock runs a whole use case offline. Live, which the owner switches on, reaches the identity provider only and lists what it did not run. UNVERIFIED on a real tenant.",
+      "id": "concept-idp-only-path",
+      "label": "The identity-provider-only path",
+      "description": "It reaches the identity provider only and lists what it did not run. UNVERIFIED on a real tenant.",
       "group": "concept",
       "action": {
         "type": "route",
         "href": "/#talk"
       },
       "terms": [
-        "live-mode"
+        "idp-only-path"
       ]
     },
     {
-      "id": "concept-mock-tokens",
-      "label": "Mock tokens",
-      "description": "Every token is a labelled MOCK, signed with a public mock key, shown raw with its decoded claims.",
+      "id": "concept-lab-tokens",
+      "label": "Lab-issued tokens",
+      "description": "Every token is signed with a public key and shown raw with its decoded claims.",
       "group": "concept",
       "action": {
         "type": "route",
         "href": "/#tokens"
       },
       "terms": [
-        "mock-token"
+        "lab-tokens"
       ]
     },
     {

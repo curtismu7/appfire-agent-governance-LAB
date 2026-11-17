@@ -217,7 +217,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
   async function signIn(ws, password, traceparentIn, { silent = false } = {}) {
     if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
     if (silent && !sso) return { ok: false, status: 401, error: 'no_p1_session', message: 'There is no PingOne session to use: sign in with your password.', steps: [] };
-    if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two Real calls are already in flight; wait for one to finish', 429);
+    if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two calls are already in flight; wait for one to finish', 429);
     if (!sessions.has(ws) && sessions.size >= MAX_SESSIONS) throw new RealRefused('too_many', 'too many signed-in workspaces; Reset one first', 429);
     inFlight += 1;
     const trace = newTrace(traceparentIn, `signin:${ws}`);
@@ -244,7 +244,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       const a = await p1(`${config.base}/as/authorize?${new URLSearchParams(query)}`, { method: 'GET', headers: { accept: 'application/json', ...(silent && jar.size ? { cookie: cookieHeader() } : {}) } }, t1);
       keep(a.cookies);
       steps.push({ step: silent ? 'authorize (response_mode=pi.flow, PKCE S256, with your PingOne session: no password)' : 'authorize (response_mode=pi.flow, PKCE S256)', traceparent: t1, request: { method: 'GET', url: `${config.base}/as/authorize`, query }, response: { status: a.status, body: a.json ? { id: str(a.json.id, 64), status: str(a.json.status, 64), ...(a.status === 200 ? {} : p1Error(a)) } : p1Error(a), 'set-cookie': a.cookies.map(String) } });
-      if (a.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network, or switch to Mock.', a);
+      if (a.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', a);
       if (a.status !== 200 || !a.json || !FLOW_ID.test(String(a.json.id || ''))) return fail(502, 'signin_refused', `PingOne refused to start the sign-in (${failText(a)}).`, a);
       let flow = a.json;
       const flowId = a.json.id; // checked against FLOW_ID above; later answers never change the id the lab calls
@@ -258,7 +258,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         const r = await p1(`${config.base}/flows/${flowId}`, { method: 'POST', headers: { 'content-type': PW_TYPE, accept: '*/*', ...(jar.size ? { cookie: cookieHeader() } : {}) }, body: JSON.stringify({ username: config.username, password }) }, t2);
         keep(r.cookies);
         steps.push({ step: 'flows API: username and password', traceparent: t2, request: { method: 'POST', url: `${config.base}/flows/${flowId}`, headers: { 'content-type': PW_TYPE, cookie: cookieHeader() }, body: { username: config.username, password: PASSWORD_SHOWN } }, response: { status: r.status, body: r.json && r.status === 200 ? { id: str(r.json.id, 64), status: str(r.json.status, 64) } : p1Codes(r) } });
-        if (r.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network, or switch to Mock.', r);
+        if (r.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', r);
         if (r.status === 400 || r.status === 401) return fail(401, 'signin_rejected', 'PingOne did not accept the username or password.', r);
         if (r.status !== 200 || !r.json) return fail(502, 'signin_refused', `PingOne refused the sign-in (${failText(r)}).`, r);
         flow = r.json;
@@ -271,7 +271,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         const r = await p1(`${config.base}/as/resume?flowId=${encodeURIComponent(flowId)}`, { method: 'GET', headers: { accept: 'application/json', ...(jar.size ? { cookie: cookieHeader() } : {}) } }, t3);
         keep(r.cookies); // the PingOne session cookie can arrive here too
         steps.push({ step: 'resume: the authorization code', traceparent: t3, request: { method: 'GET', url: `${config.base}/as/resume?flowId=${flowId}`, headers: { cookie: cookieHeader() } }, response: { status: r.status, body: r.json?.authorizeResponse ? { authorizeResponse: { code: str(r.json.authorizeResponse.code, 2000), state: str(r.json.authorizeResponse.state, 200) } } : p1Codes(r) } });
-        if (r.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network, or switch to Mock.', r);
+        if (r.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', r);
         code = str(r.json?.authorizeResponse?.code, 2000); gotState = r.json?.authorizeResponse?.state;
         if (r.status !== 200 || !code) return fail(502, 'signin_refused', `PingOne did not hand back an authorization code (${failText(r)}).`, r);
       }
@@ -281,7 +281,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       const tok = await tokenCall({ grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: REDIRECT_URI }, config.user, t4);
       const at = typeof tok.json?.access_token === 'string' ? tok.json.access_token : null;
       steps.push({ step: 'token: the code for the user\'s tokens', traceparent: t4, request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: REDIRECT_URI } }, response: { status: tok.status, body: at ? { access_token: at, id_token: str(tok.json.id_token, 8000), token_type: str(tok.json.token_type), expires_in: Number.isFinite(tok.json.expires_in) ? tok.json.expires_in : null, scope: str(tok.json.scope) } : p1Codes(tok) } });
-      if (tok.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network, or switch to Mock.', tok);
+      if (tok.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', tok);
       if (tok.status !== 200 || !at) return fail(502, 'signin_refused', `PingOne did not issue the user's tokens (${failText(tok)}).`, tok);
       const idClaims = typeof tok.json.id_token === 'string' ? decodeJwt(tok.json.id_token)?.claims ?? null : null;
       if (idClaims && idClaims.nonce !== nonce) return fail(502, 'signin_refused', 'The ID token does not carry the nonce the lab sent; the lab refuses it.');
@@ -313,7 +313,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
   async function run(uc, { vertical, tool, traceparent, session, receipt = null, a2a = false }) {
     let challenge = null; // the gateway's HITL challenge id when the run holds for approval (never leaves here except via the return)
     if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
-    if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two Real calls are already in flight; wait for one to finish', 429);
+    if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two calls are already in flight; wait for one to finish', 429);
     inFlight += 1;
     try {
       const trace = newTrace(traceparent, `real:${uc.id}`);
@@ -334,23 +334,23 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       };
 
       // 1. Sign-in (done in the dialog before this run): what happened, and the user's token.
-      push({ kind: 'sign-in', label: session.viaP1Session ? 'Sign-in [REAL]: your PingOne session, pi.flow with no password this time (no redirect)' : 'Sign-in [REAL]: pi.flow with the password you typed in the Sign in dialog (no redirect)', from: 'browser', to: 'pingone', verdict: 'ok', traceparent: session.steps[0]?.traceparent ?? tp(), note: session.viaP1Session ? 'The lab used the PingOne session from your earlier sign-in: authorize with response_mode=pi.flow and PKCE S256 and the session cookie, then the code for tokens. No password was typed or sent.' : 'Done once in the Sign in dialog: authorize with response_mode=pi.flow and PKCE S256, the flows API username/password step, then the code for tokens. The password was sent once and is shown nowhere.', request: { steps: session.steps.map((s) => ({ step: s.step, ...s.request })) }, response: { steps: session.steps.map((s) => ({ step: s.step, ...s.response })), user: userOf(session) } });
-      addToken('user access token (REAL, from the pi.flow sign-in)', session.accessToken, 'REAL token from your PingOne environment, shown raw for teaching (rule 4). It expires in minutes; secrets and your password are never shown.');
+      push({ kind: 'sign-in', label: session.viaP1Session ? 'Sign-in: your PingOne session, pi.flow with no password this time (no redirect)' : 'Sign-in: pi.flow with the password you typed in the Sign in dialog (no redirect)', from: 'browser', to: 'pingone', verdict: 'ok', traceparent: session.steps[0]?.traceparent ?? tp(), note: session.viaP1Session ? 'The lab used the PingOne session from your earlier sign-in: authorize with response_mode=pi.flow and PKCE S256 and the session cookie, then the code for tokens. No password was typed or sent.' : 'Done once in the Sign in dialog: authorize with response_mode=pi.flow and PKCE S256, the flows API username/password step, then the code for tokens. The password was sent once and is shown nowhere.', request: { steps: session.steps.map((s) => ({ step: s.step, ...s.request })) }, response: { steps: session.steps.map((s) => ({ step: s.step, ...s.response })), user: userOf(session) } });
+      addToken('user access token (from the pi.flow sign-in)', session.accessToken, 'Token from your PingOne environment, shown raw for teaching (rule 4). It expires in minutes; secrets and your password are never shown.');
 
       // 2. Agent token (the actor), with the agent scope.
       const t2 = tp();
       const ag = await tokenCall({ grant_type: 'client_credentials', scope: config.agentScope }, config.agent, t2);
       const agent = typeof ag.json?.access_token === 'string' ? ag.json.access_token : null;
-      push({ kind: 'actor-token', label: `Agent token [REAL]: the agent app's own client-credentials token (scope ${config.agentScope})`, from: 'agent', to: 'pingone', verdict: agent ? 'ok' : 'deny', traceparent: t2, note: agent ? 'The agent app (AAG_AGENT_CLIENT_ID) authenticated with its own secret (write-only). This is the actor token for exchange 1.' : failText(ag), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: 'client_credentials', scope: config.agentScope } }, response: { status: ag.status, body: agent ? { access_token: agent, token_type: str(ag.json.token_type), expires_in: Number.isFinite(ag.json.expires_in) ? ag.json.expires_in : null, scope: str(ag.json.scope) } : p1Error(ag) } });
+      push({ kind: 'actor-token', label: `Agent token: the agent app's own client-credentials token (scope ${config.agentScope})`, from: 'agent', to: 'pingone', verdict: agent ? 'ok' : 'deny', traceparent: t2, note: agent ? 'The agent app (AAG_AGENT_CLIENT_ID) authenticated with its own secret (write-only). This is the actor token for exchange 1.' : failText(ag), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: 'client_credentials', scope: config.agentScope } }, response: { status: ag.status, body: agent ? { access_token: agent, token_type: str(ag.json.token_type), expires_in: Number.isFinite(ag.json.expires_in) ? ag.json.expires_in : null, scope: str(ag.json.scope) } : p1Error(ag) } });
       if (!agent) {
         outcome = ag.unreachable ? 'REAL_UNREACHABLE' : 'REAL_REFUSED';
         const noGrant = !ag.unreachable && p1Error(ag).error === 'invalid_scope';
-        reply = { who: 'PingOne', text: ag.unreachable ? 'PingOne did not answer the agent\'s token request. Check the network, or switch to Mock.' : noGrant ? `PingOne refused the agent's token for the scope ${config.agentScope} (invalid_scope): the agent app has no grant for it. Ask the owner to re-run scripts/owner/pingone-real-setup.mjs --apply, or set AAG_AGENT_SCOPE to the scope that was granted.` : `PingOne refused the agent's own token (HTTP ${ag.status}). Check AAG_AGENT_CLIENT_ID and its secret.` };
+        reply = { who: 'PingOne', text: ag.unreachable ? 'PingOne did not answer the agent\'s token request. Check the network.' : noGrant ? `PingOne refused the agent's token for the scope ${config.agentScope} (invalid_scope): the agent app has no grant for it. Ask the owner to re-run scripts/owner/pingone-real-setup.mjs --apply, or set AAG_AGENT_SCOPE to the scope that was granted.` : `PingOne refused the agent's own token (HTTP ${ag.status}). Check AAG_AGENT_CLIENT_ID and its secret.` };
         notRun('token-exchange', 'Token exchange 1: act = agent', 'bff', 'pingone', 'Not run: the agent has no token.', EX1_TITLE);
         notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'pingone', 'Not run: the agent has no token.', EX2_TITLE);
         finishNotRun(0, 'Not run: the agent has no token.');
       } else {
-        addToken('agent token (REAL, client credentials)', agent, 'REAL token for the agent app, shown raw for teaching. This is the actor token. The agent secret is write-only.');
+        addToken('agent token (client credentials)', agent, 'Token for the agent app, shown raw for teaching. This is the actor token. The agent secret is write-only.');
         // 3. Exchange 1: the user's token + the agent as actor, for the agent scope. PingOne mints act from the actor token on that scope's resource.
         const t3 = tp();
         const ex1Scope = A2A ? A2A.intermediateScope : config.agentScope;
@@ -359,35 +359,35 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         const dec1 = first ? decodeJwt(first) : null;
         const act1 = actOf(dec1?.claims);
         const answerOf = (ex, tok, act) => ({ status: ex.status, body: tok ? { access_token: ex.json.access_token, issued_token_type: str(ex.json.issued_token_type), token_type: str(ex.json.token_type), expires_in: Number.isFinite(ex.json.expires_in) ? ex.json.expires_in : null, scope: str(ex.json.scope), act_claim: actShown(act) } : p1Error(ex) });
-        push({ kind: A2A ? 'a2a-exchange-1' : 'token-exchange', shortTitle: A2A ? A2A_EX1_TITLE : EX1_TITLE, label: A2A ? 'A2A exchange 1 [REAL]: act = agent 1 (RFC 8693 at PingOne, your token as subject, the agent token as actor, the specialist\'s intermediate audience)' : 'Token exchange 1 [REAL]: act = agent (RFC 8693 at PingOne, your token as subject, the agent token as actor)', from: 'bff', to: 'pingone', verdict: first && act1 ? 'ok' : 'deny', traceparent: t3, note: first ? (act1 ? 'PingOne stamped act = the agent into the token (the resource that owns the agent scope reads the actor token\'s client_id).' : (dec1 ? 'PingOne answered, but the token has NO act claim: check the act attribute of the resource that owns the agent scope.' : 'PingOne answered with a token that is not a JWT (opaque), so the lab cannot read an act claim from it and treats it as having none.')) : failText(ex1), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: session.accessToken, subject_token_type: AT, actor_token: agent, actor_token_type: AT, scope: ex1Scope, ...(A2A ? { audience: A2A.intermediateAud } : {}) } }, response: answerOf(ex1, first ? 'exchange-1' : null, act1) });
+        push({ kind: A2A ? 'a2a-exchange-1' : 'token-exchange', shortTitle: A2A ? A2A_EX1_TITLE : EX1_TITLE, label: A2A ? 'A2A exchange 1: act = agent 1 (RFC 8693 at PingOne, your token as subject, the agent token as actor, the specialist\'s intermediate audience)' : 'Token exchange 1: act = agent (RFC 8693 at PingOne, your token as subject, the agent token as actor)', from: 'bff', to: 'pingone', verdict: first && act1 ? 'ok' : 'deny', traceparent: t3, note: first ? (act1 ? 'PingOne stamped act = the agent into the token (the resource that owns the agent scope reads the actor token\'s client_id).' : (dec1 ? 'PingOne answered, but the token has NO act claim: check the act attribute of the resource that owns the agent scope.' : 'PingOne answered with a token that is not a JWT (opaque), so the lab cannot read an act claim from it and treats it as having none.')) : failText(ex1), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: session.accessToken, subject_token_type: AT, actor_token: agent, actor_token_type: AT, scope: ex1Scope, ...(A2A ? { audience: A2A.intermediateAud } : {}) } }, response: answerOf(ex1, first ? 'exchange-1' : null, act1) });
         if (!first) {
           outcome = ex1.unreachable ? 'REAL_UNREACHABLE' : 'REAL_REFUSED';
-          reply = { who: 'PingOne', text: ex1.unreachable ? 'PingOne did not answer token exchange 1. Check the network, or switch to Mock.' : `PingOne refused token exchange 1 (HTTP ${ex1.status}${p1Error(ex1).error ? `: ${p1Error(ex1).error}` : ''}). Check that the agent app has the token-exchange grant and the ${config.agentScope} scope.` };
+          reply = { who: 'PingOne', text: ex1.unreachable ? 'PingOne did not answer token exchange 1. Check the network.' : `PingOne refused token exchange 1 (HTTP ${ex1.status}${p1Error(ex1).error ? `: ${p1Error(ex1).error}` : ''}). Check that the agent app has the token-exchange grant and the ${config.agentScope} scope.` };
           notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'pingone', 'Not run: exchange 1 gave no token.', EX2_TITLE);
           finishNotRun(0, 'Not run: there is no delegated token.');
         } else if (!act1) {
           // The final token would have no act either (exchange 2 only passes act through): stop before spending exchange 2, and never reach the gateway.
-          addToken('exchange 1 token (REAL, NO act claim)', first, 'REAL token from exchange 1, but it has NO act claim, so nothing was sent on. Shown raw for teaching.', true);
+          addToken('exchange 1 token (NO act claim)', first, 'Token from exchange 1, but it has NO act claim, so nothing was sent on. Shown raw for teaching.', true);
           outcome = 'REAL_NO_ACT';
           reply = { who: 'PingOne', text: noActText(ex1Scope, false) };
           notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'pingone', 'Not run: exchange 1 carries no act claim, and exchange 2 only passes act through.', EX2_TITLE);
           finishNotRun(0, 'Not run: the delegated token carries no act claim, so the gateway was not called.');
         } else {
-          addToken('exchange 1 token (REAL, act = agent)', first, 'REAL token from exchange 1: your subject, the agent in the act claim, the audience of the agent scope\'s resource. Shown raw for teaching.', true);
+          addToken('exchange 1 token (act = agent)', first, 'Token from exchange 1: your subject, the agent in the act claim, the audience of the agent scope\'s resource. Shown raw for teaching.', true);
           if (A2A) {
             // A2A (owner, 2026-11-16; AI-DEMO2 a2aDelegationService): the specialist agent's own client-credentials token, then exchange 2 with the specialist as
             // the actor and the exchange-1 token as subject: PingOne nests the actors, act = { sub: specialist, act: { sub: agent 1 } }. UNVERIFIED on a tenant.
             const t4a = tp();
             const sp = await tokenCall({ grant_type: 'client_credentials', scope: A2A.intermediateScope }, A2A.agent2, t4a);
             const actor2 = typeof sp.json?.access_token === 'string' ? sp.json.access_token : null;
-            push({ kind: 'actor-token', shortTitle: A2A_ACTOR2_TITLE, label: `Specialist token [REAL]: the specialist agent app's own client-credentials token (scope ${A2A.intermediateScope})`, from: 'agent', to: 'pingone', verdict: actor2 ? 'ok' : 'deny', traceparent: t4a, note: actor2 ? 'The specialist agent app (AAG_A2A_AGENT_CLIENT_ID) authenticated with its own secret (write-only). This is the actor token for A2A exchange 2.' : failText(sp), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: 'client_credentials', scope: A2A.intermediateScope } }, response: { status: sp.status, body: actor2 ? { access_token: actor2, token_type: str(sp.json.token_type), expires_in: Number.isFinite(sp.json.expires_in) ? sp.json.expires_in : null, scope: str(sp.json.scope) } : p1Error(sp) } });
+            push({ kind: 'actor-token', shortTitle: A2A_ACTOR2_TITLE, label: `Specialist token: the specialist agent app's own client-credentials token (scope ${A2A.intermediateScope})`, from: 'agent', to: 'pingone', verdict: actor2 ? 'ok' : 'deny', traceparent: t4a, note: actor2 ? 'The specialist agent app (AAG_A2A_AGENT_CLIENT_ID) authenticated with its own secret (write-only). This is the actor token for A2A exchange 2.' : failText(sp), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: 'client_credentials', scope: A2A.intermediateScope } }, response: { status: sp.status, body: actor2 ? { access_token: actor2, token_type: str(sp.json.token_type), expires_in: Number.isFinite(sp.json.expires_in) ? sp.json.expires_in : null, scope: str(sp.json.scope) } : p1Error(sp) } });
             if (!actor2) {
               outcome = sp.unreachable ? 'REAL_UNREACHABLE' : 'REAL_REFUSED';
-              reply = { who: 'PingOne', text: sp.unreachable ? 'PingOne did not answer the specialist agent\'s token request. Check the network, or switch to Mock.' : `PingOne refused the specialist agent's token (HTTP ${sp.status}${p1Error(sp).error ? `: ${p1Error(sp).error}` : ''}). Check AAG_A2A_AGENT_CLIENT_ID and its secret, and that the specialist app holds the ${A2A.intermediateScope} grant.` };
+              reply = { who: 'PingOne', text: sp.unreachable ? 'PingOne did not answer the specialist agent\'s token request. Check the network.' : `PingOne refused the specialist agent's token (HTTP ${sp.status}${p1Error(sp).error ? `: ${p1Error(sp).error}` : ''}). Check AAG_A2A_AGENT_CLIENT_ID and its secret, and that the specialist app holds the ${A2A.intermediateScope} grant.` };
               notRun('token-exchange', 'A2A exchange 2: nested act', 'bff', 'pingone', 'Not run: the specialist has no token.', A2A_EX2_TITLE);
               finishNotRun(0, 'Not run: the specialist has no token.');
             } else {
-              addToken('specialist agent token (REAL, client credentials)', actor2, 'REAL token for the specialist agent app, shown raw for teaching. This is the actor token of A2A exchange 2. Its secret is write-only.');
+              addToken('specialist agent token (client credentials)', actor2, 'Token for the specialist agent app, shown raw for teaching. This is the actor token of A2A exchange 2. Its secret is write-only.');
               const t4 = tp();
               const ex2 = await tokenCall({ grant_type: TX, subject_token: first, subject_token_type: AT, actor_token: actor2, actor_token_type: AT, audience: A2A.gatewayAud, scope: A2A.scope }, A2A.agent2, t4);
               const delegated = typeof ex2.json?.access_token === 'string' ? ex2.json.access_token : null;
@@ -398,18 +398,18 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
               const chainOk = Boolean(act2 && nested);
               const auds2 = [].concat(dClaims?.aud ?? []).filter((a) => typeof a === 'string');
               const aud2Note = delegated && dClaims && !auds2.includes(A2A.gatewayAud) ? ` The token's aud (${cleanFree(auds2.join(' ') || 'none', 300)}) is not AAG_A2A_GATEWAY_AUDIENCE.` : '';
-              push({ kind: 'a2a-exchange-2', shortTitle: A2A_EX2_TITLE, label: 'A2A exchange 2 [REAL]: nested act (RFC 8693 at PingOne, the agent-1 token as subject, the specialist token as actor)', from: 'bff', to: 'pingone', verdict: delegated && chainOk ? 'ok' : 'deny', traceparent: t4, note: delegated ? `${chainOk ? 'PingOne nested the actors: act = the specialist, and inside it the first agent.' : (act2 ? 'The token has an act claim, but it is NOT nested (the specialist acting for the first agent): the A2A chain is missing.' : 'The token has NO act claim.')}${aud2Note}` : failText(ex2), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: first, subject_token_type: AT, actor_token: actor2, actor_token_type: AT, audience: A2A.gatewayAud, scope: A2A.scope } }, response: answerOf(ex2, delegated ? 'a2a-delegated' : null, act2) });
+              push({ kind: 'a2a-exchange-2', shortTitle: A2A_EX2_TITLE, label: 'A2A exchange 2: nested act (RFC 8693 at PingOne, the agent-1 token as subject, the specialist token as actor)', from: 'bff', to: 'pingone', verdict: delegated && chainOk ? 'ok' : 'deny', traceparent: t4, note: delegated ? `${chainOk ? 'PingOne nested the actors: act = the specialist, and inside it the first agent.' : (act2 ? 'The token has an act claim, but it is NOT nested (the specialist acting for the first agent): the A2A chain is missing.' : 'The token has NO act claim.')}${aud2Note}` : failText(ex2), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: first, subject_token_type: AT, actor_token: actor2, actor_token_type: AT, audience: A2A.gatewayAud, scope: A2A.scope } }, response: answerOf(ex2, delegated ? 'a2a-delegated' : null, act2) });
               if (!delegated) {
                 outcome = ex2.unreachable ? 'REAL_UNREACHABLE' : 'REAL_REFUSED';
-                reply = { who: 'PingOne', text: ex2.unreachable ? 'PingOne did not answer A2A exchange 2. Check the network, or switch to Mock.' : `PingOne refused A2A exchange 2 (HTTP ${ex2.status}${p1Error(ex2).error ? `: ${p1Error(ex2).error}` : ''}). Check that the specialist app may exchange for ${A2A.scope} on ${A2A.gatewayAud}, and the may_act of the intermediate resource.` };
+                reply = { who: 'PingOne', text: ex2.unreachable ? 'PingOne did not answer A2A exchange 2. Check the network.' : `PingOne refused A2A exchange 2 (HTTP ${ex2.status}${p1Error(ex2).error ? `: ${p1Error(ex2).error}` : ''}). Check that the specialist app may exchange for ${A2A.scope} on ${A2A.gatewayAud}, and the may_act of the intermediate resource.` };
                 finishNotRun(0, 'Not run: there is no delegated token.');
               } else if (!chainOk) {
-                addToken('delegated token (REAL, A2A exchange 2, act NOT nested)', delegated, 'REAL token from A2A exchange 2, but its act claim is missing or not nested, so it was not sent to the gateway. Shown raw for teaching.', true);
+                addToken('delegated token (A2A exchange 2, act NOT nested)', delegated, 'Token from A2A exchange 2, but its act claim is missing or not nested, so it was not sent to the gateway. Shown raw for teaching.', true);
                 outcome = 'REAL_NO_ACT';
                 reply = { who: 'PingOne', text: 'Stopped before the gateway, nothing was sent to it: the delegated token does not carry the nested act chain (the specialist acting for the first agent). Check the specialist\'s intermediate resource and its may_act.' };
                 finishNotRun(0, 'Not run: the delegated token carries no nested act chain, so the gateway was not called.');
               } else {
-                addToken('delegated token (REAL, A2A exchange 2: nested act)', delegated, `REAL delegated token: your subject, act = the specialist with the first agent inside it. Shown raw for teaching. Its audience is the A2A gateway audience, not AAG_GATEWAY_AUDIENCE: whether the Agent Gateway accepts it is for this run to show (UNVERIFIED).${aud2Note}`, true);
+                addToken('delegated token (A2A exchange 2: nested act)', delegated, `Delegated token: your subject, act = the specialist with the first agent inside it. Shown raw for teaching. Its audience is the A2A gateway audience, not AAG_GATEWAY_AUDIENCE: whether the Agent Gateway accepts it is for this run to show (UNVERIFIED).${aud2Note}`, true);
                 const leg = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun, receipt, gw });
                 outcome = leg.outcome; reply = leg.reply;
                 if (leg.challengeId) challenge = leg.challengeId;
@@ -425,18 +425,18 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
           const opaque2 = Boolean(delegated) && dClaims === null;
           const auds = [].concat(dClaims?.aud ?? []).filter((a) => typeof a === 'string');
           const audNote = delegated && dClaims && !auds.includes(config.audience) ? ` The token's aud (${cleanFree(auds.join(' ') || 'none', 300)}) is not AAG_GATEWAY_AUDIENCE: the gateway may refuse it. Check which resource owns the gateway scope.` : '';
-          push({ kind: 'token-exchange', shortTitle: EX2_TITLE, label: 'Token exchange 2 [REAL]: for the gateway (RFC 8693 at PingOne, the exchange-1 token as subject, no actor, the gateway scope)', from: 'bff', to: 'pingone', verdict: delegated && act2 ? 'ok' : 'deny', traceparent: t4, note: delegated ? `${act2 ? 'act carried over from exchange 1; the audience comes from the resource that owns the gateway scope (no audience parameter is sent).' : (opaque2 ? 'The token is not a JWT (opaque), so the lab cannot read an act claim from it and treats it as having none.' : 'The token has NO act claim: exchange 2 should pass the exchange-1 token\'s act through.')}${audNote}` : failText(ex2), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: first, subject_token_type: AT, scope: config.scope } }, response: answerOf(ex2, delegated ? 'delegated' : null, act2) });
+          push({ kind: 'token-exchange', shortTitle: EX2_TITLE, label: 'Token exchange 2: for the gateway (RFC 8693 at PingOne, the exchange-1 token as subject, no actor, the gateway scope)', from: 'bff', to: 'pingone', verdict: delegated && act2 ? 'ok' : 'deny', traceparent: t4, note: delegated ? `${act2 ? 'act carried over from exchange 1; the audience comes from the resource that owns the gateway scope (no audience parameter is sent).' : (opaque2 ? 'The token is not a JWT (opaque), so the lab cannot read an act claim from it and treats it as having none.' : 'The token has NO act claim: exchange 2 should pass the exchange-1 token\'s act through.')}${audNote}` : failText(ex2), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: first, subject_token_type: AT, scope: config.scope } }, response: answerOf(ex2, delegated ? 'delegated' : null, act2) });
           if (!delegated) {
             outcome = ex2.unreachable ? 'REAL_UNREACHABLE' : 'REAL_REFUSED';
-            reply = { who: 'PingOne', text: ex2.unreachable ? 'PingOne did not answer token exchange 2. Check the network, or switch to Mock.' : `PingOne refused token exchange 2 (HTTP ${ex2.status}${p1Error(ex2).error ? `: ${p1Error(ex2).error}` : ''}). Check that the agent app is granted the gateway scope and that the scope's resource exists.` };
+            reply = { who: 'PingOne', text: ex2.unreachable ? 'PingOne did not answer token exchange 2. Check the network.' : `PingOne refused token exchange 2 (HTTP ${ex2.status}${p1Error(ex2).error ? `: ${p1Error(ex2).error}` : ''}). Check that the agent app is granted the gateway scope and that the scope's resource exists.` };
             finishNotRun(0, 'Not run: there is no delegated token.');
           } else if (!act2) {
-            addToken('delegated token (REAL, exchange 2: for the gateway, NO act claim)', delegated, 'REAL token from exchange 2, but it has NO act claim, so it was not sent to the gateway. Shown raw for teaching.', true);
+            addToken('delegated token (exchange 2: for the gateway, NO act claim)', delegated, 'Token from exchange 2, but it has NO act claim, so it was not sent to the gateway. Shown raw for teaching.', true);
             outcome = 'REAL_NO_ACT';
             reply = { who: 'PingOne', text: noActText(config.agentScope, true) };
             finishNotRun(0, 'Not run: the delegated token carries no act claim, so the gateway was not called.');
           } else {
-            addToken('delegated token (REAL, exchange 2: for the gateway)', delegated, `REAL delegated token: your subject, the agent in the act claim, the gateway audience and scope. Shown raw for teaching.${audNote}`, true);
+            addToken('delegated token (exchange 2: for the gateway)', delegated, `Delegated token: your subject, the agent in the act claim, the gateway audience and scope. Shown raw for teaching.${audNote}`, true);
             const leg = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun, receipt, gw });
             outcome = leg.outcome; reply = leg.reply;
             if (leg.challengeId) challenge = leg.challengeId; // a REAL_HOLD with a minted challenge: the mock phone can approve it
@@ -476,7 +476,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     const listed = Array.isArray(list?.rpc?.result?.tools) ? list.rpc.result.tools.filter((t) => t && typeof t.name === 'string').map((t) => t.name.slice(0, 80)).slice(0, 300) : [];
     const firstBad = init.kind !== 'ok' ? init : list && list.kind !== 'ok' ? list : null;
     push({
-      kind: 'gateway-check', label: 'Agent Gateway [REAL]: initialize and tools/list over MCP with the delegated token', from: 'agent', to: 'gateway', verdict: firstBad ? (firstBad.kind === 'hold' ? 'held' : 'deny') : 'ok', traceparent: init.traceparent,
+      kind: 'gateway-check', label: 'Agent Gateway: initialize and tools/list over MCP with the delegated token', from: 'agent', to: 'gateway', verdict: firstBad ? (firstBad.kind === 'hold' ? 'held' : 'deny') : 'ok', traceparent: init.traceparent,
       note: firstBad ? mapped(firstBad).note : `The gateway accepted the delegated token (X-Token-Validation: jwks) and listed ${listed.length} tools${listed.includes(tool) ? `, including ${tool}` : `; ${tool} is NOT among them`}. No trusted-caller header was sent.`,
       request: { calls: [shownReq(init, { method: 'initialize' }), ...(list ? [shownReq(list, { method: 'notifications/initialized, then tools/list' })] : [])] },
       response: { calls: [shownRes(init, init.rpc?.result ? { serverInfo: init.rpc.result.serverInfo ?? null, protocolVersion: str(init.rpc.result.protocolVersion) } : init.rpc?.error ?? null), ...(list ? [shownRes(list, { tools: listed.length, names: listed.slice(0, 40) })] : [])] },
@@ -488,8 +488,8 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         rest(0, `Not run: the gateway does not offer ${tool} to this user. For the entitlement-tier use case that is the standard tier: the tier (a PingOne group) decides which tools exist.`);
         return { outcome: 'REAL_NOT_LISTED', reply: { who: 'Gateway', text: `The Agent Gateway does not offer the tool ${tool} to this user, so the agent never called it. For the entitlement-tier use case that is what a standard tier looks like: the tier, a PingOne group, decides which tools exist. Add your user to the premium-tier group in PingOne, sign out, sign in again and run it again to see it offered.` } };
       }
-      rest(0, `Not run: the gateway does not list ${tool}. Switch to Mock to see this use case.`);
-      return { outcome: 'REAL_NOT_LISTED', reply: { who: 'Gateway', text: `The Agent Gateway does not list the tool ${tool} for this token, so the agent did not call it. Switch to Mock to see this use case.` } };
+      rest(0, `Not run: the gateway does not list ${tool}.`);
+      return { outcome: 'REAL_NOT_LISTED', reply: { who: 'Gateway', text: `The Agent Gateway does not list the tool ${tool} for this token, so the agent did not call it.` } };
     }
     // The user's own account ids, when the tool needs them (lab rule: the first two accounts).
     const calls = [];
@@ -504,7 +504,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     const needTwo = tool === 'create_transfer';
     if (!pre && NEEDS_ACCOUNTS.has(tool) && accounts.length < (needTwo ? 2 : 1)) {
       notRun('authorize-decision', 'Authorize decision', 'gateway', 'authorize', `Not run: ${tool} was not called.`);
-      push({ kind: 'tool-refused', label: `MCP tool [REAL]: get_my_accounts (${tool} was not called)`, from: 'gateway', to: 'mcp', verdict: 'deny', traceparent: calls[0].traceparent, note: `The account list had ${accounts.length} usable account${accounts.length === 1 ? '' : 's'}; ${tool} needs ${needTwo ? 'two' : 'one'}, so the lab did not call it.`, request: { calls: calls.map((c) => shownReq(c, { method: 'tools/call', name: 'get_my_accounts', arguments: {} })) }, response: { calls: calls.map((c) => shownRes(c, { content: contentShown(c.rpc?.result) })) } });
+      push({ kind: 'tool-refused', label: `MCP tool: get_my_accounts (${tool} was not called)`, from: 'gateway', to: 'mcp', verdict: 'deny', traceparent: calls[0].traceparent, note: `The account list had ${accounts.length} usable account${accounts.length === 1 ? '' : 's'}; ${tool} needs ${needTwo ? 'two' : 'one'}, so the lab did not call it.`, request: { calls: calls.map((c) => shownReq(c, { method: 'tools/call', name: 'get_my_accounts', arguments: {} })) }, response: { calls: calls.map((c) => shownRes(c, { content: contentShown(c.rpc?.result) })) } });
       rest(2, 'Not run: the tool was not called.');
       return { outcome: 'REAL_TOOL_ERROR', reply: { who: 'Agent', text: `I could not find ${needTwo ? 'two accounts' : 'an account'} of yours for ${tool}, so I did not call it.` } };
     }
@@ -519,8 +519,8 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     const audit = parseAuditTrail(last.headers['x-gw-audit-trail']);
     const decisionOutcome = last.kind === 'deny' ? 'DENY' : last.kind === 'hold' ? 'HOLD' : last.kind === 'ok' ? 'PERMIT' : last.kind === 'token' ? 'TOKEN REFUSED' : 'NO DECISION';
     push({
-      kind: 'authorize-decision', label: `Authorize decision [REAL]: ${decisionOutcome}, read from the gateway's answer to tools/call`, from: 'gateway', to: 'authorize', verdict: last.kind === 'ok' ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny', traceparent: last.traceparent,
-      decision: { outcome: audit?.decision ?? decisionOutcome, by: 'the Agent Gateway (REAL)' },
+      kind: 'authorize-decision', label: `Authorize decision: ${decisionOutcome}, read from the gateway's answer to tools/call`, from: 'gateway', to: 'authorize', verdict: last.kind === 'ok' ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny', traceparent: last.traceparent,
+      decision: { outcome: audit?.decision ?? decisionOutcome, by: 'the Agent Gateway' },
       note: last.kind === 'ok' ? 'The gateway let tools/call through, so its policy permitted it.' : m.note, request: { tool, arguments: argsShown(args) }, response: { status: last.status, ...(audit ? { 'x-gw-audit-trail': audit.parsed ?? audit.raw, decision: audit.decision } : {}), ...(last.headers['www-authenticate'] ? { 'www-authenticate': last.headers['www-authenticate'] } : {}), ...(last.rawText ? { body: last.rawText } : {}), ...(last.status === 0 ? { no_response: last.timedOut ? `no HTTP response within ${Math.round((last.waitedMs ?? 0) / 1000)} s: the lab stopped waiting` : 'the connection failed before any response' } : {}) },
     });
     const result = last.kind === 'ok' ? last.rpc?.result ?? null : null;
@@ -528,7 +528,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     const toolFailed = last.kind === 'ok' && (!result || result.isError === true || rpcError);
     const cut = last.kind === 'ok' && !result && last.truncated;
     push({
-      kind: last.kind === 'ok' ? 'tool-dispatched' : last.kind === 'hold' ? 'tool-held' : 'tool-refused', label: `MCP tool [REAL]: tools/call ${tool}${calls.length > 1 ? ' (after get_my_accounts for your account ids)' : ''}`, from: 'gateway', to: 'mcp', verdict: last.kind === 'ok' && !toolFailed ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny', traceparent: last.traceparent,
+      kind: last.kind === 'ok' ? 'tool-dispatched' : last.kind === 'hold' ? 'tool-held' : 'tool-refused', label: `MCP tool: tools/call ${tool}${calls.length > 1 ? ' (after get_my_accounts for your account ids)' : ''}`, from: 'gateway', to: 'mcp', verdict: last.kind === 'ok' && !toolFailed ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny', traceparent: last.traceparent,
       note: last.kind === 'ok' ? (toolFailed ? 'The tool answered with an error.' : 'The SE MCP server ran the tool.') : m.note,
       request: { calls: calls.map((c) => shownReq(c, { method: 'tools/call', name: c === call ? tool : 'get_my_accounts', arguments: c === call ? argsShown(args) : {} })) },
       response: { calls: calls.map((c) => shownRes(c, c.kind !== 'ok' ? (c.rawText ? { raw: c.rawText } : null) : c.rpc ? (c.rpc.error ? { error: { code: c.rpc.error.code ?? null, message: str(c.rpc.error.message) } } : { isError: c.rpc.result?.isError === true, content: contentShown(c.rpc.result) }) : null)) },
@@ -538,12 +538,12 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       notRun('api-call', 'API', 'mcp', 'api', 'Not known: the tool answered with an error.');
       const why = rpcError ? str(rpcError.message) : textOf(result);
       const text = cut ? `The answer from ${tool} was larger than the lab reads, so it was cut off and not used.` : `The tool ${tool} answered with an error${why ? `: ${cleanFree(why, 300)}` : ''}.`;
-      push({ kind: 'agent-reply', label: 'Agent reply [REAL]: written from the tool\'s error', from: 'agent', to: 'page', verdict: 'ok', traceparent: tp(), request: {}, response: { reply: text } });
+      push({ kind: 'agent-reply', label: 'Agent reply: written from the tool\'s error', from: 'agent', to: 'page', verdict: 'ok', traceparent: tp(), request: {}, response: { reply: text } });
       return { outcome: 'REAL_TOOL_ERROR', reply: { who: 'Agent', text } };
     }
-    push({ kind: 'api-call', label: 'API [REAL]: the call behind the tool, made by the SE MCP server (seen only through its result)', from: 'mcp', to: 'api', verdict: 'ok', traceparent: last.traceparent, note: 'The lab does not see this call itself: the MCP server makes it with its own token and hands back the result.', request: { note: 'made by the SE MCP server, not by this lab' }, response: { content: contentShown(result) } });
+    push({ kind: 'api-call', label: 'API: the call behind the tool, made by the SE MCP server (seen only through its result)', from: 'mcp', to: 'api', verdict: 'ok', traceparent: last.traceparent, note: 'The lab does not see this call itself: the MCP server makes it with its own token and hands back the result.', request: { note: 'made by the SE MCP server, not by this lab' }, response: { content: contentShown(result) } });
     const text = replyText(tool, result);
-    push({ kind: 'agent-reply', label: 'Agent reply [REAL]: written from the real tool result', from: 'agent', to: 'page', verdict: 'ok', traceparent: tp(), request: {}, response: { reply: text } });
+    push({ kind: 'agent-reply', label: 'Agent reply: written from the tool result', from: 'agent', to: 'page', verdict: 'ok', traceparent: tp(), request: {}, response: { reply: text } });
     return { outcome: 'REAL_PERMIT', reply: { who: 'Agent', text } };
   }
 
@@ -577,15 +577,15 @@ export function mapAnswer(c) {
         outcome: 'REAL_HOLD',
         ...(challengeId && !isStepUp ? { challengeId } : {}),
         note: isStepUp
-          ? 'The gateway answered 428: step-up (a stronger authentication) is required. The hold is REAL; the second factor is simulated in this lab and cannot discharge a real step-up, so the call is not retried.'
-          : `The gateway answered 428: a person must approve (challenge ${challengeId ? 'minted' : 'not minted'}). The hold is REAL; approve on the mock phone and the lab retries with the receipt.`,
+          ? 'The gateway answered 428: step-up (a stronger authentication) is required. This lab cannot complete a step-up, so the call is not retried.'
+          : `The gateway answered 428: a person must approve (challenge ${challengeId ? 'minted' : 'not minted'}). Approve on the phone and the lab retries with the receipt.`,
         reply: {
           who: 'Authorize',
           approval: {
-            head: isStepUp ? 'Held for step-up (REAL)' : 'Held for approval (REAL)',
+            head: isStepUp ? 'Held for step-up' : 'Held for approval',
             body: isStepUp
-              ? 'The real Agent Gateway answered 428: this call needs step-up authentication. The hold is real; this lab simulates the second factor and cannot discharge a real step-up, so nothing was sent to the tool.'
-              : 'The real Agent Gateway answered 428: this call needs a person to approve it. The hold is real; approve (or deny) on the mock phone — an approval is recorded with the HITL service and the call is retried with the verified receipt.',
+              ? 'The Agent Gateway answered 428: this call needs step-up authentication. This lab cannot complete a step-up, so nothing was sent to the tool.'
+              : 'The Agent Gateway answered 428: this call needs a person to approve it. Approve (or deny) on the phone: an approval is recorded with the HITL service and the call is retried with the verified receipt.',
           },
         },
       };
@@ -594,7 +594,7 @@ export function mapAnswer(c) {
       // Three different things, said apart (owner 2026-11-16: "no response" is not a malformed request, which would get a 4xx): the gateway answered 5xx, it sent nothing in time, or the connection failed.
       const what = c.status ? `answered HTTP ${c.status} and did not complete the call` : c.timedOut ? `sent no HTTP response within ${Math.round((c.waitedMs ?? 0) / 1000)} s, so the lab stopped waiting` : 'could not be reached: the connection failed before any response';
       const why = c.status ? 'It may be down or scaled down, or unable to get a decision from Authorize; its own answer is shown in the hop.' : c.timedOut ? 'A timeout is not an error answer: the gateway may be down, or still waiting on Authorize.' : 'Check the gateway URL and the network.';
-      return { outcome: 'REAL_UNREACHABLE', note: `The Agent Gateway ${what}. ${why} The lab does not retry. Switch to Mock to keep going.`, reply: { who: 'Gateway', text: `No decision: the Agent Gateway ${what}. ${why} Switch to Mock to keep going.` } };
+      return { outcome: 'REAL_UNREACHABLE', note: `The Agent Gateway ${what}. ${why} The lab does not retry.`, reply: { who: 'Gateway', text: `No decision: the Agent Gateway ${what}. ${why}` } };
     }
     default: return { outcome: 'REAL_REFUSED', note: `The gateway answered HTTP ${c.status}${c.status >= 300 && c.status < 400 ? ' (a redirect, never followed)' : ''}.`, reply: { who: 'Gateway', text: `The Agent Gateway answered HTTP ${c.status}; the agent stopped there.` } };
   }

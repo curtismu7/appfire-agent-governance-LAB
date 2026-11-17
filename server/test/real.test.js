@@ -13,6 +13,7 @@ import { fullWanted, missingFull, FULL_KEYS } from '../src/settings.js';
 import { get, post, run, W, withServer } from './helpers.js';
 import { AGENT_AUDIENCE, AGENT_CLIENT_ID, AGENT_CLIENT_SECRET, AGENT_SCOPE, AUDIENCE, CLIENT_SECRET, DEMO_PASSWORD, DEMO_USERNAME, ENV_ID, SCOPE, USER_CLIENT_SECRET, fullSettingsFor, settingsFor, startFakePingOne } from './fakePingone.js';
 import { AUDIT_TRAIL, startFakeGateway } from './fakeGateway.js';
+import { findWords } from './wordScan.js';
 import { A2A_GATEWAY_AUD, A2A_INTERMEDIATE_AUD, A2A_INTERMEDIATE_SCOPE, A2A_SCOPE, SPECIALIST_ID, SPECIALIST_SECRET, a2aSettings } from './fakePingone.js';
 
 const ENV = { ALLOW_MOCK_SIGNIN: '1' };
@@ -58,9 +59,10 @@ test('the full chain: pi.flow sign-in, agent token, TWO token exchanges (act = a
     assert.equal(x.kind, 'real'); assert.equal(x.outcome, 'REAL_PERMIT'); assert.equal(x.reply.who, 'Agent'); assert.match(x.reply.text, /balance 1200\.5/);
     assert.deepEqual(x.hops.map((h) => h.kind), ['sign-in', 'actor-token', 'token-exchange', 'token-exchange', 'gateway-check', 'authorize-decision', 'tool-dispatched', 'api-call', 'agent-reply']);
     assert.deepEqual(x.hops.slice(2, 4).map((h) => h.title), ['Exchange 1: act = agent', 'Exchange 2: for the gateway'], 'the two exchanges are told apart');
-    assert.match(x.hops[2].label, /^Token exchange 1 \[REAL\]: act = agent/); assert.match(x.hops[3].label, /^Token exchange 2 \[REAL\]: for the gateway/);
-    assert.ok(x.hops.every((h) => h.source === 'real' && h.mock === false && /\[REAL\]/.test(h.label)), 'every hop ran for real and says so');
+    assert.match(x.hops[2].label, /^Token exchange 1: act = agent/); assert.match(x.hops[3].label, /^Token exchange 2: for the gateway/);
+    assert.ok(x.hops.every((h) => h.source === 'real' && h.mock === false && !/\[REAL\]|mock/i.test(h.label)), 'every hop ran for real (in the data); no label says so');
     assert.deepEqual([x.hops[2].response.body.act_claim, x.hops[3].response.body.act_claim], [{ sub: AGENT_CLIENT_ID }, { sub: AGENT_CLIENT_ID }], 'both exchange hops show the act they got');
+    assert.deepEqual(findWords(x, 'real run'), [], 'a Real run says nothing about mock, simulation, offline or an engine (the page does not either)');
     assert.equal(x.traceparent.split('-')[1], TP.split('-')[1]);
     // The Tokens tab: the user, the agent (actor), exchange 1 and the delegated (exchange 2) token, each raw with its decoded claims.
     assert.equal(x.tokens.length, 4); assert.ok(x.tokens.every((t) => t.real && t.raw.split('.').length === 3), 'all four are shown raw');
@@ -132,14 +134,15 @@ test('error mapping: 403 DENY with the audit trail, 401 token problem with WWW-A
       assert.equal(x.outcome, outcome, behaviour); assert.equal(x.reply.who, who, behaviour);
       if (text) assert.match(x.reply.text, text, behaviour);
       assert.equal(x.hops.length, 9, `${behaviour}: always the nine hops`);
+      assert.deepEqual(findWords(x, behaviour), [], `${behaviour}: an honest refusal in plain words, with no advice to switch to the lab's own steps`);
       assert.ok(x.hops.every((h) => (h.source === 'real') === (h.verdict !== 'skip')), `${behaviour}: a hop that did not run says NOT RUN, never REAL`);
-      assert.ok(x.hops.every((h) => (h.source === 'not-run' ? /\[NOT RUN\]$/ : /\[REAL\]/).test(h.label)), `${behaviour}: the label says what the source says`);
+      assert.ok(x.hops.every((h) => (h.source === 'not-run' ? /\[NOT RUN\]$/ : /^(?!.*(\[REAL\]|\[NOT RUN\]|mock))/i).test(h.label)), `${behaviour}: only a hop that did not run is marked`);
       if (behaviour === 'deny') {
         const d = x.hops.find((h) => h.kind === 'authorize-decision');
         assert.equal(d.decision.outcome, 'DENY'); assert.deepEqual(d.response['x-gw-audit-trail'], JSON.parse(AUDIT_TRAIL));
       }
       if (behaviour === 'token') assert.match(x.hops.find((h) => h.kind === 'gateway-check').note, /WWW-Authenticate: Bearer error="invalid_token"/);
-      if (behaviour === 'hold') { assert.equal(x.reply.approval.head, 'Held for approval (REAL)'); assert.match(x.reply.approval.body, /approve \(or deny\) on the mock phone/); assert.equal(x.hops.find((h) => h.kind === 'tool-held').verdict, 'held'); }
+      if (behaviour === 'hold') { assert.equal(x.reply.approval.head, 'Held for approval'); assert.match(x.reply.approval.body, /Approve \(or deny\) on the phone/); assert.doesNotMatch(JSON.stringify(x.reply), /mock/i); assert.equal(x.hops.find((h) => h.kind === 'tool-held').verdict, 'held'); }
       const calls = gw.seen.filter((c) => c.rpc.method === 'initialize').length;
       assert.equal(calls, 1, `${behaviour}: initialize once, no retry loop`);
     }, { gateway: behaviour });
@@ -153,7 +156,7 @@ test('a gateway that does not answer at all (connect error) is SE down, with one
     await withServer(async (url) => {
       await toReal(url); await signIn(url);
       const r = await run(url, 'UC1', { vertical: 'banking' });
-      assert.equal(r.body.run.outcome, 'REAL_UNREACHABLE'); assert.match(r.body.run.reply.text, /No decision.*could not be reached: the connection failed before any response.*Switch to Mock/);
+      assert.equal(r.body.run.outcome, 'REAL_UNREACHABLE'); assert.match(r.body.run.reply.text, /No decision.*could not be reached: the connection failed before any response/); assert.doesNotMatch(r.body.run.reply.text, /switch to mock/i, 'an honest refusal, no advice to switch');
     }, { env: ENV, real });
   } finally { await p1.close(); }
 });
@@ -225,7 +228,7 @@ test('act is required: a token without act after exchange 2 stops the run BEFORE
     assert.deepEqual(x.hops.map((h) => h.source), ['real', 'real', 'real', 'real', 'not-run', 'not-run', 'not-run', 'not-run', 'not-run']);
     assert.deepEqual(x.hops.slice(2, 4).map((h) => h.verdict), ['ok', 'deny']); assert.equal(x.hops[3].response.body.act_claim, 'ABSENT');
     assert.equal(x.tokens.length, 4); assert.deepEqual(x.tokens[2].claims.act, { sub: AGENT_CLIENT_ID }); assert.equal(x.tokens[3].claims.act, undefined);
-    assert.ok(x.hops.every((h) => (h.source === 'not-run' ? /\[NOT RUN\]$/ : /\[REAL\]/).test(h.label)));
+    assert.ok(x.hops.every((h) => (h.source === 'not-run' ? /\[NOT RUN\]$/ : /^(?!.*(\[REAL\]|\[NOT RUN\]|mock))/i).test(h.label)));
     noSecretsInRun(x, 'no act after exchange 2');
   }, { setup: (p1) => { p1.state.resources.gateway.act = 'absent'; } });
   // (d) An act that names nobody (no sub) is no act: HasValidActorChain could not match it.
@@ -406,7 +409,12 @@ test('use-case gating: only tools served through the SE gateway run Real; the re
     const x = r.body.run;
     assert.equal(x.mode, 'mock'); assert.equal(x.kind, 'flow'); assert.ok(x.hops.length > 0);
     assert.deepEqual(x.realGate, { real: false, reason: x.realGate.reason }); assert.match(x.realGate.reason, /agent-to-agent/);
-    assert.ok(x.hops.every((h) => h.source === 'mock' || h.source === 'not-run'), 'every hop of a fallback run is MOCK or NOT RUN, never REAL');
+    assert.ok(x.hops.every((h) => h.source === 'mock' || h.source === 'not-run'), 'every hop of a fallback run is MOCK or NOT RUN, never REAL (in the data)');
+    // The engine still marks itself in the DATA (hop.mock, hop.source, token.mock, run.mode, run.realGate) while no word says so (owner 2026-11-16).
+    assert.ok(x.hops.every((h) => h.mock === true), 'every hop says mock:true in the data');
+    assert.ok(x.tokens.length > 0 && x.tokens.every((t) => t.mock === true && !/mock/i.test(t.label) && t.notice === 'Shown raw for teaching.'), 'tokens say mock:true in the data, with a neutral label and notice');
+    assert.deepEqual(findWords(x, 'fallback run'), [], 'a fallback run reads like any other run');
+    assert.equal((await (await get(url, '/api/info')).json()).source, 'real', 'the workspace stays in Real: only this run used the lab\'s own steps');
     assert.equal(gw.seen.length, 0, 'a use case that cannot run Real never calls the gateway');
     const hist = await (await get(url, '/api/runs')).json();
     assert.equal(hist.runs.at(-1).id, 'UC2');
@@ -473,7 +481,7 @@ test('in Real mode, a use case that cannot run Real is refused with the reason o
     await toReal(url);
     const r = await run(url, 'UC2', { vertical: 'banking' });
     assert.equal(r.status, 403); assert.equal(r.body.error, 'mock_in_real_refused');
-    assert.match(r.body.detail, /“A2A delegation” cannot run Real \(the agent-to-agent/); assert.match(r.body.detail, /mock engine is not available here/);
+    assert.match(r.body.detail, /“A2A delegation” cannot run Real \(the agent-to-agent/); assert.match(r.body.detail, /sign-in is not available here to run it on the lab's own steps/);
     assert.equal(gw.seen.length, 0);
   }, { env: { ...ENV, ALLOW_MOCK_SIGNIN: '' } });
 });
@@ -687,7 +695,7 @@ test('A2A Real: only the plain two-agent hand-off (UC2, UC2.5) in the vertical t
   }
   for (const id of ['UC2.6', 'UC2.7', 'UC37']) {
     const g = realGate(findUseCase(id), cast, { a2a: true });
-    assert.equal(g.real, false, id); assert.match(g.reason, /A2A.*mock engine only/, id);
+    assert.equal(g.real, false, id); assert.match(g.reason, /A2A.*staged by the lab only/, id);
   }
 });
 

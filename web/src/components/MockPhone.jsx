@@ -10,7 +10,7 @@
 //   onClose()         the phone was dismissed (the session keeps its state; the host can reopen later)
 //   onDecided(state)  called once when the session ends: 'approved' | 'denied' | 'expired'
 //   onError(message)  a failed start is the host's business; here: only network errors on decide
-//   reopenable        when true (default) a dismissed pending phone shows an "Open mock phone" button again
+//   reopenable        when true (default) a dismissed pending phone shows an "Open phone" button again
 import { useEffect, useRef, useState } from 'react';
 import FloatingDialog from '../floating-dialog/FloatingDialog';
 import { getJson, postJson } from '../api';
@@ -55,8 +55,8 @@ export default function MockPhone({ approval, onClose, onDecided, onError, reope
     setAnswering(true);
     setError('');
     postJson('/api/approval/decide', { id, approved }, {})
-      .then((r) => { if (r.ok && r.body?.approval) setView(r.body.approval); else setError(r.body?.detail || 'The mock phone could not answer.'); })
-      .catch(() => setError('The mock phone could not answer.'))
+      .then((r) => { if (r.ok && r.body?.approval) setView(r.body.approval); else setError(r.body?.detail || 'The phone could not answer.'); })
+      .catch(() => setError('The phone could not answer.'))
       .finally(() => setAnswering(false));
   };
 
@@ -70,14 +70,14 @@ export default function MockPhone({ approval, onClose, onDecided, onError, reope
         <div className="mp__island" aria-hidden="true" />
         <div className="mp__clock" aria-hidden="true"><span className="mp__date">Lock screen</span><span className="mp__time">9:41</span></div>
         <div className="mp__card">
-          <p className="mp__app"><span className="mp__icon" aria-hidden="true">P</span>PingOne Approve (mock)<span className="mp__now">now</span></p>
+          <p className="mp__app"><span className="mp__icon" aria-hidden="true">P</span>Approval phone<span className="mp__now">now</span></p>
           <h3>{view?.tool ? `Approve ${view.tool}?` : 'Approve this request?'}</h3>
           {view?.description && <p className="mp__desc">{view.description}</p>}
           {money && <p className="mp__amount">{money}</p>}
         </div>
         <div className="mp__actions">
-          <button type="button" className="mp__approve" onClick={() => answer(true)} disabled={answering} data-testid="mp-approve">Approve on mock phone</button>
-          <button type="button" className="mp__deny" onClick={() => answer(false)} disabled={answering} data-testid="mp-deny">Deny on mock phone</button>
+          <button type="button" className="mp__approve" onClick={() => answer(true)} disabled={answering} data-testid="mp-approve">Approve</button>
+          <button type="button" className="mp__deny" onClick={() => answer(false)} disabled={answering} data-testid="mp-deny">Deny</button>
         </div>
         <div className="mp__home" aria-hidden="true" />
       </div>
@@ -89,8 +89,8 @@ export default function MockPhone({ approval, onClose, onDecided, onError, reope
       {error && <p className="field-error" role="alert" data-testid="mp-error">{error}</p>}
       {pending && (
         <p className="muted" role="status" data-testid="mp-pending">
-          Waiting for a person to answer on their device (mock).{closed && reopenable && (
-            <> <button type="button" onClick={() => setClosed(false)} data-testid="mp-reopen">Open mock phone</button></>
+          Waiting for a person to answer on their device.{closed && reopenable && (
+            <> <button type="button" onClick={() => setClosed(false)} data-testid="mp-reopen">Open phone</button></>
           )}
         </p>
       )}
@@ -99,8 +99,8 @@ export default function MockPhone({ approval, onClose, onDecided, onError, reope
           <strong>{chip.word}.</strong> {chip.sentence}
         </p>
       )}
-      <FloatingDialog isOpen={pending && !closed} onClose={() => { setClosed(true); onClose?.(); }} title="Mock phone"
-        ariaLabel="Mock phone lock screen" defaultWidth={340} defaultHeight={620} placement="right" storageKey="aag.mock-phone" testId="mock-phone-dialog">
+      <FloatingDialog isOpen={pending && !closed} onClose={() => { setClosed(true); onClose?.(); }} title="Phone"
+        ariaLabel="Phone lock screen" defaultWidth={340} defaultHeight={620} placement="right" storageKey="aag.mock-phone" testId="mock-phone-dialog">
         {phone}
       </FloatingDialog>
     </div>

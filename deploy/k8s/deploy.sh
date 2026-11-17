@@ -89,7 +89,7 @@ retry() { # label, command... (the command prints nothing and exits 0 on success
 }
 base="https://$SE_HOST"
 pub_health() { curl -fsS --max-time 15 "$base/api/health" 2>/dev/null | grep -q '"schema":"demo-health/1"'; }
-pub_banner() { curl -fsS --max-time 15 "$base/" 2>/dev/null | grep -q 'data-state="hosted" data-testid="banner">HOSTED AND SIMULATED'; }
+pub_banner() { curl -fsS --max-time 15 "$base/" 2>/dev/null | grep -q 'data-state="hosted" data-testid="banner">Hosted copy\. HIVE'; }
 pub_run() {
   curl -fsS --max-time 15 -X POST -H 'content-type: application/json' -H "origin: $base" -H 'x-workspace: w-deploy-check' \
     --data '{"vertical":"banking"}' "$base/api/run/UC1" 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.exit(j.ok&&j.run.hops.length>0?0:1)})'

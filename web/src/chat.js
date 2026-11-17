@@ -35,9 +35,9 @@ export const pillOf = (v) => PILL[v || "ok"] || [String(v), "info"];
 
 // Outcomes that stop for a person: the reply is an approval card, not an answer.
 export const APPROVAL = {
-  STEP_UP: { head: "Step-up needed", body: "The policy asks for a second factor (MFA) before this goes through. In this lab the hold is simulated: nothing is approved for you, and the run stops here." },
-  HITL_REQUIRED: { head: "A person must approve", body: "The policy holds this action until a human approves it. In this lab the hold is simulated: no approval is sent or recorded." },
-  CIBA: { head: "Approval on another device", body: "The policy asks the customer to approve on a second device (CIBA). In this lab the request is simulated." },
+  STEP_UP: { head: "Step-up needed", body: "The policy asks for a second factor (MFA) before this goes through, so the run stops here." },
+  HITL_REQUIRED: { head: "A person must approve", body: "The policy holds this action until a person approves it, so the run stops here." },
+  CIBA: { head: "Approval on another device", body: "The policy asks the customer to approve on a second device (CIBA) before this goes through." },
 };
 
 // The reasoning steps a reply shows: how the use case was chosen, then what the run did, from its own hops. Nothing here is model output.
@@ -50,25 +50,16 @@ export function reasoningOf(turn, run) {
   else steps.push(`Matched your words to “${uc.title}”${turn.how === "close" ? " (close match)" : ""}`);
   if (!run) return steps;
   if (run.kind === "guided") { steps.push("This use case is a guided page: the lab shows it and does not compute the outcome"); return steps; }
-  if (run.kind === "live") { steps.push("Live mode: only the identity provider was called"); return steps; }
-  if (run.kind === "real") {
-    const ran = run.hops.filter((h) => h.source === "real").length;
-    steps.push(`Real: ${ran} of ${run.hops.length} hops called real servers (PingOne and the Agent Gateway); nothing mock was mixed in`);
-    const d = run.hops.find((h) => h.decision);
-    if (d) steps.push(`${d.title}: ${d.decision.outcome}${d.decision.by ? ` by ${d.decision.by}` : ""}`);
-    return steps;
-  }
-  if (run.realGate && run.realGate.real === false) steps.push(`This use case cannot run Real (${run.realGate.reason}), so the mock engine ran it and every hop is MOCK`);
   const decision = run.hops.find((h) => h.decision);
   const stop = run.hops.find((h) => h.verdict && h.verdict !== "ok" && h.verdict !== "skip");
   const ranN = run.hops.filter((h) => h.verdict !== "skip").length; // the not-in-path hops did not run
-  steps.push(`Ran ${ranN} ${ranN === 1 ? "hop" : "hops"} in the mock engine`);
+  steps.push(`Ran ${ranN} ${ranN === 1 ? "hop" : "hops"}`);
   if (decision) steps.push(`${decision.title}: ${decision.decision.outcome}${decision.decision.by ? ` by ${decision.decision.by}` : ""}`);
   else if (stop) steps.push(`${stop.title}: ${pillOf(stop.verdict)[0]}`);
   return steps;
 }
 
-// Why a Hand off use case does not run here: it needs more than one agent and this lab's mock engine (several agents, or the product's own pages),
+// Why a Hand off use case does not run here: it needs more than one agent (several agents, or the product's own pages),
 // so the routing table sends it to the standalone app that covers it. Plain text from the routing table, nothing generated.
 export const HANDOFF_WHY = (uc) => {
   const r = uc?.route || {};

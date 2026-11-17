@@ -1,23 +1,19 @@
-import { Json, LiveTag, MockTag, RealTag, Tag } from "./Bits";
+import { Json, Tag } from "./Bits";
 import { visible } from "../safeText";
 import { HOT_CLAIMS } from "../lib";
 
-// Mock tokens are shown raw (rule 4: education), labelled MOCK, with the decoded header and claims. They are signed with a public mock key.
-// A LIVE or REAL token (owner 2026-11-10, widened 2026-11-14) is shown raw too, with its decoded claims (education: they expire in minutes). Only client secrets and the password
-// are never sent to the page.
+// Tokens are shown raw (rule 4: education), with the decoded header and claims. Only client secrets and the password are never sent to the page.
 // The act claim (RFC 8693: who is acting for the user), when the claims carry one: an object that names the actor in a non-empty string sub (the same rule as
 // the server's, so the chip never contradicts the reply: an empty object or a blank sub is no act).
 const actOf = (t) => (t.claims && typeof t.claims.act === "object" && t.claims.act !== null && !Array.isArray(t.claims.act) && typeof t.claims.act.sub === "string" && t.claims.act.sub !== "" ? t.claims.act : null);
 
-// A MOCK token always keeps its chip (rulebook rule 4: mock-issued tokens are labelled, and the banner says so): a token is the one thing that can be
-// copied out of the page and mistaken for a real credential. The REAL and LIVE chips follow showSources (owner 2026-11-16).
-export default function TokenView({ tokens, showSources = true }) {
+export default function TokenView({ tokens }) {
   if (!tokens?.length) return <p className="muted" data-testid="no-tokens">This run minted no token.</p>;
   return (
     <div className="tokens" data-testid="tokens">
       {tokens.map((t, i) => (
         <article key={`${t.label}-${i}`} className="panel panel--inner" data-testid="token">
-          <h4 className="panel__sub">{t.label} {t.mock && <MockTag />}{showSources && t.live && <LiveTag />}{showSources && t.real && <RealTag />}
+          <h4 className="panel__sub">{t.label}
             {t.expectAct && (actOf(t)
               ? <> <Tag state="ok" testId="token-act" title="The act claim (RFC 8693): the agent that is acting for the user">act.sub = {visible(actOf(t).sub)}</Tag></>
               : <> <Tag state="bad" testId="token-no-act" title="This token should carry an act claim naming the agent, and it does not">NO act claim</Tag></>)}

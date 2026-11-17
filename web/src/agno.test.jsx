@@ -74,13 +74,14 @@ beforeEach(() => { window.location.hash = ""; window.sessionStorage.clear(); win
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); window.history.replaceState(null, "", "/"); });
 
 describe("Agno layout: setup sidebar, agent column, evidence column", () => {
-  test("the shell bar holds the app name, the pill nav, Mock | Real, Quick Config, Reset, Presenter and the theme; the banner comes right after it", async () => {
+  test("the shell bar holds the app name, the pill nav, Quick Config, Reset, Presenter and the theme (no Mock | Real control); the banner comes right after it", async () => {
     await boot();
     const bar = document.querySelector(".shell-bar");
     expect(within(bar).getByRole("heading", { level: 1 }).textContent).toBe("Appfire Agent Governance LAB");
     for (const id of ["nav", "top-menu", "qc-open", "reset", "presenter", "theme-select"]) expect(within(bar).getByTestId(id)).toBeTruthy();
     expect(bar.nextElementSibling).toBe(screen.getByTestId("banner"));
     expect(screen.getByTestId("banner").getAttribute("role")).toBe("note");
+    expect(within(bar).queryByTestId("mode-select")).toBeNull();
   });
 
   test("the sidebar has New chat, the gateway line, One agent | Several, agent, brain (llama.cpp off when not configured), vertical, the use cases with route tags, and sessions", async () => {
@@ -132,7 +133,7 @@ describe("What to type and the Scripted brain", () => {
     expect(screen.getByTestId("evidence-why").textContent).toMatch(/Matched your words to “Delegated access/); expect(screen.getByTestId("evidence-why").textContent).not.toMatch(/\bUC\d/);
     expect(screen.getByTestId("evidence-count").textContent).toMatch(/t · 4 hops/);
     await u.click(screen.getByTestId("evtab-tokens"));
-    expect(screen.getByTestId("evidence-tokens").textContent).toMatch(/user token \(MOCK\)/);
+    expect(screen.getByTestId("evidence-tokens").textContent).toMatch(/user token/);
     expect(screen.getByTestId("agent-status").textContent).toBe("Done");
     expect(screen.queryByTestId("starters")).toBeNull();
     expect(screen.getByTestId("what-to-type")).toBeTruthy(); // always visible
@@ -160,17 +161,18 @@ describe("What to type and the Scripted brain", () => {
     const turn = await screen.findByTestId("turn");
     await within(turn).findByTestId("turn-answer");
     onlyReply(turn);
-    expect(screen.getByTestId("evidence-why").textContent).toMatch(new RegExp(`Ran ${base.length} hops in the mock engine`));
+    expect(screen.getByTestId("evidence-why").textContent).toMatch(new RegExp(`Ran ${base.length} hops`));
     expect(screen.getByTestId("evidence-count").textContent).toMatch(new RegExp(`· ${base.length} hops · \\+2 not in this run`));
   });
 
-  test("a step-up outcome is an approval card labelled Authorize that says the hold is simulated, and the header says Waiting for you", async () => {
+  test("a step-up outcome is an approval card labelled Authorize that says what the policy does, and the header says Waiting for you", async () => {
     await boot({ runAnswer: (id) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(runBody(id, { outcome: "STEP_UP", hops: [...runBody().run.hops.slice(0, 3), { ...runBody().run.hops[3], verdict: "obligation" }] })) }) });
     const u = userEvent.setup();
     await u.click(screen.getByTestId("wtt-UC7"));
     const card = await screen.findByTestId("turn-approval");
     expect(card.textContent).toMatch(/Step-up needed/);
-    expect(card.textContent).toMatch(/simulated/);
+    expect(card.textContent).toMatch(/second factor/);
+    expect(card.textContent).not.toMatch(/simulated|mock/i);
     expect(screen.queryByTestId("turn-answer")).toBeNull();
     expect(screen.getByTestId("agent-status").textContent).toBe("Waiting for you");
     const turn = screen.getByTestId("turn");
@@ -182,7 +184,7 @@ describe("What to type and the Scripted brain", () => {
     expect((await screen.findByTestId("step-detail")).getAttribute("aria-label")).toBe("Step 4 detail");
   });
 
-  test("the mock phone is asked about the control that held the call in plain words: no use-case id or catalog title goes to it", async () => {
+  test("the phone is asked about the control that held the call in plain words: no use-case id or catalog title goes to it", async () => {
     await boot({ runAnswer: (id) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(runBody(id, { outcome: "STEP_UP" })) }) });
     const u = userEvent.setup();
     await u.click(screen.getByTestId("wtt-UC7"));
@@ -210,7 +212,7 @@ describe("What to type and the Scripted brain", () => {
     const start = within(guide).getByTestId("guide-step-start").textContent;
     expect(start).toMatch(/Run “show my balance”\. The sequence opens with the sign-in and prompt hops: alex\.morgan signs in to Appfire Platform and asks triage-agent/); // the fixture's cast and UC1 prompt
     expect(within(guide).getByTestId("guide-step-escalate").textContent).toMatch(/“transfer \$600 from checking to savings” steps up/);
-    expect(within(guide).getByTestId("guide-real-vertical").textContent).toMatch(/Real runs need the Banking, Healthcare or Retail vertical today/);
+    expect(within(guide).queryByTestId("guide-real-vertical")).toBeNull();
     expect(guide.textContent).not.toMatch(/\{\{|\bUC\d/);
   });
 
@@ -595,7 +597,7 @@ describe("Agent to agent page (owner, 2026-11-09: keep it)", () => {
 });
 
 describe("evidence views, Quick Config and the full-page diagrams", () => {
-  test("the evidence column defaults to Sequence; the Tokens tab shows the run's MOCK tokens raw and labelled", async () => {
+  test("the evidence column defaults to Sequence; the Tokens tab shows the run's tokens raw, with no mode label", async () => {
     await boot();
     const u = userEvent.setup();
     expect(screen.getAllByTestId(/^evtab-/).map((b) => b.textContent)).toEqual(["Sequence", "Movie reel", "Topology", "Tokens"]);
@@ -604,13 +606,14 @@ describe("evidence views, Quick Config and the full-page diagrams", () => {
     expect(screen.getByTestId("sequence-view")).toBeTruthy();
     await u.click(screen.getByTestId("evtab-tokens"));
     const tok = screen.getByTestId("evidence-tokens");
-    expect(tok.textContent).toMatch(/MOCK token/);
+    expect(tok.textContent).toMatch(/Client secrets and passwords are never sent to this page/);
+    expect(tok.textContent).not.toMatch(/MOCK|REAL|LIVE/);
     expect(within(tok).getByTestId("token-raw").textContent).toBe(RAW);
     await u.click(screen.getByTestId("evtab-reel"));
     expect(screen.getByTestId("movie-reel")).toBeTruthy();
   });
 
-  test("Quick Config: Mock | Real (409 with the reason), brain Scripted only, one diagram embedded at a time, text size, presenter; saved per workspace", async () => {
+  test("Quick Config: no mode control, brain Scripted only, one diagram embedded at a time, text size, presenter; saved per workspace", async () => {
     const view = await boot();
     const u = userEvent.setup();
     await u.click(screen.getByTestId("qc-open"));
@@ -618,9 +621,9 @@ describe("evidence views, Quick Config and the full-page diagrams", () => {
     expect(screen.queryByTestId("evidence-column")).toBeNull();
     expect(screen.getByTestId("qc-brain-scripted").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("qc-brain-llama").disabled).toBe(true);
-    await waitFor(() => expect(screen.getByTestId("qc-mode-real").disabled).toBe(true));
-    expect(screen.getByTestId("qc-mode-real").getAttribute("title")).toMatch(/^Real is not configured: fill PINGONE_/);
-    expect(screen.getByTestId("qc-mode-mock").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByTestId("qc-mode-real")).toBeNull();
+    expect(screen.queryByTestId("qc-mode-mock")).toBeNull();
+    expect(screen.getByTestId("quick-config").textContent).not.toMatch(/Mock|Real|engine/);
     expect(screen.getByTestId("qc-sequence-embedded").getAttribute("aria-pressed")).toBe("true");
     await u.click(screen.getByTestId("qc-reel-embedded"));
     expect(screen.getByTestId("qc-reel-embedded").getAttribute("aria-pressed")).toBe("true");
@@ -897,7 +900,7 @@ describe("a chat turn is the message and one reply (owner, 2026-11-09)", () => {
     onlyReply(turn);
     const reply = within(turn).getByTestId("turn-reply");
     expect([...reply.querySelectorAll("p")].map((x) => x.textContent)).toEqual(["Agent", "This is handled in a2a-lab, its own app."]);
-    expect(within(turn).getAllByRole("button").map((b) => b.textContent)).toEqual(["Open a2a-lab", "Preview here (mock)"]);
+    expect(within(turn).getAllByRole("button").map((b) => b.textContent)).toEqual(["Open a2a-lab", "Preview here"]);
     expect(screen.getByTestId("handoff-why").textContent).toMatch(/Its home is a2a-lab \(routing table: named in lab entry\)/);
   });
 });

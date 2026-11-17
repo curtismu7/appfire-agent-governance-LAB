@@ -100,7 +100,7 @@ const halt = (ctx, outcome, by, status, reason) => { if (!ctx.halted) ctx.halted
 function signIn(ctx) {
   const p = ctx.person;
   const scope = `openid ${Object.values(ctx.extras.scopes).join(' ')}`;
-  const t = mint(ctx, 'user token (MOCK)', { sub: p.sub, aud: 'customer-app-mock', scope, groups: p.groups, amr: ['pwd'], azp: 'customer-app-mock' }, 'JWT');
+  const t = mint(ctx, 'user token', { sub: p.sub, aud: 'customer-app-mock', scope, groups: p.groups, amr: ['pwd'], azp: 'customer-app-mock' }, 'JWT');
   ctx.user = t;
   hop(ctx, 'sign-in', {
     from: 'browser', to: 'idp', url: `${ctx.urls.idp}/flows/mock-signin`, headers: { 'content-type': 'application/json' },
@@ -124,7 +124,7 @@ function needConsent(ctx) {
 }
 
 function actorToken(ctx, agentId, name) {
-  const t = mint(ctx, `${name} actor token (MOCK)`, { sub: agentId, aud: ctx.urls.idp, client_id: agentId, scope: 'exchange' }, 'JWT');
+  const t = mint(ctx, `${name} actor token`, { sub: agentId, aud: ctx.urls.idp, client_id: agentId, scope: 'exchange' }, 'JWT');
   ctx.agents.push({ id: agentId, token: t });
   hop(ctx, 'actor-token', {
     from: 'bff', to: 'idp', url: `${ctx.urls.idp}/token`, body: { grant_type: 'client_credentials', client_id: agentId, client_secret: '[mock client; no secret is shown or kept]' },
@@ -140,7 +140,7 @@ function exchange(ctx, { subject, actorTok, actChain, audience, scope, key = 'to
   if (ctx.event === 'insufficient-scope') claims.scope = 'openid';
   if (ctx.event === 'tampered-intent-token') claims.intent = ctx.extras.intent;
   if (ctx.event === 'dpop-replay') claims.cnf = { jkt: sha(`${ctx.trace.traceId}:dpop-key`, 43) };
-  const t = mint(ctx, `exchanged token (MOCK)`, claims, 'at+jwt');
+  const t = mint(ctx, `exchanged token`, claims, 'at+jwt');
   ctx.exchanged = t;
   ctx.exchangedVia = 'exchange';
   ctx.exchangedClaims = claims;
@@ -174,7 +174,7 @@ function gatewayCheck(ctx, { again = false, key = 'gateway-check' } = {}) {
   const sig = ctx.event === 'tampered-intent-token' ? { ok: false } : verifyMockJwt(tok.raw);
   const overload = ctx.event === 'rate-limit-burst' ? (ctx.sit.burst || GATEWAY.rateLimit + 1) : 1;
 
-  if (ctx.event === 'introspection-down') fail('DENY_503', 503, 'validation_unavailable', 'the token validation endpoint did not answer (simulated, no network); the gateway fails closed');
+  if (ctx.event === 'introspection-down') fail('DENY_503', 503, 'validation_unavailable', 'the token validation endpoint did not answer; the gateway fails closed');
   else if (!sig.ok) fail('DENY_401', 401, 'invalid_signature', 'the token signature does not verify');
   else pass('signature');
   if (!verdict) { if (claims.aud && ![ctx.urls.mcp, 'customer-app-mock'].includes(claims.aud)) fail('DENY_401', 401, 'invalid_audience', 'aud does not name this gateway'); else pass('aud'); }
@@ -206,7 +206,7 @@ function gatewayCheck(ctx, { again = false, key = 'gateway-check' } = {}) {
 // The gateway filter chain as step-detail stages: one row per check the gateway ran, in order; the failing one says why and stops the chain.
 const STAGE_NAMES = { signature: 'Signature', invalid_signature: 'Signature', validation_unavailable: 'Token validation', aud: 'Audience', invalid_audience: 'Audience', act: 'act present', missing_act: 'act present', 'dpop-proof-fresh': 'DPoP proof', invalid_dpop_proof: 'DPoP proof', rate: 'Rate limit', rate_limited: 'Rate limit', scope: 'Scope', insufficient_scope: 'Scope', 'edge-policy': 'Edge policy', policy_denied: 'Edge policy' };
 function gatewayStages(checks, claims, ctx) {
-  const note = { aud: claims.aud, act: claims.act?.sub, scope: ctx.scope, signature: 'mock key' };
+  const note = { aud: claims.aud, act: claims.act?.sub, scope: ctx.scope, signature: 'lab signing key' };
   return checks.map((c) => ({ name: STAGE_NAMES[c.check] ?? c.check, result: c.ok ? 'pass' : 'fail', note: c.ok ? (note[c.check] ? String(note[c.check]) : '') : `${c.why} (stopped here)` }));
 }
 
@@ -215,7 +215,7 @@ function gatewayStages(checks, claims, ctx) {
 const CHECK_ID = { signature: 'signature', invalid_signature: 'signature', validation_unavailable: 'validation', aud: 'aud', invalid_audience: 'aud', act: 'act', missing_act: 'act', 'dpop-proof-fresh': 'dpop', invalid_dpop_proof: 'dpop', rate: 'rate', rate_limited: 'rate', scope: 'scope', insufficient_scope: 'scope', 'edge-policy': 'edge-policy', policy_denied: 'edge-policy' };
 function gatewayDecisions(checks, claims, ctx) {
   const passed = {
-    signature: 'the token signature verifies (mock key)',
+    signature: 'the token signature verifies',
     aud: claims.aud ? `aud ${claims.aud} is one this gateway accepts` : 'the token carries no aud claim, so there was nothing to compare',
     act: `the token carries act (sub ${claims.act?.sub})`,
     'dpop-proof-fresh': 'the DPoP proof had not been used before',
@@ -299,19 +299,19 @@ function authorize(ctx) {
     resBody: { decision: dec.decision === 'DENY_403' ? 'DENY' : dec.decision, reason: dec.reason, ...(['STEP_UP', 'HITL_REQUIRED', 'CIBA'].includes(dec.decision) ? { obligation: dec.decision } : {}) },
     verdict: dec.decision === 'PERMIT' ? 'ok' : ['STEP_UP', 'HITL_REQUIRED', 'CIBA'].includes(dec.decision) ? 'obligation' : 'deny',
     note: ctx.sit.forgedApproval ? 'the client sent a boolean "approved" flag; the BFF ignores it and needs a real, verified receipt' : undefined,
-    detail: { decision: { outcome: dec.decision, by: 'authorize policy (mock)', reasons: [dec.reason].filter(Boolean) } },
+    detail: { decision: { outcome: dec.decision, by: 'authorize policy', reasons: [dec.reason].filter(Boolean) } },
   });
   if (dec.decision === 'DENY' || dec.decision === 'DENY_403') halt(ctx, dec.decision, 'authorize', 403, dec.reason);
   else if (dec.decision !== 'PERMIT') { ctx.pending = dec.decision; ctx.obligation = dec.decision; stepUp(ctx, dec.decision); }
 }
 
-// AI-DEMO2's step-up step, drawn right after the decision that asked for it. The lab simulates the approval: nothing reaches a person or a device.
+// AI-DEMO2's step-up step, drawn right after the decision that asked for it. This lab does not complete the approval: nothing reaches a person or a device.
 const STEP_UP_HOW = { STEP_UP: 'a second factor (MFA)', HITL_REQUIRED: 'a person in the loop', CIBA: 'approval on another device (CIBA)' };
 function stepUp(ctx, obligation) {
   hop(ctx, 'step-up', {
     from: 'authorize', to: 'hitl', url: `${ctx.urls.bff}/api/step-up`, body: { obligation, action: ctx.tool },
     status: obligation === 'STEP_UP' ? 428 : 202, verdict: obligation === 'HITL_REQUIRED' ? 'held' : 'obligation',
-    resBody: { obligation, needs: STEP_UP_HOW[obligation], approved: false, note: 'the lab simulates the approval: nothing is sent to a person or a device' },
+    resBody: { obligation, needs: STEP_UP_HOW[obligation], approved: false, note: 'this lab does not complete the approval: nothing is sent to a person or a device' },
     note: obligation === 'CIBA' ? 'the CIBA hops that follow collect the approval' : 'the call waits here until the customer approves',
   });
 }
@@ -344,7 +344,7 @@ function toolCall(ctx) {
   const bearer = publicCall ? {} : { authorization: `Bearer ${(ctx.exchanged || ctx.user).raw}` };
   // The tool's answer: a real-sounding sentence with lab-invented values (data/replies.json), labelled as such in the tool result.
   const said = replyFor(replyInput(ctx));
-  const text = `${said} (lab-invented values, mock tool)`;
+  const text = `${said} (lab-invented values)`;
   hop(ctx, 'tool-dispatched', {
     from: 'gateway', to: 'mcp', url: `${ctx.urls.mcp}/mcp`, headers: bearer,
     body: { jsonrpc: '2.0', method: 'tools/call', params: { name: ctx.tool, ...(ctx.sit.args ? { arguments: ctx.sit.args } : {}) } },
@@ -368,7 +368,7 @@ function apiKeyPath(ctx) {
   hop(ctx, 'vault-key-inject', {
     from: 'gateway', to: 'credentials', method: 'GET', url: `https://vault.${ctx.cast.castHost}.example/routes${route}/key`,
     resBody: { route, api_key: '[write-only]', note: 'the key stays on the server; it is never shown or logged' },
-    detail: { kv: [['vault bridge', 'mock vault (lab)'], ['service key', '[write-only]']] },
+    detail: { kv: [['vault bridge', 'vault (lab)'], ['service key', '[write-only]']] },
   });
   hop(ctx, 'api-key-swap', {
     from: 'gateway', to: 'api', method: 'GET', url: `${ctx.urls.api}${route}`, headers: { 'x-api-key': '[write-only]', 'x-user-sub': ctx.person.sub },
@@ -405,7 +405,7 @@ function frameBefore(ctx) {
 }
 
 // What the visitor typed (`said`) appears on the prompt hop only; every other hop refers to it. The brain is the one the browser actually used.
-const routingOf = (ctx) => (ctx.brain === 'llama' ? `llama.cpp picked “${ctx.uc.title}” (local model, mock run)` : 'Scripted intent match');
+const routingOf = (ctx) => (ctx.brain === 'llama' ? `llama.cpp picked “${ctx.uc.title}” (local model)` : 'Scripted intent match');
 function frameAfterSignIn(ctx) {
   const pub = ctx.sit.public;
   const chip = promptOf(ctx.uc);
@@ -429,14 +429,14 @@ function frameAfterSignIn(ctx) {
     note: pub ? 'public catalog: tools/list needs no token' : 'the BFF attaches the user token of the session it holds; the catalog is filtered to what this caller may use',
     detail: { kv: [['MCP session', 'initialize -> 2025-11-25 -> notifications/initialized'], ['tools permitted', ctx.tool]] },
   });
-  // The simulated gateway checks nothing on tools/list: it answers with the one tool this run plans to call. Observed from that answer, never `checked`.
-  traceGateway(ctx, listHop, 'Gateway: tools/list', [note('catalog', 'Tool catalog', 'info', pub ? `public catalog: no token needed; the simulation listed ${ctx.tool}` : `the simulation answered with ${ctx.tool}, the one tool this run plans to call; it computes no per-caller filter in this lab`)]);
+  // The lab's gateway checks nothing on tools/list: it answers with the one tool this run plans to call. Observed from that answer, never `checked`.
+  traceGateway(ctx, listHop, 'Gateway: tools/list', [note('catalog', 'Tool catalog', 'info', pub ? `public catalog: no token needed; the gateway listed ${ctx.tool}` : `the gateway answered with ${ctx.tool}, the one tool this run plans to call; it computes no per-caller filter in this lab`)]);
   hop(ctx, 'llm-plan', {
     from: 'agent', to: 'llm', url: `${ctx.urls.llm}/v1/chat/completions`,
     body: { model: ctx.brain === 'llama' ? 'llama.cpp (local model; the run itself is mock)' : 'scripted-intent-match (mock)', messages: [{ role: 'system', content: ctx.instructions.text }, { role: 'user', content }], tools: [ctx.tool] },
     resBody: { tool_calls: [{ name: ctx.tool, arguments: ctx.steered ? { amount: ctx.steered.proposed.amount } : (ctx.sit.args || {}) }] },
     note: ctx.steered
-      ? `The instructions steered the agent (lab-simulated obedience): the customer asked for ${ctx.steered.asked.tool}, the agent proposed ${ctx.steered.proposed.tool} for ${countText(ctx.steered.proposed.amount, ctx.unit)}. The model proposes, policy decides; it never sees a token`
+      ? `The instructions steered the agent (an override phrase the lab recognises): the customer asked for ${ctx.steered.asked.tool}, the agent proposed ${ctx.steered.proposed.tool} for ${countText(ctx.steered.proposed.amount, ctx.unit)}. The model proposes, policy decides; it never sees a token`
       : `${routingOf(ctx)}. The model proposes, policy decides; it never sees a token`,
     detail: { kv: [['brain', routingOf(ctx)], ['instructions', ctx.instructions.default ? 'default' : 'edited'], ...(ctx.steered ? [['steered by', ctx.steered.reasons.join(', ')], ['asked for', ctx.steered.asked.tool], ['proposed', `${ctx.steered.proposed.tool} ${countText(ctx.steered.proposed.amount, ctx.unit)}`]] : [])] },
   });
@@ -494,7 +494,7 @@ const STEPS = {
     if (ctx.halted) return;
     const id = sha(`${ctx.trace.traceId}:ciba`, 12);
     hop(ctx, 'ciba-authorize', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/bc-authorize`, body: { login_hint: ctx.person.sub, binding_message: 'APPROVE', scope: ctx.scope }, resBody: { auth_req_id: id, expires_in: 120, interval: 5 } });
-    hop(ctx, 'ciba-poll', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/token`, body: { grant_type: 'urn:openid:params:grant-type:ciba', auth_req_id: id }, resBody: { access_token: mint(ctx, 'ciba token (MOCK)', { sub: ctx.person.sub, aud: ctx.urls.mcp, scope: ctx.scope, amr: ['pwd', 'mfa'] }, 'at+jwt').raw, note: 'the user approved on the mock phone' } });
+    hop(ctx, 'ciba-poll', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/token`, body: { grant_type: 'urn:openid:params:grant-type:ciba', auth_req_id: id }, resBody: { access_token: mint(ctx, 'ciba token', { sub: ctx.person.sub, aud: ctx.urls.mcp, scope: ctx.scope, amr: ['pwd', 'mfa'] }, 'at+jwt').raw, note: 'the user approved on the phone' } });
     if (ctx.pending === 'CIBA') ctx.pending = null;
   },
   'hitl-receipt': (ctx) => { if (!ctx.halted) hop(ctx, 'hitl-receipt', { from: 'bff', to: 'hitl', url: `${ctx.urls.bff}/api/hitl/receipt`, status: 404, verdict: 'held', resBody: { receipt: null, state: 'pending', note: 'no verified approval receipt yet; the human has not approved' } }); },
@@ -506,12 +506,12 @@ const STEPS = {
   'intent-binding-verified': (ctx) => { const dec = decide({ role: null, amount: ctx.amount, rar: ctx.sit.rar, actor: { registered: true } }); hop(ctx, 'intent-binding-verified', { from: 'gateway', to: 'authorize', url: 'https://authorize.mock.example/decision', body: { amount: ctx.amount, authorization_details: [authDetail(ctx)] }, resBody: { decision: dec.decision, reason: dec.reason }, verdict: dec.decision === 'PERMIT' ? 'ok' : 'deny' }); if (dec.decision !== 'PERMIT') halt(ctx, dec.decision, 'authorize', 403, dec.reason); },
   'exchange-skipped': (ctx) => { hop(ctx, 'exchange-skipped', { from: 'bff', to: 'gateway', url: `${ctx.urls.bff}/api/tool`, status: 403, verdict: 'deny', headers: {}, resBody: { error: 'user_token_forwarding_disabled', note: 'the BFF refuses to hand the raw user token to a tool; it must exchange first (fail closed)' } }); halt(ctx, 'DENY_403', 'bff', 403, 'user_token_forwarding_disabled'); },
   'gateway-permit': (ctx) => { if (!ctx.halted) { ctx.exchanged = ctx.exchanged || ctx.user; gatewayCheck(ctx, { key: 'gateway-check' }); } },
-  'privilege-gateway-leg': (ctx) => traceGateway(ctx, hop(ctx, 'privilege-gateway-leg', { from: 'bff', to: 'privilege', url: 'https://privilege.mock.example/gateway', headers: { authorization: `Bearer ${(ctx.exchanged || ctx.user).raw}` }, resBody: { accepted: true } }), 'Privilege gateway leg', [note('accepted', 'Gateway answer', 'info', 'the simulation answered accepted; it computes no checks on this hop')]),
-  'credential-swap': (ctx) => { const t = mint(ctx, 'operator credential (MOCK)', { sub: 'operator-service-mock', aud: ctx.urls.mcp, scope: ctx.scope }, 'at+jwt'); hop(ctx, 'credential-swap', { from: 'privilege', to: 'mcp', url: `${ctx.urls.mcp}/mcp`, headers: { authorization: `Bearer ${t.raw}` }, resBody: { swapped: true, note: 'the caller bearer is swapped for the operator credential before the call leaves' } }); },
+  'privilege-gateway-leg': (ctx) => traceGateway(ctx, hop(ctx, 'privilege-gateway-leg', { from: 'bff', to: 'privilege', url: 'https://privilege.mock.example/gateway', headers: { authorization: `Bearer ${(ctx.exchanged || ctx.user).raw}` }, resBody: { accepted: true } }), 'Privilege gateway leg', [note('accepted', 'Gateway answer', 'info', 'the gateway answered accepted; the lab computes no checks on this hop')]),
+  'credential-swap': (ctx) => { const t = mint(ctx, 'operator credential', { sub: 'operator-service-mock', aud: ctx.urls.mcp, scope: ctx.scope }, 'at+jwt'); hop(ctx, 'credential-swap', { from: 'privilege', to: 'mcp', url: `${ctx.urls.mcp}/mcp`, headers: { authorization: `Bearer ${t.raw}` }, resBody: { swapped: true, note: 'the caller bearer is swapped for the operator credential before the call leaves' } }); },
   'enterprise-managed-mode': (ctx) => hop(ctx, 'enterprise-managed-mode', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/group-policy`, body: { sub: ctx.person.sub, group: ctx.cast.castGroup }, resBody: { allowed: true, note: 'group policy decides issuance; no per-server consent screen' } }),
-  'id-jag-issued': (ctx) => { if (!ctx.agents.length) actorToken(ctx, ctx.agent.id, 'agent'); /* AI-DEMO2: the agent token comes before the ID-JAG */ const t = mint(ctx, 'ID-JAG (MOCK)', { sub: ctx.person.sub, aud: ctx.urls.mcp, scope: ctx.scope, jti: sha(`${ctx.trace.traceId}:idjag`, 16) }, 'oauth-id-jag+jwt'); ctx.idjag = t; hop(ctx, 'id-jag-issued', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/token`, body: { grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange', requested_token_type: 'urn:ietf:params:oauth:token-type:id-jag', subject_token: ctx.user.raw }, resBody: { access_token: t.raw, issued_token_type: 'urn:ietf:params:oauth:token-type:id-jag' } }); },
-  'id-jag-redeemed': (ctx) => { const t = mint(ctx, 'MCP access token (MOCK)', { sub: ctx.person.sub, aud: ctx.urls.mcp, scope: ctx.scope }, 'at+jwt'); ctx.exchanged = t; ctx.exchangedVia = 'id-jag'; ctx.exchangedClaims = t.claims; hop(ctx, 'id-jag-redeemed', { from: 'bff', to: 'mcp-as', url: `${ctx.urls.mcp}/token`, body: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: ctx.idjag.raw }, resBody: { access_token: t.raw, token_type: 'Bearer', note: 'single-use assertion; scoped to this one server' } }); },
-  'verified-trust-issuance': (ctx) => { const t = mint(ctx, 'signed agent assertion (MOCK)', { sub: ctx.cast.castAgent, act_for: ctx.person.sub, vct: 'agent-assertion' }, 'vc+sd-jwt'); hop(ctx, 'verified-trust-issuance', { from: 'agent', to: 'credentials', url: 'https://credentials.mock.example/issue', body: { agent: ctx.cast.castAgent, user: ctx.person.sub }, resBody: { credential: t.raw } }); },
+  'id-jag-issued': (ctx) => { if (!ctx.agents.length) actorToken(ctx, ctx.agent.id, 'agent'); /* AI-DEMO2: the agent token comes before the ID-JAG */ const t = mint(ctx, 'ID-JAG', { sub: ctx.person.sub, aud: ctx.urls.mcp, scope: ctx.scope, jti: sha(`${ctx.trace.traceId}:idjag`, 16) }, 'oauth-id-jag+jwt'); ctx.idjag = t; hop(ctx, 'id-jag-issued', { from: 'bff', to: 'idp', url: `${ctx.urls.idp}/token`, body: { grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange', requested_token_type: 'urn:ietf:params:oauth:token-type:id-jag', subject_token: ctx.user.raw }, resBody: { access_token: t.raw, issued_token_type: 'urn:ietf:params:oauth:token-type:id-jag' } }); },
+  'id-jag-redeemed': (ctx) => { const t = mint(ctx, 'MCP access token', { sub: ctx.person.sub, aud: ctx.urls.mcp, scope: ctx.scope }, 'at+jwt'); ctx.exchanged = t; ctx.exchangedVia = 'id-jag'; ctx.exchangedClaims = t.claims; hop(ctx, 'id-jag-redeemed', { from: 'bff', to: 'mcp-as', url: `${ctx.urls.mcp}/token`, body: { grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: ctx.idjag.raw }, resBody: { access_token: t.raw, token_type: 'Bearer', note: 'single-use assertion; scoped to this one server' } }); },
+  'verified-trust-issuance': (ctx) => { const t = mint(ctx, 'signed agent assertion', { sub: ctx.cast.castAgent, act_for: ctx.person.sub, vct: 'agent-assertion' }, 'vc+sd-jwt'); hop(ctx, 'verified-trust-issuance', { from: 'agent', to: 'credentials', url: 'https://credentials.mock.example/issue', body: { agent: ctx.cast.castAgent, user: ctx.person.sub }, resBody: { credential: t.raw } }); },
   'personal-agent-lookup': (ctx) => hop(ctx, 'personal-agent-lookup', { from: 'bff', to: 'registry', method: 'GET', url: `${ctx.urls.registry}/agents/${encodeURIComponent(ctx.cast.castAgent)}`, resBody: { id: ctx.cast.castAgent, registered: true, owner: ctx.person.sub } }),
 };
 export const KNOWN_STEPS = Object.keys(STEPS);
@@ -530,8 +530,8 @@ function finalOutcome(ctx) {
 
 export function liveNote(uc) {
   if (uc.maturity === 'needs-build') return { status: 'needs-build', message: 'The source marks this use case needs-build: it is lab-simulated here, not claimed to work in the product.' };
-  if (uc.flag) return { status: 'needs-flag', needs: uc.flag, message: `Needs live feature ${uc.flag}. It runs in mock; the live run here reaches the identity provider only and does not exercise it.` };
-  return { status: 'idp-only', message: 'Live mode runs the identity-provider hops only (discovery and the agent token); the rest of this use case is not run live.' };
+  if (uc.flag) return { status: 'needs-flag', needs: uc.flag, message: `Needs feature ${uc.flag}. The lab runs it on its own steps; a run through the identity provider alone does not exercise it.` };
+  return { status: 'idp-only', message: 'This path runs the identity-provider hops only (discovery and the agent token); the rest of this use case is not run on it.' };
 }
 
 // The use case reaches the engine in the vertical's own words (routes.js `localize`): the title, the narration and the prompt hop never carry another pack's text.
@@ -565,6 +565,6 @@ export function runUseCase(catalogUc, input) {
   skipped(ctx);
   const outcome = finalOutcome(ctx);
   // A steered run is not comparable with the catalog's label (the agent proposed something else), so it carries no match, and it says what steered it.
-  const steeredNote = ctx.steered ? ` The agent's instructions steered it to propose ${ctx.steered.proposed.tool} for ${countText(ctx.steered.proposed.amount, ctx.unit)} (lab-simulated obedience).` : '';
+  const steeredNote = ctx.steered ? ` The agent's instructions steered it to propose ${ctx.steered.proposed.tool} for ${countText(ctx.steered.proposed.amount, ctx.unit)} (an override phrase the lab recognises).` : '';
   return { ...base, kind: 'flow', computed: true, persona: ctx.person.key, outcome, matchesExpected: ctx.steered ? null : outcome === uc.expectedOutcome, instructions: { text: ctx.instructions.text, default: ctx.instructions.default, steered: ctx.instructions.steered, reasons: ctx.instructions.reasons }, steered: ctx.steered || null, hops: enrichAll(ctx), gatewayTrace: ctx.gwTrace, tokens: ctx.tokens, traceId: ctx.trace.traceId, traceparent: formatTraceparent(ctx.trace.traceId, ctx.rootSpan), narration: narrate(ctx, outcome) + steeredNote };
 }

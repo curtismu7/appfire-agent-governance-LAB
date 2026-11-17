@@ -1,12 +1,10 @@
 import { useEffect, useRef } from "react";
 import { DIAGRAMS, TEXT_SIZES, VIEWS, VIEW_LABEL } from "../quickConfig";
-import { HOSTED_REAL_NOTE } from "../lib";
 
 const Seg = ({ label, children }) => <div className="seg seg--fill" role="group" aria-label={label}>{children}</div>;
 
-// The Quick Config panel. Mode is the server's (rule 19): the buttons call the same POST /api/mode as the header toggle, and a refused Real
-// shows the server's own reason. Everything else is a display choice kept for this workspace in the browser.
-export default function QuickConfig({ id, mode, liveReason, realTitle = "Real", hostedOnly = false, onMode, config, brainInfo = null, onBrain = () => {}, onRouting = () => {}, onView, onText, onPresenter, onReset, onClose }) {
+// The Quick Config panel: display choices kept for this workspace in the browser.
+export default function QuickConfig({ id, config, brainInfo = null, onBrain = () => {}, onRouting = () => {}, onView, onText, onPresenter, onReset, onClose }) {
   const closeRef = useRef(null);
   useEffect(() => { closeRef.current?.focus(); }, []);
   const at = TEXT_SIZES.indexOf(config.text);
@@ -21,24 +19,13 @@ export default function QuickConfig({ id, mode, liveReason, realTitle = "Real", 
       </header>
       <div className="qc__grid">
         <div className="qc__item">
-          <p className="kicker" id="qc-mode">Mode</p>
-          <Seg label="Mode">
-            <button type="button" aria-pressed={mode === "mock"} onClick={() => onMode("mock")} data-testid="qc-mode-mock">Mock</button>
-            {hostedOnly
-              ? <button type="button" aria-pressed="false" disabled aria-disabled="true" aria-describedby="qc-real-hosted-note" data-testid="qc-mode-real">Real</button>
-              : <button type="button" aria-pressed={mode === "live"} onClick={() => onMode("live")} disabled={Boolean(liveReason) && mode !== "live"} aria-disabled={Boolean(liveReason) && mode !== "live" ? "true" : undefined} data-testid="qc-mode-real" title={liveReason || realTitle}>Real</button>}
-          </Seg>
-          {hostedOnly && <p className="muted" id="qc-real-hosted-note" data-testid="qc-real-hosted-note">{HOSTED_REAL_NOTE}</p>}
-          <p className="muted">Real is the PingOne token path, owner only. It is available when this app's .env holds the PingOne settings; otherwise the button is disabled and its tooltip says what to fill in (the server answers 409). It never falls back to Mock silently.</p>
-        </div>
-        <div className="qc__item">
           <p className="kicker">Agent brain</p>
           <Seg label="Agent brain">
             <button type="button" aria-pressed={config.brain === "scripted"} onClick={() => onBrain("scripted")} data-testid="qc-brain-scripted">Scripted</button>
             <button type="button" aria-pressed={config.brain === "llama"} disabled={!brainInfo?.configured} onClick={() => onBrain("llama")} data-testid="qc-brain-llama">llama.cpp</button>
           </Seg>
           <p className="muted" data-testid="qc-brain-state">{!brainInfo?.configured ? "No local model is configured for this lab, so only Scripted is offered." : brainInfo.available ? `${brainInfo.label} answered.` : `llama.cpp is unavailable: ${brainInfo.message || "no reason given"}`}</p>
-          <p className="muted">Both brains only pick a use case from the What to type list; the engine runs it and the reply is written from the run. Neither makes an answer up.</p>
+          <p className="muted">Both brains only pick a use case from the What to type list; the lab runs it and the reply is written from the run. Neither makes an answer up.</p>
         </div>
         <div className="qc__item">
           <p className="kicker">Routing</p>

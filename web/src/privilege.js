@@ -1,7 +1,6 @@
 // "Privilege settings in effect, as this run shows them": what the run's own evidence says about the settings that applied to the call: which
 // agent identity acted, for whom, which groups the person was in, how the scopes were narrowed, where the token is good, for how long, what the
-// gateway checked and what Authorize decided. Read from the tokens and hops the server sent, so it is REAL for a Real run and MOCK for a Mock
-// one. It does NOT read the Privilege objects themselves (whether the agent's federated identity is enabled, who is in its group, the access
+// gateway checked and what Authorize decided. Read from the tokens and hops the server sent. It does NOT read the Privilege objects themselves (whether the agent's federated identity is enabled, who is in its group, the access
 // policy): that needs an admin credential the lab does not hold, and the panel says so.
 export const NOT_SHOWN = "Not read by the lab: whether the agent's federated identity is enabled, who is in its group, and the access policy itself. Those are PingOne Privilege and Agent IAM Core objects; reading them needs an admin credential this lab does not hold.";
 
@@ -46,5 +45,5 @@ export function privilegeOf(run) {
   ];
   const passed = checks ? `${checks.filter((c) => c && c.ok !== false).length} of ${checks.length} gateway checks` : null;
   const summary = [agent ? `agent ${agent}` : null, person ? `for ${person}` : null, got.length && had.length ? `${got.length} of ${had.length} scopes` : null, passed].filter(Boolean).join(" · ");
-  return { source: run.kind === "real" ? "real" : "mock", summary, rows, notShown: NOT_SHOWN };
+  return { summary, rows, notShown: NOT_SHOWN };
 }

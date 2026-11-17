@@ -73,8 +73,8 @@ describe("sequence view", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(detail().getAttribute("aria-label")).toBe("Step 6 detail");
     expect(screen.getByTestId("decision").textContent).toContain("PERMIT");
-    fireEvent.click(screen.getByRole("button", { name: "Mock IdP actor details (bottom)" }));
-    expect(screen.getByRole("dialog", { name: "Mock IdP actor details" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Identity provider actor details (bottom)" }));
+    expect(screen.getByRole("dialog", { name: "Identity provider actor details" })).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -154,7 +154,7 @@ describe("movie reel", () => {
   test("one frame per hop with number, lane, title, the one fact and a status word; clicking a frame opens its detail", () => {
     render(<Harness hops={UC1_RUN} view="reel" />);
     const f4 = screen.getByTestId("frame-4");
-    expect(f4.textContent).toBe("4Mock IdPExchangescope narrowed 4 → 1done");
+    expect(f4.textContent).toBe("4Identity providerExchangescope narrowed 4 → 1done");
     fireEvent.click(f4);
     expect(f4.getAttribute("aria-current")).toBe("step");
     expect(detail().getAttribute("aria-label")).toBe("Step 4 detail");

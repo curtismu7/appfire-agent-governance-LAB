@@ -27,7 +27,7 @@ test('signatures are randomised (so a token\'s third segment differs) but the si
   assert.deepEqual(a.slice(0, 2), b.slice(0, 2)); assert.notEqual(a[2], b[2]);
 });
 
-test('the token view is labelled MOCK with a notice, the raw token and the decoded header and claims', () => {
-  const v = tokenView('user token (MOCK)', signMockJwt({ sub: 's' }));
-  assert.equal(v.mock, true); assert.match(v.notice, /MOCK token/); assert.equal(v.claims.sub, 's'); assert.equal(v.header.alg, 'ES256'); assert.match(v.raw, /^eyJ/);
+test('the token view carries mock:true in the data, a neutral notice, the raw token and the decoded header and claims', () => {
+  const v = tokenView('user token', signMockJwt({ sub: 's' }));
+  assert.equal(v.mock, true); assert.equal(v.notice, 'Shown raw for teaching.'); assert.equal(v.claims.sub, 's'); assert.equal(v.header.alg, 'ES256'); assert.match(v.raw, /^eyJ/);
 });

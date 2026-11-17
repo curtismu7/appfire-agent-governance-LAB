@@ -37,4 +37,4 @@ export function verifyMockJwt(jwt) {
 }
 
 // What the UI shows for a token: the raw JWT (rule 4: tokens are shown raw, education) plus the decoded header and claims, all labelled MOCK.
-export const tokenView = (label, signed) => ({ label, mock: true, notice: 'MOCK token, issued by this lab and signed with a public mock key', raw: signed.jwt, header: signed.header, claims: signed.claims });
+export const tokenView = (label, signed) => ({ label, mock: true, notice: 'Shown raw for teaching.', raw: signed.jwt, header: signed.header, claims: signed.claims });

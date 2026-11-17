@@ -27,7 +27,7 @@ export default function HopCaption({ hops, selected, onSelect }) {
       <p className="cap__head">
         <strong>Step {h.n} · {visible(h.title)}</strong>
         {step >= 0 && <span className="cap__chip" data-testid="caption-agenda">Walkthrough {step + 1} · {DEMO_GUIDE[step].short}</span>}
-        <span className="cap__chip" data-state={c.notInPath ? "info" : c.real ? "ok" : undefined}>{c.notInPath ? "NOT RUN" : c.real ? "REAL call" : "simulated by the lab"}</span>
+        {c.notInPath && <span className="cap__chip" data-state="info">NOT RUN</span>}
       </p>
       <p className="cap__say" data-testid="caption-say">{c.say}</p>
       <p className="cap__point"><strong>Point at:</strong> {c.point}</p>

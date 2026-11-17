@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import App, { BANNER_UNKNOWN, BASE_NAV } from "./App";
+import App, { BASE_NAV } from "./App";
 import { forgetWorkspace } from "./workspace";
 import { DEMO_GUIDE } from "./demoGuide";
-import { catalog, INSTR, mockApi, RAW, runBody, STORY } from "./testFixtures";
+import { BANNER_HOSTED_TEXT, BANNER_LOCAL_TEXT, catalog, INSTR, mockApi, RAW, runBody, STORY } from "./testFixtures";
 import AgentInstructions from "./components/AgentInstructions";
 
 let api;
@@ -13,7 +13,7 @@ const boot = async (state) => {
   vi.stubGlobal("fetch", api);
   const view = render(<App />);
   await screen.findByTestId("uc-UC1");
-  await waitFor(() => expect(screen.getByTestId("banner").textContent).toMatch(/^SIMULATED, MOCK mode/));
+  await waitFor(() => expect(screen.getByTestId("mode").getAttribute("data-mode")).toBe(state?.mode || "mock"));
   return view;
 };
 const pick = async (id) => { const u = userEvent.setup(); await u.click(screen.getByTestId(`uc-${id}`)); return u; };
@@ -24,28 +24,54 @@ beforeEach(() => { window.location.hash = ""; window.sessionStorage.clear(); win
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("header, banner and side nav", () => {
-  test("the banner is never blank and does not claim a mode before it knows", async () => {
+  test("the banner is never blank: before the server answers it already says the one neutral line", async () => {
     api = mockApi(); vi.stubGlobal("fetch", () => new Promise(() => {}));
     render(<App />);
-    expect(screen.getByTestId("banner").textContent).toBe(BANNER_UNKNOWN);
-    expect(BANNER_UNKNOWN).toMatch(/MOCK mode, REAL only in REAL mode/);
+    expect(screen.getByTestId("banner").textContent).toBe(BANNER_LOCAL_TEXT);
+    expect(screen.getByTestId("banner").getAttribute("data-state")).toBe("info");
   });
 
-  test("the hosted build shows the server's hosted and simulated banner, not the mode banner", async () => {
-    const hostedBanner = "HOSTED AND SIMULATED: this is the hosted copy of the lab, mock only.";
-    api = mockApi({ info: { hosted: true, hostedBanner } });
+  test("the banner is the same neutral line in every mode: it names no mode and says what is represented", async () => {
+    await boot();
+    expect(screen.getByTestId("banner").textContent).toBe(BANNER_LOCAL_TEXT);
+    expect(screen.getByTestId("banner").getAttribute("data-state")).toBe("info");
+    cleanup();
+    await boot({ mode: "live", live: "allowed" });
+    expect(screen.getByTestId("banner").textContent).toBe(BANNER_LOCAL_TEXT);
+    expect(screen.getByTestId("banner").getAttribute("data-state")).toBe("info");
+    expect(BANNER_LOCAL_TEXT).not.toMatch(/mock|simulat|real\b|live\b|mode|offline|engine/i);
+  });
+
+  test("the hosted build shows the server's hosted banner, with data-state hosted", async () => {
+    api = mockApi({ info: { hosted: true, hostedBanner: BANNER_HOSTED_TEXT } });
     vi.stubGlobal("fetch", api);
     render(<App />);
     await screen.findByTestId("uc-UC1");
-    await waitFor(() => expect(screen.getByTestId("banner").textContent).toBe(hostedBanner));
+    await waitFor(() => expect(screen.getByTestId("banner").textContent).toBe(BANNER_HOSTED_TEXT));
     expect(screen.getByTestId("banner").getAttribute("data-state")).toBe("hosted");
+    expect(BANNER_HOSTED_TEXT).not.toMatch(/mock|simulat|real\b|mode|offline|engine/i); // "No tenant or live system is reached" is the owner's sentence
   });
 
-  test("header: app name, Mock | Live toggle, mode chip, workspace id, theme picker, Reset, Presenter", async () => {
+  test("a hosted page that has not heard from the server yet keeps the banner the server put in the HTML", async () => {
+    const served = document.createElement("p");
+    served.setAttribute("data-testid", "banner"); served.setAttribute("data-state", "hosted"); served.textContent = BANNER_HOSTED_TEXT;
+    document.body.appendChild(served);
+    try {
+      vi.stubGlobal("fetch", () => new Promise(() => {}));
+      render(<App />);
+      expect(screen.getAllByTestId("banner").find((b) => b !== served).textContent).toBe(BANNER_HOSTED_TEXT);
+    } finally { served.remove(); }
+  });
+
+  test("header: app name, workspace id, theme picker, Reset, Presenter; no Mock | Real control, no mode chip, no Mode: text", async () => {
     await boot();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appfire Agent Governance LAB");
-    expect(screen.getByTestId("mode-select").value).toBe("mock");
-    expect(screen.getByTestId("mode").textContent).toMatch(/Mode: mock/);
+    expect(screen.queryByTestId("mode-select")).toBeNull();
+    expect(screen.queryByTestId("real-hosted-note")).toBeNull();
+    expect(screen.getByTestId("mode").textContent).toBe(""); // the hidden marker holds the mode as data, no words
+    expect(screen.getByTestId("mode").hasAttribute("hidden")).toBe(true);
+    expect(screen.getByTestId("mode-real")).toBeTruthy(); // rule 19: the conformance gate greps for it
+    expect(document.querySelector("header").textContent).not.toMatch(/Mode:|Mock|Real\b/);
     expect(screen.getByTestId("workspace").textContent).toMatch(/^Workspace: w-[0-9a-f]{16}$/);
     expect(screen.getByTestId("theme-select").value).toBe("auto");
     expect(screen.getByTestId("reset")).toBeTruthy();
@@ -122,7 +148,7 @@ describe("use case picker", () => {
 });
 
 describe("run view", () => {
-  test("Run posts the use case, vertical, persona and a W3C traceparent, then shows outcome, hops, and MOCK tokens raw and decoded", async () => {
+  test("Run posts the use case, vertical, persona and a W3C traceparent, then shows outcome, hops, and the tokens raw and decoded", async () => {
     await boot();
     const u = await pick("UC1");
     expect(screen.getByTestId("run-title").textContent).toBe("Delegated access (consent only)");
@@ -132,14 +158,16 @@ describe("run view", () => {
     expect(post.body).toEqual({ vertical: "software", persona: "premium" });
     expect(post.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
     expect(screen.getByTestId("outcome").textContent).toBe("PERMIT");
-    expect(screen.getByTestId("matches").textContent).toBe("engine result matches the catalog label");
+    expect(screen.getByTestId("matches").textContent).toBe("matches the catalog label");
+    expect(screen.queryByText(/^mode:/)).toBeNull();
     // One hop view for every run (owner 2026-11-14): the Sequence in the evidence column, no second list of collapsed hops under the result.
     expect(screen.queryByTestId("hop")).toBeNull(); expect(screen.queryByTestId("hops-toggle")).toBeNull();
     expect(screen.getAllByTestId(/^row-\d+$/).map((r) => r.getAttribute("data-testid"))).toEqual(["row-1", "row-2", "row-3", "row-4"]);
     expect(screen.getByTestId("run-traceparent").textContent).toMatch(/^00-a{32}-b{16}-01$/);
     await u.click(screen.getByTestId("evtab-tokens"));
     const token = screen.getByTestId("token");
-    expect(within(token).getByTestId("mock-tag").textContent).toBe("MOCK"); // a mock TOKEN keeps its chip (rule 4: mock-issued tokens are labelled), unlike the hop chips
+    expect(within(token).queryByTestId("mock-tag")).toBeNull(); // no MOCK / REAL / LIVE chip on a token (owner 2026-11-16): the data (token.mock, the claims) identifies it
+    expect(within(token).getByRole("heading").textContent).toBe("user token");
     expect(within(token).getByTestId("token-raw").textContent).toBe(RAW);
     expect(within(token).getByTestId("token-claims").textContent).toMatch(/sub\s*alex\.morgan/); // Formatted is a form: a label and a value box per claim
     await u.click(within(token).getByTestId("token-claims-raw"));
@@ -176,7 +204,7 @@ describe("run view", () => {
     await boot({ runAnswer: () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true, run: { ...runBody().run, outcome: "DENY", matchesExpected: false } }) }) });
     const u = await pick("UC1");
     await runIt(u);
-    expect(screen.getByTestId("matches").textContent).toBe("engine result differs from the catalog label");
+    expect(screen.getByTestId("matches").textContent).toBe("differs from the catalog label");
     expect(screen.getByTestId("outcome").getAttribute("data-state")).toBe("bad");
   });
 
@@ -193,10 +221,11 @@ describe("run view", () => {
     expect(screen.getByTestId("lab-inputs").textContent).toMatch(/Nothing special/);
   });
 
-  test("a flag-gated use case names the live feature it needs", async () => {
+  test("a flag-gated use case shows its flag as a tag in the list and no note about a live feature", async () => {
     await boot();
     await pick("UC9");
-    expect(screen.getByTestId("flag-note").textContent).toMatch(/Needs live feature ff_authorize_group_policy/);
+    expect(screen.getByTestId("uc-UC9").textContent).toMatch(/flag: ff_authorize_group_policy/);
+    expect(screen.queryByTestId("flag-note")).toBeNull();
   });
 
   test("a stub vertical shows the honest not built state when the API answers 501", async () => {
@@ -211,8 +240,8 @@ describe("run view", () => {
     expect(r.textContent).toMatch(/HTTP 501/);
     expect(r.textContent).toMatch(/data stub/);
     expect(screen.queryByTestId("result")).toBeNull();
-    // the story for a stub is 501 as well: the last good banner stays
-    expect(screen.getByTestId("banner").textContent).toMatch(/^SIMULATED, MOCK mode/);
+    // the story for a stub is 501 as well: the banner is the same neutral line
+    expect(screen.getByTestId("banner").textContent).toBe(BANNER_LOCAL_TEXT);
   });
 
   test("a trigger that is a link in the product is shown as a plain label, never as a link", async () => {
@@ -300,130 +329,100 @@ describe("extra pages (opens)", () => {
   });
 });
 
-describe("mode toggle", () => {
-  const NOTE = "Mock only on the hosted copy. Run the lab locally for Real.";
+describe("the opening mode is the server's: no Mock | Real control anywhere", () => {
   const bootHosted = async () => {
-    api = mockApi({ info: { hosted: true, hostedBanner: "HOSTED AND SIMULATED: test." } });
+    api = mockApi({ info: { hosted: true, hostedBanner: BANNER_HOSTED_TEXT } });
     vi.stubGlobal("fetch", api);
     render(<App />);
     await screen.findByTestId("uc-UC1");
-    await waitFor(() => expect(screen.getByTestId("mode-select").querySelector('option[value="real"]').disabled).toBe(true));
+    await waitFor(() => expect(screen.getByTestId("mode").getAttribute("data-mode")).toBe("mock"));
   };
   const modePosts = () => api.calls.filter((c) => c.path === "/api/mode" && c.method === "POST");
 
-  test("hosted: Real is disabled with the note beside it; a click or Enter makes no /api/mode call and shows no error", async () => {
+  test("hosted: no mode select, no note about Real, no Quick Config mode, and the page never calls POST /api/mode", async () => {
     await bootHosted();
     const u = userEvent.setup();
-    const real = screen.getByTestId("mode-select").querySelector('option[value="real"]');
-    expect(real.disabled).toBe(true);
-    const note = screen.getByTestId("real-hosted-note");
-    expect(note.textContent).toBe(NOTE);
-    await u.click(screen.getByTestId("mode-select"));
-    fireEvent.change(screen.getByTestId("mode-select"), { target: { value: "real" } }); // a disabled option sends nothing
-    expect(modePosts()).toHaveLength(0);
-    expect(screen.queryByTestId("mode-msg")).toBeNull();
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByTestId("mode-select").value).toBe("mock");
-    expect(screen.getByTestId("mode").textContent).toMatch(/Mode: mock/);
-  });
-
-  test("hosted: the Quick Config Real is disabled the same way, with the same note", async () => {
-    await bootHosted();
-    const u = userEvent.setup();
-    await u.click(screen.getByTestId("qc-open"));
-    const real = await screen.findByTestId("qc-mode-real");
-    expect(real.hasAttribute("disabled")).toBe(true);
-    expect(real.getAttribute("aria-disabled")).toBe("true");
-    expect(screen.getByTestId("qc-real-hosted-note").textContent).toBe(NOTE);
-    await u.click(real);
-    fireEvent.click(real);
-    expect(modePosts()).toHaveLength(0);
-    expect(screen.queryByTestId("mode-msg")).toBeNull();
-  });
-
-  test("local, Real configured: Real is enabled, no note, asks the server with POST /api/mode source real", async () => {
-    await boot({ live: "allowed" });
-    const u = userEvent.setup();
-    const real = screen.getByTestId("mode-select").querySelector('option[value="real"]');
-    expect(real.disabled).toBe(false);
+    expect(screen.queryByTestId("mode-select")).toBeNull();
     expect(screen.queryByTestId("real-hosted-note")).toBeNull();
-    await u.selectOptions(screen.getByTestId("mode-select"), "real");
-    await screen.findByTestId("mode-msg");
-    expect(modePosts().map((c) => c.body)).toEqual([{ source: "real" }]);
-  });
-
-  test("Real not configured: the Real button is disabled, its tooltip is the server's how-to (what to fill in), a click asks nothing and the page stays in Mock", async () => {
-    await boot();
-    const u = userEvent.setup();
-    const real = screen.getByTestId("mode-select").querySelector('option[value="real"]');
-    await waitFor(() => expect(real.disabled).toBe(true));
-    expect(screen.getByTestId("mode-select").querySelector('option[value="real"]').getAttribute("title")).toMatch(/^Real is not configured: fill PINGONE_ENVIRONMENT_ID, PINGONE_CLIENT_ID, PINGONE_CLIENT_SECRET in this app's \.env/);
-    await u.selectOptions(screen.getByTestId("mode-select"), "mock");
+    await u.click(screen.getByTestId("qc-open"));
+    await screen.findByTestId("quick-config");
+    expect(screen.queryByTestId("qc-mode-mock")).toBeNull();
+    expect(screen.queryByTestId("qc-mode-real")).toBeNull();
+    expect(screen.queryByTestId("qc-real-hosted-note")).toBeNull();
     expect(modePosts()).toHaveLength(0);
     expect(screen.queryByTestId("mode-msg")).toBeNull();
-    expect(screen.getByTestId("mode-select").value).toBe("mock");
-    expect(screen.getByTestId("banner").getAttribute("data-state")).toBe("mock");
+    expect(screen.getByTestId("mode").getAttribute("data-mode")).toBe("mock");
   });
 
-  test("when the guards hold, Live is selected, the banner and chip say live, and a run shows real hops, a masked token and the steps it did not run", async () => {
-    await boot({ live: "allowed" });
+  test("local, Real not configured: the page opens in the server's mode with no control, no message and no POST /api/mode", async () => {
+    await boot();
+    expect(screen.queryByTestId("mode-select")).toBeNull();
+    expect(screen.queryByTestId("qc-mode-real")).toBeNull();
+    expect(modePosts()).toHaveLength(0);
+    expect(screen.queryByTestId("mode-msg")).toBeNull();
+    expect(screen.getByTestId("banner").getAttribute("data-state")).toBe("info");
+  });
+
+  test("local, Real configured: the server opens the workspace in Real and the page follows; the hidden marker carries it as data, no words", async () => {
+    await boot({ mode: "live", live: "allowed" });
+    expect(screen.getByTestId("mode").getAttribute("data-mode")).toBe("live");
+    expect(screen.getByTestId("mode").textContent).toBe("");
+    expect(screen.queryByTestId("mode-select")).toBeNull();
+    expect(screen.getByTestId("banner").textContent).toBe(BANNER_LOCAL_TEXT);
+    expect(screen.getByTestId("banner").getAttribute("data-state")).toBe("info");
+    expect(modePosts()).toHaveLength(0);
+  });
+
+  test("a run that reaches the identity provider only is shown like any other run: no tag, no mode chip, the not-run steps and what the persona is", async () => {
+    await boot({ mode: "live", live: "allowed" });
     const u = userEvent.setup();
-    await u.selectOptions(screen.getByTestId("mode-select"), "real");
-    await waitFor(() => expect(screen.getByTestId("mode").textContent).toMatch(/Mode: live/));
-    expect(screen.getByTestId("mode").textContent).toMatch(/identity provider only/);
-    expect(screen.getByTestId("banner").textContent).toMatch(/^LIVE mode/);
-    expect(screen.getByTestId("banner").getAttribute("data-state")).toBe("live");
-    expect(screen.getByTestId("mode-msg").textContent).toMatch(/two real calls to your PingOne environment/);
     await u.click(screen.getByTestId("uc-UC1"));
-    expect(screen.getByTestId("live-persona-note")).toBeTruthy();
+    expect(screen.getByTestId("live-persona-note").textContent).toBe("This run reaches the identity provider only; the persona is not used.");
     expect(screen.queryByTestId("persona")).toBeNull(); expect(screen.queryByTestId("lab-inputs")).toBeNull();
     await runIt(u);
     expect(screen.getByTestId("outcome").textContent).toBe("LIVE_OK");
-    expect(screen.getByTestId("live-note-tag").textContent).toBe("live, identity provider only");
+    expect(screen.queryByTestId("live-note-tag")).toBeNull(); expect(screen.queryByTestId("real-note-tag")).toBeNull();
     expect(screen.queryByTestId("matches")).toBeNull(); expect(screen.queryByTestId("guided-note")).toBeNull();
+    expect(screen.getByTestId("result").textContent).not.toMatch(/mode:|persona:/);
     expect(screen.getAllByTestId(/^row-\d+$/)).toHaveLength(2);
-    expect(within(screen.getByTestId("hop-sources")).getAllByTestId("hop-source").map((x) => x.getAttribute("data-source"))).toEqual(["real", "real"]);
+    expect(screen.queryByTestId("hop-sources")).toBeNull();
     const not = screen.getByTestId("not-run");
-    expect(not.textContent).toMatch(/Not run in live mode \(3 steps/); expect(not.textContent).toMatch(/identity provider only/); expect(within(not).getAllByRole("listitem").map((x) => x.textContent)).toEqual(["user-token", "token-exchange", "tool-dispatched"]);
+    expect(not.textContent).toMatch(/^Not run \(3 steps/); expect(not.textContent).not.toMatch(/live mode/i); expect(within(not).getAllByRole("listitem").map((x) => x.textContent)).toEqual(["user-token", "token-exchange", "tool-dispatched"]);
     await u.click(screen.getByTestId("evtab-tokens"));
-    expect(within(screen.getByTestId("token")).queryByTestId("live-tag")).toBeNull(); expect(within(screen.getByTestId("token")).queryByTestId("mock-tag")).toBeNull(); // a pure live run: no LIVE chip either
+    expect(within(screen.getByTestId("token")).queryByTestId("live-tag")).toBeNull(); expect(within(screen.getByTestId("token")).queryByTestId("mock-tag")).toBeNull();
     expect(screen.getByTestId("tokens").textContent).toMatch(/Raw token/); expect(screen.getByTestId("token-raw").textContent).toBe("eyJhbG...ab12");
-    expect(screen.getByTestId("run-announce").textContent).toBe("t finished: LIVE_OK, live, identity provider only.");
+    expect(screen.getByTestId("run-announce").textContent).toBe("t finished: LIVE_OK.");
     await u.click(screen.getByTestId("nav-runs"));
-    expect(screen.getByTestId("history-row").textContent).toMatch(/n\/a \(live\).*LIVE_OK.*live, identity provider only/);
-    await u.selectOptions(screen.getByTestId("mode-select"), "mock");
-    await waitFor(() => expect(screen.getByTestId("mode").textContent).toMatch(/Mode: mock/));
+    expect(screen.getByTestId("history-row").textContent).toMatch(/n\/a.*LIVE_OK.*not compared with the catalog label/);
   });
 
-  test("a live run is not mixed up with a mock run of the same use case, and a live run opens no extra page", async () => {
-    await boot({ live: "allowed" });
+  test("a run in the server's Real mode opens no extra page", async () => {
+    await boot({ mode: "live", live: "allowed" });
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("uc-UC1"));
-    await runIt(u);
-    expect(screen.getByTestId("outcome").textContent).toBe("PERMIT");
-    const tabsAfterMock = within(screen.getByTestId("nav")).getAllByRole("tab").length;
-    await u.selectOptions(screen.getByTestId("mode-select"), "real");
-    await waitFor(() => expect(screen.getByTestId("mode").textContent).toMatch(/Mode: live/));
-    expect(screen.queryByTestId("result")).toBeNull();
+    const tabs = within(screen.getByTestId("nav")).getAllByRole("tab").length;
+    await u.click(screen.getByTestId("uc-UC7")); // opens the Human approval page when a run of it succeeds on the engine
     await runIt(u);
     expect(screen.getByTestId("outcome").textContent).toBe("LIVE_OK");
-    await u.click(screen.getByTestId("uc-UC7")); // opens the Human approval page when a MOCK run of it succeeds
-    await runIt(u);
-    expect(screen.getByTestId("outcome").textContent).toBe("LIVE_OK");
-    expect(within(screen.getByTestId("nav")).getAllByRole("tab")).toHaveLength(tabsAfterMock);
+    expect(within(screen.getByTestId("nav")).getAllByRole("tab")).toHaveLength(tabs);
     expect(screen.queryByTestId("nav-page-approval")).toBeNull();
   });
 
-  test("a live run the lab cannot make says why in the server's words (not set up: 503)", async () => {
-    await boot({ live: "allowed", liveConfigured: false });
+  test("a run the lab cannot make says why in the server's words (not set up: 503), with no word about a mode", async () => {
+    await boot({ mode: "live", live: "allowed", liveConfigured: false });
     const u = userEvent.setup();
-    await u.selectOptions(screen.getByTestId("mode-select"), "real");
-    await waitFor(() => expect(screen.getByTestId("mode").textContent).toMatch(/Mode: live/));
     await u.click(screen.getByTestId("uc-UC1"));
     await runIt(u);
     const r = screen.getByTestId("refusal");
     expect(r.getAttribute("data-code")).toBe("live_not_configured"); expect(r.getAttribute("data-state")).toBe("warn");
-    expect(r.textContent).toMatch(/Real is not set up.*HTTP 503.*PINGONE_ENVIRONMENT_ID/);
+    expect(r.textContent).toMatch(/Not set up.*HTTP 503.*PINGONE_ENVIRONMENT_ID/);
+    expect(r.textContent).not.toMatch(/Switch to Mock|Real is/);
+  });
+
+  test("when the server does not answer for the mode, the page says so in words, not in a mode chip", async () => {
+    vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
+    render(<App />);
+    await waitFor(() => expect(screen.getByTestId("mode-msg").textContent).toBe("Server did not answer."));
+    expect(screen.getByTestId("mode").getAttribute("data-mode")).toBe("");
   });
 });
 
@@ -452,7 +451,7 @@ describe("theme, presenter, reset", () => {
     const u = userEvent.setup();
     await u.keyboard("p");
     expect(screen.queryByTestId("nav")).toBeNull();
-    expect(screen.getByTestId("banner").textContent).toMatch(/^SIMULATED, MOCK mode/);
+    expect(screen.getByTestId("banner").textContent).toBe(BANNER_LOCAL_TEXT);
     expect(screen.getByTestId("banner")).toBeVisible();
     expect(screen.getByTestId("presenter").getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("presenter-say").textContent).toMatch(/Appfire today: the split between HIVE and Ping/);
@@ -469,7 +468,7 @@ describe("theme, presenter, reset", () => {
     const u = userEvent.setup();
     for (const id of ["runs", "diagram", "talk", "agent"]) {
       await u.click(screen.getByTestId(`nav-${id}`));
-      expect(screen.getByTestId("banner").textContent).toMatch(/SIMULATED, MOCK mode/);
+      expect(screen.getByTestId("banner").textContent).toBe(BANNER_LOCAL_TEXT);
     }
   });
 
@@ -607,7 +606,7 @@ describe("fix pass 2026-11-01", () => {
     expect(screen.getByTestId("agent-status").querySelector(".spin")).toBeNull();
   });
 
-  test("the header has no REAL / MOCK pill beside the title: the Mode switch and the banner already say it", async () => {
+  test("the header has no REAL / MOCK pill beside the title and no Mode switch", async () => {
     await boot({});
     expect(screen.queryByTestId("mode-badge")).toBeNull();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appfire Agent Governance LAB");
@@ -641,18 +640,17 @@ describe("fix pass 2026-11-01", () => {
     expect(screen.getByTestId("result").closest("[aria-live]")).toBeNull();
   });
 
-  test("when the API is unreachable the page says so: unknown mode, no loading text, the unknown banner", async () => {
+  test("when the API is unreachable the page says so: no mode claimed, no loading text, the same neutral banner", async () => {
     vi.stubGlobal("fetch", () => Promise.reject(new TypeError("Failed to fetch")));
     render(<App />);
     await screen.findByRole("alert");
     expect(screen.getByRole("alert").textContent).toMatch(/Could not load the lab \(Failed to fetch\)/);
-    await waitFor(() => expect(screen.getByTestId("mode").textContent).toMatch(/Mode: unknown \(server did not answer\)/));
-    expect(screen.getByTestId("mode").textContent).not.toMatch(/mock/);
+    await waitFor(() => expect(screen.getByTestId("mode-msg").textContent).toBe("Server did not answer."));
+    expect(screen.getByTestId("mode").getAttribute("data-mode")).toBe("");
     expect(screen.getByTestId("search-count").textContent).toBe("Use cases unavailable");
     expect(screen.getByTestId("catalog-failed")).toBeTruthy();
     expect(screen.queryByText(/Loading the use cases/)).toBeNull();
-    expect(screen.getByTestId("banner").textContent).toBe(BANNER_UNKNOWN);
-    expect(screen.getByTestId("mode-select").value).toBe("mock");
+    expect(screen.getByTestId("banner").textContent).toBe(BANNER_LOCAL_TEXT);
   });
 
   test("a dead server on Run says no answer, never 'HTTP 0' or 'Refused'", async () => {
@@ -666,15 +664,14 @@ describe("fix pass 2026-11-01", () => {
     expect(r.textContent).not.toMatch(/HTTP 0|Refused/);
   });
 
-  test("Reset asks the server for the mode again: a Live-selected page goes back to Mock (W15)", async () => {
-    await boot({ live: "allowed" });
+  test("Reset asks the server for the mode again: a workspace a script switched goes back to the opening mode (W15)", async () => {
+    await boot({ mode: "live", live: "allowed" });
     const u = userEvent.setup();
-    await u.selectOptions(screen.getByTestId("mode-select"), "real");
-    await waitFor(() => expect(screen.getByTestId("mode").textContent).toMatch(/Mode: live/));
+    api.state.mode = "mock"; // a script made POST /api/mode source mock; the page only learns it when it asks
     await u.click(screen.getByTestId("reset"));
-    await waitFor(() => expect(screen.getByTestId("mode").textContent).toMatch(/Mode: mock/));
-    expect(screen.getByTestId("mode-select").value).toBe("mock");
-    expect(screen.getByTestId("banner").getAttribute("data-state")).toBe("mock");
+    await waitFor(() => expect(screen.getByTestId("mode").getAttribute("data-mode")).toBe("live"));
+    expect(api.calls.filter((c) => c.path === "/api/mode" && c.method === "GET").length).toBeGreaterThan(1);
+    expect(screen.getByTestId("banner").getAttribute("data-state")).toBe("info");
   });
 
   test("a late catalog for a vertical the visitor has left is dropped (W6)", async () => {
@@ -712,7 +709,7 @@ describe("decision card and the session walkthrough (agenda)", () => {
     expect(card.getAttribute("data-verdict")).toBe("allowed");
     expect(screen.getByTestId("decision-word").textContent).toBe("ALLOWED");
     expect(screen.getByTestId("decision-fields").querySelectorAll("dt")).toHaveLength(5);
-    expect(card.compareDocumentPosition(screen.getByTestId("hop-sources")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(screen.getByTestId("evidence-why")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   test("a denied run says DENIED and that nothing was dispatched; a guided run says it decided nothing", async () => {
@@ -877,7 +874,7 @@ describe("risk strip and compare page", () => {
     expect(screen.queryByTestId("risk-strip")).toBeNull();
   });
 
-  test("Compare opens #compare, runs the first pair fresh in Mock (mode: mock on every call), and shows both decisions with the rows that differ marked", async () => {
+  test("Compare opens #compare, runs the first pair fresh on the lab (mode: mock on every call, still sent as the request body), and shows both decisions with the rows that differ marked", async () => {
     await boot({ runAnswer: byId({ UC31: { outcome: "DENY" } }) });
     const u = userEvent.setup();
     await u.click(screen.getByTestId("open-compare"));
@@ -955,7 +952,7 @@ describe("agent instructions and privilege settings", () => {
     expect(screen.getByTestId("instructions-note").textContent).toMatch(/LAB-INVENTED/);
   });
 
-  test("a Mock run sends the instructions only when they were edited; the default sends none", async () => {
+  test("a run sends the instructions only when they were edited; the default sends none", async () => {
     await boot();
     const u = await pick("UC1");
     await runIt(u);
@@ -967,9 +964,9 @@ describe("agent instructions and privilege settings", () => {
     expect(posts().at(-1).body.instructions).toBe(INSTR.presets[1].text);
   });
 
-  test("in Real mode the panel says the instructions are not sent", () => {
-    render(<AgentInstructions config={INSTR} text={null} onText={() => {}} mode="live" />);
-    expect(screen.getByTestId("instructions-note").textContent).toMatch(/Real runs do not send these/);
+  test("the panel has one note, the same whatever the mode: the override phrases are lab-invented and policy decides from the call", () => {
+    render(<AgentInstructions config={INSTR} text={null} onText={() => {}} />);
+    expect(screen.getByTestId("instructions-note").textContent).toBe("The agent obeys override phrases (LAB-INVENTED) on the lab's own steps and in Compare, not on a run made as the signed-in person. Policy decides from the call, never from the instructions.");
   });
 
   test("a steered run says so on the decision card, and the card still reports the policy's decision", async () => {
@@ -996,7 +993,7 @@ describe("agent instructions and privilege settings", () => {
     expect(screen.queryByTestId("privilege-panel")).toBeNull();
   });
 
-  test("Compare has a careful-vs-poisoned preset: it loads the preset text and runs the same use case twice, once with the poisoned instructions, in Mock", async () => {
+  test("Compare has a careful-vs-poisoned preset: it loads the preset text and runs the same use case twice, once with the poisoned instructions", async () => {
     await boot({ runAnswer: (id, body) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true, run: { ...runBody(id).run, ...(body.instructions ? { outcome: "DENY", matchesExpected: null, steered: { asked: { tool: "get_account_balance", amount: null }, proposed: { tool: "create_transfer", amount: 2500 }, reasons: ["ignore all"] } } : {}) } }) }) });
     const u = userEvent.setup();
     await u.click(screen.getByTestId("open-compare"));

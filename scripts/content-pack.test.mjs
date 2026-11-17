@@ -41,5 +41,7 @@ test('the pack has a Why-it-matters entry, names no real company, tenant or docu
   assert.ok(!/\bdoor\b/.test(t)); assert.ok(!t.includes('sk-mock'));
   const d = pack.cards.find((c) => c.id === 'concept-why-appfire-agent-governance').description;
   for (const w of ['Challenge:', 'Technical:', 'Business:', 'not a Ping claim']) assert.ok(d.includes(w), w);
-  for (const g of pack.glossary) assert.ok(/Simulated in mock|MOCK/.test(g.definition), g.id);
+  for (const g of pack.glossary) assert.doesNotMatch(`${g.term} ${g.definition} ${(g.aliases || []).join(' ')}`, /mock|simulat|offline/i, `${g.id}: no definition says mock, simulated or offline (owner 2026-11-16)`);
+  for (const c of pack.cards) assert.doesNotMatch(`${c.id} ${c.label} ${c.description}`, /mock|simulat|offline/i, c.id);
+  assert.ok(!pack.demo.tags.includes('simulated'), 'the pack no longer tags itself simulated');
 });

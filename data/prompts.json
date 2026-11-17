@@ -14,7 +14,7 @@
    { "uc": "UC35", "text": "Explain why my last blocked bulk edit was denied and walk me through the token chain" },
    { "uc": "UC24", "text": "Which Marketplace apps work with Jira Cloud?" },
    { "uc": "UC2", "text": "hand off the release summary to the release specialist" },
-   { "uc": "UC2.6", "text": "simulate an unregistered agent summarising my release" },
+   { "uc": "UC2.6", "text": "send an unregistered agent to summarise my release" },
    { "uc": "UC13", "text": "let an unregistered release bot approve this deployment for me" },
    { "uc": "UC28", "text": "Can you give me site admin on our Jira site?" },
    { "uc": "UC30", "text": "run the code-scanner MCP server on the Platform repository" },

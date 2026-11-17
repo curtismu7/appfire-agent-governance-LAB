@@ -1,5 +1,5 @@
-// Deployment configuration. AAG_LAB_MODE is the DEFAULT mode a new workspace opens in (mock or live). Mock is the default. Anything else is an error,
-// never a silent fallback. The app's own .env (settings.js) may carry AAG_LAB_MODE. A bare MODE is NOT read:
+// Deployment configuration. AAG_LAB_MODE is the DEFAULT mode a new workspace opens in (mock or live). Set explicitly it always wins; unset or empty, the lab
+// derives it (openingMode below): Real when the full Real settings are present, otherwise the engine. Anything else is an error, never a silent fallback. The app's own .env (settings.js) may carry AAG_LAB_MODE. A bare MODE is NOT read:
 // Docker passes the whole .env into the container (env_file), and a generic MODE must not switch this lab.
 // AAG_DEPLOY_MODE says where the lab runs: local (the default: a clone or local Docker) or hosted (the mock-only SE k8s build of the same image,
 // rulebook section 6). Hosted is mock only: live, the llama.cpp brain and the app's .env are refused or ignored. It is set in the pod
@@ -19,6 +19,16 @@ export function modeFrom(env = process.env) {
   if (!MODES.includes(m)) throw new Error(`AAG_LAB_MODE=${String(m).slice(0, 20)} is not available: use mock or live`);
   if (m !== 'mock' && deployModeFrom(env) === 'hosted') throw new Error('the hosted build is mock only: AAG_LAB_MODE must be mock');
   return m;
+}
+// The opening mode (owner, 2026-11-16: "everything should be real mode"). An explicit AAG_LAB_MODE=mock|live wins and keeps modeFrom's validation (hosted +
+// live throws). Unset or empty: live only when the full Real settings are present, this is not the hosted build and nothing refuses Real (the live guard);
+// otherwise mock. Pure: index.js passes what it already computed.
+// An explicit live is honoured only while some Real path is usable (liveUsable: the full chain or the identity-provider-only client, with no refusing guard);
+// otherwise the page, which has no control to leave Real, would show nothing but refusals, so the lab opens on its own steps and index.js says so.
+export function openingMode(env = process.env, { hosted = deployModeFrom(env) === 'hosted', realFull = false, liveRefusal = null, liveUsable = true } = {}) {
+  const raw = env.AAG_LAB_MODE;
+  if (raw !== undefined && raw !== '') { const m = modeFrom(env); return m === 'live' && liveUsable === false ? 'mock' : m; }
+  return !hosted && realFull === true && !liveRefusal ? 'live' : 'mock';
 }
 export const defaultMode = () => modeFrom(process.env);
 export const modeOf = (v) => (typeof v === 'string' && MODES.includes(v) ? v : null);

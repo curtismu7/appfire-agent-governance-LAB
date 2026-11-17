@@ -7,8 +7,8 @@ export const ACTORS = {
   page: { label: "Page", initials: "PG", lane: "page", role: "The web page the agent is embedded in.", sees: "what the customer types and the agent's replies", never: "tokens or secrets" },
   agent: { label: "Agent", initials: "AG", lane: "agent", role: "The AI agent. It plans the call and asks the back end to run a tool for the customer.", sees: "the customer's request and the tool result", never: "the customer's password or token" },
   bff: { label: "BFF", initials: "BF", lane: "bff", role: "The back end for the front end. A confidential client that keeps the tokens on the server and asks for the exchange.", sees: "the user token, the agent token and the exchanged token", never: "the customer's password" },
-  idp: { label: "Mock IdP", initials: "ID", lane: "idp", role: "The identity provider (mock). It signs the customer in, records consent and issues and exchanges tokens.", sees: "credentials at sign-in and every token it issues", never: "what the tool returns" },
-  pingone: { label: "PingOne", initials: "P1", lane: "idp", role: "PingOne, the real identity provider. It signs the user in (pi.flow), then issues the agent's token and runs both RFC 8693 token exchanges (the first stamps act = the agent).", sees: "credentials at sign-in (the password goes to it once) and every token it issues", never: "what the tool returns" },
+  idp: { label: "Identity provider", initials: "ID", lane: "idp", role: "The identity provider. It signs the customer in, records consent and issues and exchanges tokens.", sees: "credentials at sign-in and every token it issues", never: "what the tool returns" },
+  pingone: { label: "PingOne", initials: "P1", lane: "idp", role: "PingOne, the identity provider. It signs the user in (pi.flow), then issues the agent's token and runs both RFC 8693 token exchanges (the first stamps act = the agent).", sees: "credentials at sign-in (the password goes to it once) and every token it issues", never: "what the tool returns" },
   "mcp-as": { label: "MCP auth server", initials: "MA", lane: "mcp-as", role: "The authorization server in front of the MCP server.", sees: "the grant it redeems", never: "the user's password" },
   gateway: { label: "Gateway", initials: "GW", lane: "gateway", role: "Checks every call before a tool sees it: signature, audience, expiry, act, scope and edge policy.", sees: "the delegated token and the tool call", never: "the user password or the agent secret" },
   authorize: { label: "Authorize", initials: "AZ", lane: "authorize", role: "The policy decision point. It answers PERMIT, DENY or a step-up for each call.", sees: "subject, actor, action and context", never: "the token itself" },
@@ -18,9 +18,9 @@ export const ACTORS = {
   privilege: { label: "Privilege gateway", initials: "PV", lane: "privilege", role: "The agent gateway leg that checks the agent key and its grants.", sees: "the agent key and the call", never: "the user's password" },
   registry: { label: "Agent registry", initials: "RG", lane: "registry", role: "The list of registered agents and their owners.", sees: "agent ids and owners", never: "tokens" },
   credentials: { label: "Credential store", initials: "CS", lane: "credentials", role: "Holds the downstream credential that is swapped in for the call.", sees: "the stored credential", never: "the user token" },
-  llm: { label: "Agent model", initials: "LM", lane: "llm", role: "The agent's model (here: Scripted intent match, mock). It reads the request and proposes a tool call; the policy decides whether it runs.", sees: "the customer's words and the tools it may call", never: "any token or secret" },
+  llm: { label: "Agent model", initials: "LM", lane: "llm", role: "The agent's model. It reads the request and proposes a tool call; the policy decides whether it runs.", sees: "the customer's words and the tools it may call", never: "any token or secret" },
   api: { label: "Resource server", initials: "RS", lane: "api", role: "The back-end API behind the tool. It checks the delegated token itself and returns the data.", sees: "the delegated token and the request", never: "the user's password or the agent secret" },
-  hive: { label: "HIVE (not called)", initials: "HV", lane: "neutral", represented: true, role: "Appfire's platform. It manages back-end data policy and which MCP servers may be used. This lab never calls it: its side is represented, not run, so no step in any run touches this lane.", sees: "not simulated: the lab never calls it", never: "not simulated" },
+  hive: { label: "HIVE (not called)", initials: "HV", lane: "neutral", represented: true, role: "Appfire's platform. It manages back-end data policy and which MCP servers may be used. This lab never calls it: its side is represented, not run, so no step in any run touches this lane.", sees: "nothing: the lab never calls it", never: "any call from this lab" },
   database: { label: "Database", initials: "DB", lane: "database", role: "The back end's own data store. Only the API talks to it.", sees: "the API's queries", never: "any token" },
 };
 
@@ -57,8 +57,8 @@ export const verdictWord = (v) => VERDICT_WORD[v || "ok"] || String(v);
 export const verdictState = (v) => VERDICT_STATE[v || "ok"] || "info";
 export const STAGE_STATE = { pass: "ok", fail: "bad", skip: "info" };
 
-// The screens show what the server sent. Redaction is the server's job (shared hop-detail): Mock keeps MOCK tokens raw for
-// teaching (rule 4), Real redacts, secrets are always write-only. Control characters become visible escapes (safeText).
+// The screens show what the server sent. Redaction is the server's job (shared hop-detail): Tokens are kept raw for
+// teaching (rule 4), secrets are always write-only. Control characters become visible escapes (safeText).
 export const txt = (v) => visible(v == null ? "" : typeof v === "string" ? v : JSON.stringify(v));
 
 // Preferences outlive a reload; storage can be missing or throw (private mode), so every access is guarded.

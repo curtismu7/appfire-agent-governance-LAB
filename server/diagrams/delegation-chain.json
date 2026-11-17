@@ -2,7 +2,7 @@
   "schema": "diagram-studio/1",
   "id": "delegation-chain",
   "title": "Delegation: from sign-in to a dispatched tool call",
-  "lede": "The customer signs in (mock), consents, and the BFF exchanges the user token and the agent token for a delegated token whose act claim names the agent. The gateway checks it, Authorize decides, and only then does the tool run. Simulated: every token is a labelled MOCK. HIVE, Appfire's own platform, is drawn dashed: its side is represented, not run.",
+  "lede": "The customer signs in, consents, and the BFF exchanges the user token and the agent token for a delegated token whose act claim names the agent. The gateway checks it, Authorize decides, and only then does the tool run. HIVE, Appfire's own platform, is drawn dashed: its side is represented, not run.",
   "groups": {
     "people": {
       "label": "Customer side",
@@ -42,7 +42,7 @@
     },
     {
       "id": "idp",
-      "label": "Identity provider (mock)",
+      "label": "Identity provider",
       "group": "ping",
       "x": 0,
       "y": 300
@@ -80,7 +80,7 @@
     {
       "source": "browser",
       "target": "idp",
-      "label": "mock sign-in as a persona"
+      "label": "sign-in as a persona"
     },
     {
       "source": "browser",
@@ -116,8 +116,8 @@
   ],
   "steps": [
     {
-      "title": "Mock sign-in",
-      "what": "{{castUser}} or {{castUser2}} signs in as a persona. The token is a labelled MOCK, signed with a public mock key.",
+      "title": "Sign-in",
+      "what": "{{castUser}} or {{castUser2}} signs in as a persona.",
       "hop": "sign-in",
       "edges": [
         0

@@ -26,7 +26,7 @@ const rowLabel = (h) => `${h.n} · ${txt(h.title)}${h.verdict && h.verdict !== "
 const labelW = (s) => s.length * CHAR_W + 18;
 const noteW = (s) => Math.max(150, s.length * CHAR_W + 32);
 
-export default function SequenceView({ hops = [], selected = null, onSelect, showSources = true }) {
+export default function SequenceView({ hops = [], selected = null, onSelect }) {
   const uid = useId().replace(/[^A-Za-z0-9]/g, "");
   const [zoom, setZoom] = useState(() => { const v = readPref(K.zoom, (x) => x === "fit" || (Number(x) >= ZOOM_MIN && Number(x) <= ZOOM_MAX), ZOOM_DEFAULT); return v === "fit" ? v : Number(v); });
   const [boxW, setBoxW] = useState(0);
@@ -140,7 +140,6 @@ export default function SequenceView({ hops = [], selected = null, onSelect, sho
   const zoomBy = (d) => setZoom((z) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, (z === "fit" ? fitPct : z) + d)));
   const footY = TOP + total * ROW - 22;
   const height = footY + 34;
-  const mock = hops.some((h) => h.mock);
   const sel = focusHop ? `, step ${focusHop.n} selected` : "";
   const openActor = (id) => setActor((cur) => (cur === id ? null : id));
   const actorKey = (e, id) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openActor(id); } };
@@ -148,7 +147,6 @@ export default function SequenceView({ hops = [], selected = null, onSelect, sho
   return (
     <section className="ev-root sq" data-font={font} aria-label="Sequence view" data-testid="sequence-view">
       <div className="sq-bar" role="toolbar" aria-label="Sequence controls">
-        {mock && showSources && <Tag state="info" title="Every hop here was produced by the lab's mock engine">MOCK engine</Tag>}
         <span className="sq-grp" role="group" aria-label="Zoom">
           <button type="button" aria-label="Zoom out" disabled={pct <= ZOOM_MIN} onClick={() => zoomBy(-ZOOM_STEP)}>−</button>
           <button type="button" aria-label={`Zoom ${pct}%, actual size`} title="Actual size (100%)" onClick={() => setZoom(100)} data-testid="seq-zoom">{pct}%</button>

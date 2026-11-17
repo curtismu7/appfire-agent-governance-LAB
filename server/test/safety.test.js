@@ -36,7 +36,7 @@ test('rule 11 mock sign-in guards: every one of them alone refuses', () => {
   assert.equal(mockSignInRefusal(ok), null);
   assert.match(mockSignInRefusal(ctx({})), /ALLOW_MOCK_SIGNIN=1/);
   for (const v of ['0', 'true', 'yes', '', ' 1']) assert.ok(mockSignInRefusal(ctx({ ALLOW_MOCK_SIGNIN: v })), JSON.stringify(v));
-  assert.match(mockSignInRefusal(ctx({ ALLOW_MOCK_SIGNIN: '1', IDP: 'live' })), /IDP is not mock/);
+  assert.match(mockSignInRefusal(ctx({ ALLOW_MOCK_SIGNIN: '1', IDP: 'live' })), /IDP is set to another provider/);
   assert.equal(mockSignInRefusal(ctx({ ALLOW_MOCK_SIGNIN: '1', IDP: 'mock' })), null);
   for (const h of ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-real-ip']) assert.match(mockSignInRefusal(ctx({ ALLOW_MOCK_SIGNIN: '1' }, '127.0.0.1', { [h]: 'x' })), /proxy/, h);
   assert.match(mockSignInRefusal(ctx({ ALLOW_MOCK_SIGNIN: '1' }, '0.0.0.0')), /non-loopback/);
@@ -50,7 +50,7 @@ test('live mode guards (option a, owner 2026-11-10): no ON switch; AAG_ALLOW_LIV
   assert.equal(liveRefusal(ctx({ AAG_PUBLISH: 'loopback' }, '0.0.0.0')), null, 'Docker: a wide bind inside the container with a loopback-only publish');
   assert.match(liveRefusal(ctx({ AAG_ALLOW_LIVE: '0' })), /switched off.*AAG_ALLOW_LIVE=0/);
   for (const v of ['yes', 'true', ' 1', '2']) assert.match(liveRefusal(ctx({ AAG_ALLOW_LIVE: v })), /must be 0/, v);
-  assert.match(liveRefusal(ctx({ IDP: 'mock' })), /pinned to mock/);
+  assert.match(liveRefusal(ctx({ IDP: 'mock' })), /IDP pins this lab to its own sign-in/);
   assert.match(liveRefusal(ctx({ IDP: 'okta' })), /IDP=pingone only/);
   assert.match(liveRefusal(ctx({}, '127.0.0.1', { 'x-forwarded-for': '1' })), /proxy/);
   assert.match(liveRefusal(ctx({}, '0.0.0.0')), /non-loopback/);
