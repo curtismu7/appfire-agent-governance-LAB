@@ -1,7 +1,7 @@
-// The ten tools: descriptors, strict argument schemas and the synthetic answers. Every payload ends with `lab_invented: true` as its LAST key.
+// The sixteen tools (ten software, six airline): descriptors, strict argument schemas and the synthetic answers. Every payload ends with `lab_invented: true` as its LAST key.
 import { randomBytes } from 'node:crypto';
-import { TOOL_META } from './registry.js';
-import { APPS, CODE_MATCHES, ISSUES, NEWS, SECURITY_SETTINGS } from './data.js';
+import { FARE, TOOL_META } from './registry.js';
+import { AIRPORTS, APPS, CODE_MATCHES, FLIGHTS, FLIGHT_IDS, ISSUES, MILES, NEWS, SECURITY_SETTINGS, TRAVELLER, TRIPS, isInternational } from './data.js';
 
 import { CONTROL_FIELD } from './hitl.js';
 
@@ -86,6 +86,59 @@ const SPEC = {
     annotations: { readOnlyHint: true, destructiveHint: false },
     run: (a) => ({ query: a.query, matches: CODE_MATCHES.map((m) => ({ ...m })) }),
   },
+  get_airline_bookings: {
+    description: "List the signed-in traveller's upcoming trips (lab data, the same fixed list for everyone).",
+    fields: { limit: int(1, 10, { default: 5 }) },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    run: (a, ctx) => ({ signed_in_sub: ctx.sub, total: TRIPS.length, returned: Math.min(a.limit, TRIPS.length), trips: TRIPS.slice(0, a.limit).map((t) => ({ ...t })), miles: MILES }),
+  },
+  get_flight_status: {
+    description: 'Read the status of a flight (lab data).',
+    fields: { flight: str(1, 10, { enum: FLIGHT_IDS, default: 'LK 214' }) },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    run: (a) => {
+      const f = FLIGHTS[a.flight];
+      return { flight: a.flight, route: `${f.from} to ${f.to}`, status: 'on time', gate: f.gate, departs: `${f.day} ${f.time}` };
+    },
+  },
+  book_airline_flight: {
+    description: "Book a seat on a flight. The lab's fare rule applies: a booking over the second limit is held for a person, and an international or over-limit booking is booked in economy only.",
+    fields: { flight: str(1, 10, { enum: FLIGHT_IDS, required: true }), cabin: str(1, 10, { enum: ['business', 'economy'], default: 'economy' }) },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    // The fare is the table's, never the caller's. ctx.narrow is null or { granted, because } and is set by the policy only.
+    run: (a, ctx) => {
+      const f = FLIGHTS[a.flight];
+      const narrow = ctx.narrow ?? null;
+      const out = {
+        status: 'booked', confirmation: `LKR-${hex6()}`, flight: a.flight, from: f.from, to: f.to, international: isInternational(f), fare_judged: f.fare,
+        cabin_asked: a.cabin, cabin_booked: narrow ? narrow.granted : a.cabin,
+      };
+      if (narrow) out.constrained = { field: 'cabin', asked: a.cabin, granted: narrow.granted, because: [...narrow.because], limit: FARE.limit, rule: 'lab-fare-constrained' };
+      out.note = 'Booked on synthetic lab data only.';
+      return out;
+    },
+  },
+  sensitive_passenger_record: {
+    description: "Read the traveller's private record (masked). Offered to the orbit tier group only.",
+    fields: {},
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    run: () => ({ passport_last4: TRAVELLER.passport_last4, known_traveller_number: 'on file (hidden)', card_last4: TRAVELLER.card_last4, note: 'Full numbers are never returned by this tool.' }),
+  },
+  list_airports: {
+    description: 'List airports near the traveller. Public: no token is needed.',
+    fields: { limit: int(1, 10, { default: 5 }) },
+    annotations: { readOnlyHint: true, destructiveHint: false },
+    run: (a) => {
+      const all = Object.entries(AIRPORTS);
+      return { total: all.length, airports: all.slice(0, a.limit).map(([code, x]) => ({ code, name: x.name, miles_away: x.miles_away })) };
+    },
+  },
+  request_change_fee_waiver: {
+    description: 'Ask for a change fee to be waived. This only files a request; this tool server has no tool that grants a waiver.',
+    fields: { flight: str(1, 10, { enum: FLIGHT_IDS, default: 'LK 214' }), reason: str(1, 80, { required: true }) },
+    annotations: { readOnlyHint: false, destructiveHint: false },
+    run: (a, ctx) => ({ request_id: `CFW-${hex6()}`, status: 'pending review', flight: a.flight, requested_by: ctx.sub, note: 'This tool only files a request; no tool here can grant a waiver.' }),
+  },
 };
 
 export const TOOL_NAMES = Object.keys(SPEC);
@@ -141,5 +194,5 @@ export function validateArgs(name, raw) {
   return { ok: true, args, receipt };
 }
 
-// ctx: { sub, now }. The payload ends with lab_invented.
+// ctx: { sub, now, narrow? }. The payload ends with lab_invented.
 export const runTool = (name, args, ctx) => ({ ...SPEC[name].run(args, ctx), lab_invented: true });

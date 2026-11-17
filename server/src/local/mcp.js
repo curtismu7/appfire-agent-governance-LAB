@@ -33,12 +33,13 @@ export function createMcp({ config, verifier, hitl, now = Date.now, newSessionId
   const sessions = new Map();     // id -> { sub, last }
   const descriptors = Object.fromEntries(TOOL_NAMES.map((n) => [n, descriptorOf(n)]));
 
+  const ANON = Symbol('anonymous session');   // a marker no token's sub string can equal
   function prune() {
     for (const [id, s] of sessions) if (now() - s.last > SESSION_IDLE_MS) sessions.delete(id);
   }
   function open(sub) {
     prune();
-    const anon = sub === 'anon';
+    const anon = sub === ANON;
     const drop = (keep) => { for (const [k, v] of sessions) if (keep(v)) { sessions.delete(k); return true; } return false; };   // the oldest that matches
     if (anon) { let n = 0; for (const v of sessions.values()) if (v.anon) n += 1; if (n >= MAX_ANON_SESSIONS) drop((v) => v.anon); }
     while (sessions.size >= MAX_SESSIONS) if (!drop((v) => v.anon)) sessions.delete(sessions.keys().next().value);   // anonymous ones first, then the oldest idle one
@@ -74,7 +75,7 @@ export function createMcp({ config, verifier, hitl, now = Date.now, newSessionId
     const who = await authenticate(authorization);
     if (who.refusal) return who.refusal;
     const { auth } = who;
-    const sub = auth ? auth.claims.sub : 'anon';
+    const sub = auth ? auth.claims.sub : ANON;
 
     if (method.startsWith('notifications/')) return { status: 202, headers: {}, body: null };
     if (!hasId) return rpcError(400, null, -32600, 'invalid request');
@@ -86,7 +87,7 @@ export function createMcp({ config, verifier, hitl, now = Date.now, newSessionId
       return rpcResult(id, {
         protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: 'appfire-tools-local', title: 'Appfire Work Suite tool server (lab, local)', version: '1' },
+        serverInfo: { name: 'appfire-tools-local', title: 'Lab tool server (local)', version: '1' },
       }, { 'Mcp-Session-Id': open(sub) });
     }
     if (method === 'ping') return rpcResult(id, {});
@@ -99,7 +100,7 @@ export function createMcp({ config, verifier, hitl, now = Date.now, newSessionId
     if (!touch(sessionId, sub)) return unknownSession();
 
     if (method === 'tools/list') {
-      return rpcResult(id, { tools: TOOL_NAMES.filter((n) => listedFor(n, auth, config.tierGroup)).map((n) => descriptors[n]) });
+      return rpcResult(id, { tools: TOOL_NAMES.filter((n) => listedFor(n, auth, config)).map((n) => descriptors[n]) });
     }
     if (method === 'tools/call') {
       if (!isObj(params) || !Object.hasOwn(params, 'name') || typeof params.name !== 'string') return rpcError(200, id, -32602, 'invalid params');
@@ -122,7 +123,7 @@ export function createMcp({ config, verifier, hitl, now = Date.now, newSessionId
   async function del({ authorization, sessionId }) {
     const who = await authenticate(authorization);
     if (who.refusal) return who.refusal;
-    const sub = who.auth ? who.auth.claims.sub : 'anon';
+    const sub = who.auth ? who.auth.claims.sub : ANON;
     if (!touch(sessionId, sub)) return unknownSession();
     sessions.delete(sessionId);
     return { status: 204, headers: {}, body: null };

@@ -49,8 +49,9 @@ export const a2aSettings = (extra = {}) => ({
 export const USER_SUB = '99999999-aaaa-4bbb-8ccc-dddddddddddd';
 // The tools resource of the owner's PingOne (names only): the six scopes, the audience and the premium-tier group.
 export const TOOLS_AUDIENCE = 'appfire-work-tools';
-export const TOOLS_SCOPES = ['issues:read', 'issues:write', 'security:read', 'release:read', 'deploy:read', 'admin:request'];
+export const TOOLS_SCOPES = ['issues:read', 'issues:write', 'security:read', 'release:read', 'deploy:read', 'admin:request', 'trips:read', 'flights:read', 'flights:book', 'travellers:read', 'fees:request'];
 export const TIER_GROUP = 'Software_EnterpriseTier';
+export const TIER_GROUP_AIRLINE = 'Airline_OrbitTier';
 // A fixed public test key (the scalar protects nothing), built with createECDH + createPrivateKey like mockjwt.js.
 const ES_SCALAR = createHash('sha256').update('appfire fake pingone es256 test key (public, protects nothing)').digest();
 const ES_KEYS = (() => {

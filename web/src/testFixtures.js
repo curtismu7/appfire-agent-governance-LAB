@@ -99,6 +99,52 @@ export const noActBody = (ucId = "UC1") => {
   b.run.tokens[3] = { ...b.run.tokens[3], label: "delegated token (exchange 2: for the gateway, NO act claim)", claims: { sub: "u-1", aud: "gw-aud" } };
   return b;
 };
+// A Real run of the AIRLINE pack answered by the lab's own tool server (design-airline-real.md 5.3 and 5.4): the run carries `fareRule`, a booking use case carries
+// `booking`, a narrowed one `constrained` (with `by` and `reason`), and the decision hop is a note on the tool server's lane. Every value is LAB-INVENTED.
+const AIR_FARE = { limit: 400, hold: 1500, from: "business", to: "economy" };
+const AIR_BY = "lab policy (local), not PingOne Authorize";
+export const AIR_REASON_INTL = "the tool server answered 200 with the cabin narrowed from business to economy: this trip is international";
+const AIR_TRIPS = {
+  UC7: { flight: "LK 214", from: "ORD", to: "DEN", fare: 380, international: false },
+  UC8: { flight: "LK 322", from: "ORD", to: "YYZ", fare: 380, international: true },
+  UC6: { flight: "LK 704", from: "ORD", to: "CDG", fare: 2400, international: true },
+};
+const AIR_REPLY = {
+  permit: "Booked: a business seat on LK 214 from ORD to DEN, confirmation LKR-3F9A21 (lab-invented data from the lab's own tool server).",
+  constrained: "Booked in economy, not business: this trip is international. LK 322 from ORD to YYZ, confirmation LKR-3F9A21 (lab-invented data from the lab's own tool server).",
+  approved: "Booked as approved: a business seat on LK 704 from ORD to CDG, confirmation LKR-3F9A21 (lab-invented data from the lab's own tool server).",
+};
+// kind: "permit" (UC7), "constrained" (UC8), "hold" (UC6, 428), "approved" (UC6 after the phone), "rejected" (UC6 retry with a spent receipt), "read" (UC1, no booking).
+export const airlineRealBody = (kind = "constrained") => {
+  const ucId = { permit: "UC7", constrained: "UC8", hold: "UC6", approved: "UC6", rejected: "UC6", read: "UC1" }[kind];
+  const outcome = { permit: "REAL_PERMIT", constrained: "REAL_CONSTRAINED", hold: "REAL_HOLD", approved: "REAL_PERMIT", rejected: "REAL_RECEIPT_REJECTED", read: "REAL_PERMIT" }[kind];
+  const reply = {
+    permit: { who: "Tool server", text: AIR_REPLY.permit }, constrained: { who: "Tool server", text: AIR_REPLY.constrained }, approved: { who: "Tool server", text: AIR_REPLY.approved },
+    hold: { who: "Tool server", approval: { head: "Held for approval", body: "The tool server (lab policy (local), not PingOne Authorize) holds this booking until a person approves it." } },
+    rejected: { who: "Tool server", text: "The approval receipt was refused. Nothing was run." }, read: { who: "Tool server", text: "You have 2 trips (lab-invented data from the lab's own tool server)." },
+  }[kind];
+  const b = realBody(ucId, { outcome, reply, stopAt: kind === "hold" || kind === "rejected" ? 5 : null });
+  const served = new Set(["gateway-check", "authorize-decision", "tool-dispatched", "tool-held", "tool-refused", "api-call"]);
+  const tool = kind === "read" ? "get_airline_bookings" : "book_airline_flight";
+  const word = { permit: "PERMIT", constrained: "CONSTRAINED", hold: "HITL_REQUIRED", approved: "PERMIT", rejected: "DENY", read: "PERMIT" }[kind];
+  Object.assign(b.run, { vertical: "airline", real: { level: "full", tool, provider: "local" }, provider: "local", providerWhy: "auto-se-not-configured", gatewayTrace: [], fareRule: { ...AIR_FARE } });
+  if (kind !== "read") {
+    const t = AIR_TRIPS[ucId];
+    const booked = { permit: "business", constrained: "economy", approved: "business" }[kind] ?? null;
+    b.run.booking = { ...t, asked: "business", booked };
+  }
+  if (kind === "constrained") b.run.constrained = { field: "cabin", asked: "business", granted: "economy", because: ["international"], limit: 400, by: AIR_BY, reason: AIR_REASON_INTL };
+  b.run.hops = b.run.hops.map((h) => (served.has(h.kind) ? {
+    ...h, capability: "tools", ...(h.verdict === "skip" || h.source === "not-run" ? {} : { provider: "local", answeredBy: "tool server (local)" }),
+    ...(h.kind === "authorize-decision" ? {
+      from: "toolserver", to: "toolserver", title: "Lab policy (local)", request: { tool, arguments: kind === "read" ? { limit: 5 } : { flight: AIR_TRIPS[ucId].flight, cabin: "business" } },
+      response: { ...(h.response || {}), "x-gw-audit-trail": { decision: word, rule: { constrained: "lab-fare-constrained", hold: "lab-fare-hold", approved: "lab-fare-approved" }[kind] || "lab-no-restriction" } },
+      decision: { outcome: word, by: AIR_BY, basis: "observed" },
+      note: kind === "constrained" ? `The tool server (local) answered 200 and narrowed the cabin from business to economy (${AIR_BY}).` : h.note,
+    } : h.kind === "tool-dispatched" && kind === "constrained" ? { note: "The tool server ran the tool with the cabin narrowed to economy. The data is lab-invented." } : {}),
+  } : h));
+  return b;
+};
 export const mockInRealBody = (ucId = "UC2") => runBody(ucId, { realGate: { real: false, reason: "the agent-to-agent (A2A) chain needs the specialist agent's PingOne settings (AAG_A2A_*), which are not set" }, hops: runBody(ucId).run.hops.map((h) => ({ ...h, source: "mock", label: h.label })) });
 export const FULL_INFO = { real: { level: "full", label: "Real: sign-in (pi.flow), agent token, token exchange and the Agent Gateway", missing: [], redirectUri: "https://local.example/cb", origins: [] } };
 

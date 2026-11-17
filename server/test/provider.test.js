@@ -24,8 +24,8 @@ test('providerSettingOf: empty is auto, any case of auto|se|local is itself, any
 });
 
 test('the tool tables: scopes, the one public tool, the group-gated tool, the call-anyway use case', () => {
-  assert.equal(LOCAL_TOOLS.size, 10); assert.deepEqual(Object.keys(TOOL_SCOPES).sort(), [...LOCAL_TOOLS].sort());
-  assert.deepEqual([...PUBLIC_TOOLS], ['list_marketplace_apps']); assert.deepEqual([...GROUP_GATED_TOOLS], ['get_project_security_settings']); assert.deepEqual([...CALL_UNLISTED], ['UC9']);
+  assert.equal(LOCAL_TOOLS.size, 16); assert.deepEqual(Object.keys(TOOL_SCOPES).sort(), [...LOCAL_TOOLS].sort());
+  assert.deepEqual([...PUBLIC_TOOLS], ['list_marketplace_apps', 'list_airports']); assert.deepEqual([...GROUP_GATED_TOOLS], ['get_project_security_settings', 'sensitive_passenger_record']); assert.deepEqual([...CALL_UNLISTED], ['UC9']);
   assert.equal(toolScopeOf('get_my_issues'), 'issues:read'); assert.equal(toolScopeOf('list_marketplace_apps'), null);
   for (const bad of ['__proto__', 'constructor', 'toString', 'nope', undefined, 7]) assert.equal(toolScopeOf(bad), null, String(bad));
 });
@@ -127,7 +127,7 @@ test('snapshot() never touches the network and reflects what can answer; info() 
   const p = createProviders({ setting: 'auto', real: mkReal(), local, fetchImpl: okFetch(log) });
   assert.deepEqual(p.snapshot(), { setting: 'auto', gateway: true, tools: { se: true, local: false, localState: 'starting' } });
   assert.equal(log.length, 0);
-  const info = p.info(); assert.deepEqual(info, { setting: 'auto', hosted: false, gateway: true, toolsSe: true, local: { state: 'starting', tools: 10 } });
+  const info = p.info(); assert.deepEqual(info, { setting: 'auto', hosted: false, gateway: true, toolsSe: true, local: { state: 'starting', tools: 16 } });
   const text = JSON.stringify(info); assert.ok(!/https?:|127\.0\.0\.1|secret|token/i.test(text), text);
   assert.deepEqual(createProviders({ setting: 'local', real: mkReal({ gateway: null, toolsSe: null }), local: mkLocal() }).snapshot(), { setting: 'local', gateway: false, tools: { se: false, local: true, localState: 'ready' } });
   assert.deepEqual(createProviders({ real: mkReal({ configured: false }) }).snapshot(), { setting: 'auto', gateway: false, tools: { se: false, local: false, localState: 'off' } }, 'Real not configured: SE is not usable');
@@ -203,4 +203,19 @@ test('a partial or invalid SE gateway trio is named in the gate\'s reason (fixed
   const plain = createProviders({ setting: 'auto', real: mkReal({ gateway: null, toolsSe: null }), local: mkLocal() });
   assert.equal(Object.hasOwn(plain.snapshot(), 'gatewayProblem'), false, 'no problem, no key');
   assert.match(realGate(uc, cast, plain.snapshot()).reason, /^the SE gateway is not set up here \(AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE\)$/);
+});
+
+test('choose with the airline pack: on auto the lab\'s own tool server answers (an SE copy is not known to carry the airline tools) and no probe is made; a forced SE and the software pack are unchanged', async () => {
+  const log = [];
+  const auto = createProviders({ setting: 'auto', real: mkReal(), local: mkLocal('ready'), fetchImpl: okFetch(log, 200) });
+  const air = await auto.choose({ capability: 'tools', pack: 'airline' });
+  assert.deepEqual([air.provider, air.why, air.answeredBy], ['local', 'auto-airline-local', 'tool server (local)']); assert.equal(log.length, 0, 'the SE probe is not consulted');
+  assert.deepEqual((await auto.choose({ capability: 'tools', pack: 'software' })).why, 'auto-se-ok', 'software still prefers a healthy SE copy');
+  assert.equal((await auto.choose({ capability: 'tools' })).why, 'auto-se-ok');
+  // Local not up: the airline pack falls to SE only when SE is configured and answers; otherwise nothing answers.
+  const down = createProviders({ setting: 'auto', real: mkReal(), local: mkLocal('failed'), fetchImpl: okFetch([], 200) });
+  assert.equal((await down.choose({ capability: 'tools', pack: 'airline' })).why, 'auto-se-ok');
+  assert.equal(await createProviders({ setting: 'auto', real: mkReal({ toolsSe: null }), local: mkLocal('failed'), fetchImpl: okFetch([], 200) }).choose({ capability: 'tools', pack: 'airline' }), null);
+  const forced = createProviders({ setting: 'se', real: mkReal(), local: mkLocal('ready'), fetchImpl: okFetch([], 200) });
+  assert.equal((await forced.choose({ capability: 'tools', pack: 'airline' })).why, 'forced'); assert.equal((await forced.choose({ capability: 'tools', pack: 'airline' })).provider, 'se');
 });

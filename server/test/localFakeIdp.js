@@ -9,6 +9,8 @@ export const ACTOR = '88888888-9999-4aaa-8bbb-cccccccccccc';
 export const AUDIENCE = 'appfire-work-tools';
 export const TIER_GROUP = 'Software_EnterpriseTier';
 export const ALL_SCOPES = 'issues:read issues:write security:read release:read deploy:read admin:request';
+export const TIER_GROUP_AIRLINE = 'Airline_OrbitTier';
+export const AIRLINE_SCOPES = 'trips:read flights:read flights:book travellers:read fees:request';
 export const KID = { rsa: 'k-rsa-a', ec: 'k-ec-a', rsaB: 'k-rsa-b' };
 
 const b64u = (o) => Buffer.from(typeof o === 'string' ? o : JSON.stringify(o)).toString('base64url');

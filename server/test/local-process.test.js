@@ -48,7 +48,7 @@ test('init, ready on an ephemeral loopback port, a real call with a fake-issuer 
     assert.ok(Number.isInteger(ready.port) && ready.port >= 1024 && ready.port <= 65535);
     assert.ok(ready.port < 7814 || ready.port > 7839, 'nothing in the lab port range');
     assert.equal(ready.pid, c.child.pid);
-    assert.equal(ready.tools.length, 10); assert.ok(ready.tools.every((n) => /^[a-z0-9_]{1,64}$/.test(n)));
+    assert.equal(ready.tools.length, 16); assert.ok(ready.tools.every((n) => /^[a-z0-9_]{1,64}$/.test(n)));
     assert.deepEqual(Object.keys(ready).sort(), ['pid', 'port', 'tools', 'type']);
     const init = await mcp(ready.port, { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }, { tok: idp.mint({}) });
     const session = init.headers.get('mcp-session-id');

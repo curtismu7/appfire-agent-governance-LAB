@@ -92,6 +92,8 @@ const verdictOf = (hop) => {
   if (hop?.verdict === "deny" || /^deny/i.test(outcome)) return "deny";
   if (hop?.verdict === "held" || /^(held|escalat|hitl)/i.test(outcome)) return "held";
   // fare: the lab's own CONSTRAINED outcome (the decision hop) or the narrowed arguments (the tool and API hops carry a `constraint` row)
+  // A Real booking the tool server narrowed: its tool hop carries the server's fixed note (the cabin narrowed to economy), and its decision hop the word CONSTRAINED.
+  if (hop?.capability === "tools" && typeof hop?.note === "string" && /cabin narrowed to economy/.test(hop.note)) return "constrained";
   if (outcome === "CONSTRAINED" || (Array.isArray(hop?.kv) && hop.kv.some((r) => (Array.isArray(r) ? r[0] : r?.k ?? r?.key) === "constraint"))) return "constrained";
   return "ok";
 };
@@ -103,5 +105,9 @@ export function captionFor(hop) {
   const base = Object.hasOwn(CAPTIONS, hop.kind) ? CAPTIONS[hop.kind] : GENERIC;
   const c = hop.capability === "tools" && Object.hasOwn(TOOL_SERVER_CAPTIONS, hop.kind) ? { ...base, ...TOOL_SERVER_CAPTIONS[hop.kind] } : base;
   const v = verdictOf(hop);
+  // A booking is a write, not a low-risk read: the airline booking's allowed hop says so in its own words (read from the tool name the hop carries).
+  if (hop.kind === "tool-dispatched" && v === "ok" && hop.request?.calls?.[0]?.body?.name === "book_airline_flight") {
+    return { say: "The booking is allowed and goes through as asked. A booking within the limits needs nobody's approval, and the record is still written.", point: c.point, agenda: c.agenda, notInPath: false, real: hop.source === "real" };
+  }
   return { say: (v !== "ok" && c[v]) || c.say, point: c.point, agenda: c.agenda, notInPath: false, real: hop.source === "real" };
 }

@@ -89,9 +89,10 @@ export const DEMO_GUIDE = [
 // The airline pack's own words for the steps that talk about the fare rule (applied when the cast has `castFareRule`; every other pack keeps DEMO_GUIDE byte for byte).
 // The rule in one breath is the same sentence everywhere; its two numbers are the cast's `castFareLimit` and `castFareHold`, never typed here. The limits are the lab's own.
 export const GUIDE_OVERRIDES = {
-  // Step 4: the airline pack runs UC21 on the lab's own steps, where the tier is the persona; no PingOne group of this pack exists to flip (it waits for the Real airline tools).
+  // Step 4: the airline pack keeps the sentence about the PingOne group (its tier group exists since phase B, and on a PingOne sign-in the traveller's record is decided by it, not
+  // by the persona); only the person word changes (reviewfixes.test.jsx pins both).
   evaluate: {
-    prove: DEMO_GUIDE.find((g) => g.id === "evaluate").prove.replace(/ With a PingOne sign-in the tier is your PingOne group:.*?run it again\./, "").replace("premium customer and as the standard customer", "premium {{castPerson}} and as the standard {{castPerson}}"),
+    prove: DEMO_GUIDE.find((g) => g.id === "evaluate").prove.replace("premium customer and as the standard customer", "premium {{castPerson}} and as the standard {{castPerson}}"),
   },
   allow: {
     prove: DEMO_GUIDE.find((g) => g.id === "allow").prove.replace("which of the four controls", "which of the five controls"),

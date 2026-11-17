@@ -41,7 +41,8 @@ function policyOf(run) {
   // The tool server's own rule: who decided is the hop's own `decision.by` ("lab policy (local), not PingOne Authorize"), the rule is in the audit trail it sent.
   if (az && viaTools(run) && text(az.decision?.by)) {
     const rule = text(az.response?.["x-gw-audit-trail"]?.rule);
-    return { by: az.decision.by, reason: rule || text(az.note) || "the tool server's own rule", decision: text(az.decision?.outcome) };
+    // fare: a narrowed booking uses the run's own words (the tool server answered 200 with the cabin narrowed, and why), not just the rule name
+    return { by: az.decision.by, reason: (isConstrainedOutcome(run?.outcome) && text(run?.constrained?.reason)) || rule || text(az.note) || "the tool server's own rule", decision: text(az.decision?.outcome) };
   }
   const azBody = bodyOf(az);
   const cp = constrainedPolicy(run, azBody); // fare: a constrained booking names the lab's own rule as the decider

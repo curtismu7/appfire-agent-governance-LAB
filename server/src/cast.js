@@ -23,14 +23,14 @@ export const OPTIONAL_CAST_KEYS = [...Object.values(OPTIONAL_ROLE_KEY), 'castUni
 
 export const VERTICALS = {
   // The airline pack (owner, 2026-11-16): an INVENTED airline, Larkspur Air (never a real carrier), the lab's default. Flights, fares, limits and the
-  // two lab-invented tools (list_airports, request_change_fee_waiver) are LAB-INVENTED. castFareRule marks the fare rule. The pack has no castToolServer yet (phase B hosts its
-  // tools on the lab's own tool server), so realGate keeps it on the lab's own steps.
+  // two lab-invented tools (list_airports, request_change_fee_waiver) are LAB-INVENTED. castFareRule marks the fare rule. castToolServer: its tools run on the lab's own
+  // tool server (phase B), which enforces the booking rule, so the airline use cases listed in realGate run Real.
   airline: {
     castBrand: 'Larkspur Air', castHost: 'larkspur-air', castUser: 'elena.novak', castUser2: 'jun.takeda', castOwner2: 'marcus.bell', castAgent: 'travel-assistant', castAgent2: 'bookings-specialist', castAgent3: 'report-generalist',
     castAdmin: 'sofia.reyes', castMoney: 'trips and bookings', castReadTool: 'get_airline_bookings', castWriteTool: 'book_airline_flight', castSensitiveTool: 'sensitive_passenger_record', castA2aTool: 'sensitive_passenger_record',
     castAsset: 'trip', castAction: 'booking', castGroup: 'orbit-tier',
     castPublicTool: 'list_airports', castStatusTool: 'get_flight_status', castRequestTool: 'request_change_fee_waiver', castPerson: 'traveller',
-    castFareRule: 'fare', castFareLimit: '$400', castFareHold: '$1,500',
+    castFareRule: 'fare', castFareLimit: '$400', castFareHold: '$1,500', castToolServer: 'larkspur-air',
   },
   banking: {
     castBrand: 'Appfire Platform', castHost: 'appfire-platform', castUser: 'alex.morgan', castUser2: 'sam.rivera', castOwner2: 'dana.whitfield', castAgent: 'triage-agent', castAgent2: 'analytics-specialist', castAgent3: 'report-generalist',

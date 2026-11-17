@@ -28,9 +28,11 @@ import { createGatewaySession, errorCodeOf, holdInfo, parseAuditTrail, urlProble
 import { realExchange } from './gatewayExchanges.js';
 import { NEEDS_ACCOUNTS, toolArgs } from './realGate.js';
 import { situationOf } from './situations.js';
+import { FARE_RULE } from './policy.js';
+import { VERTICALS } from './cast.js';
 import { cleanFree } from './credentials.js';
 import { A2A_REQUIRED, DEFAULT_AGENT_SCOPE, FULL_REQUIRED, GATEWAY_KEYS, isPlaceholder } from './settings.js';
-import { CALL_UNLISTED, GROUP_GATED_TOOLS, PUBLIC_TOOLS, providerSettingOf, toolScopeOf } from './provider.js';
+import { CALL_UNLISTED, GROUP_GATED_TOOLS, PUBLIC_TOOLS, providerSettingOf, toolPackOf, toolScopeOf } from './provider.js';
 
 export const TIMEOUT_MS = 8_000;
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -76,7 +78,9 @@ const noActToolsText = (agentScope, afterExchange2) => `Stopped before the tool 
 // provider-side hops in order (check, decide, tool, api, reply) as a not-run hop names them. A tool server's decision is drawn as a note on its own lane (from === to):
 // no Authorize lane appears in a tools run, because the lab's own rule is not PingOne Authorize.
 const LEG_KEYS = ['check', 'decide', 'tool', 'api', 'reply'];
-const PROBE_TOOL = 'get_my_issues'; // the protected tool UC24 probes with no token
+// The protected tool UC24 probes with no token: the vertical's own read tool (the airline pack's trips), else the software pack's issues.
+const probeToolOf = (vertical) => (Object.hasOwn(VERTICALS, vertical) && VERTICALS[vertical].castReadTool) || 'get_my_issues';
+const isAirline = (vertical) => Object.hasOwn(VERTICALS, vertical) && Boolean(VERTICALS[vertical].castFareRule);
 function legOf(P) {
   const tools = P.capability === 'tools';
   const where = P.provider === 'local' ? 'local' : 'SE';
@@ -101,11 +105,11 @@ function legOf(P) {
 }
 // The vendored catalog's specification text speaks of a gateway and a policy engine. For a run answered by a tool server those words would credit a product that is not
 // in the path, so the "why / mandate / failure" lines of the hops that name one are replaced here (the catalog file itself is never edited). `lab`: the lab's own server.
-function toolsSpecFor(kind, lab) {
+function toolsSpecFor(kind, lab, airline = false) {
   switch (kind) {
     case 'gateway-check': return { why: 'The tool server checks the delegated token itself before any tool runs: its signature against the issuer\'s published keys, issuer, audience, expiry, the act chain and the scope. Nothing else sits in front of it in this path.' };
     case 'authorize-decision': return lab
-      ? { mandate: 'No RFC defines the decision itself. Here the tool server applies the lab\'s own fixed rules (scope, tier group and size bands); they are written into the lab itself.', why: 'This shows where a decision sits in a call: the lab\'s rules are fixed teaching rules, and they are not PingOne Authorize.', failure: 'Reading the lab\'s own bands as a product policy. A policy a security team edits without a redeploy is what PingOne Authorize would give; this lab does not run it.' }
+      ? { mandate: 'No RFC defines the decision itself. Here the tool server applies the lab\'s own fixed rules (scope, tier group and ' + (airline ? 'the fare rule' : 'size bands') + '); they are written into the lab itself.', why: 'This shows where a decision sits in a call: the lab\'s rules are fixed teaching rules, and they are not PingOne Authorize.', failure: 'Reading the lab\'s own bands as a product policy. A policy a security team edits without a redeploy is what PingOne Authorize would give; this lab does not run it.' }
       : { mandate: 'No RFC defines the decision itself.', why: 'The tool server answered with a decision. The lab can read its status and audit header, not the policy behind them, so it names no policy.', failure: 'Assuming which rule fired. The lab sees the answer, not the rule.' };
     case 'tool-dispatched': return { why: 'The tool server checks the token on every call and then runs the tool itself. Nothing else sits in front of it in this path.', failure: 'Trusting a user id sent in a header. Anything that can reach the tool server directly can then pretend to be any user.' };
     case 'tool-held': return { why: 'The tool server holds the write, so nothing changes until the approval is given.' };
@@ -141,6 +145,7 @@ function a2aFrom(s) {
 // names the owner's session created in PingOne.
 export const DEFAULT_TOOLS_AUDIENCE = 'appfire-work-tools';
 export const DEFAULT_TIER_GROUP = 'Software_EnterpriseTier';
+export const DEFAULT_TIER_GROUP_AIRLINE = 'Airline_OrbitTier';
 const optional = (settings, k, dflt) => (settings[k] === undefined || settings[k] === '' || isPlaceholder(settings[k]) ? dflt : settings[k]);
 
 // settings: the full-Real names from the app's .env. Returns the config, or { problem } in fixed words naming the setting (never a value).
@@ -158,6 +163,8 @@ export function realConfig(settings = {}, env = {}) {
   if (!plain(toolsAudience, 300)) return { problem: 'the app .env has no valid AAG_TOOLS_AUDIENCE' };
   const toolsTierGroup = optional(settings, 'AAG_TOOLS_TIER_GROUP', DEFAULT_TIER_GROUP);
   if (!plain(toolsTierGroup, 120)) return { problem: 'the app .env has no valid AAG_TOOLS_TIER_GROUP' };
+  const toolsTierGroupAirline = optional(settings, 'AAG_TOOLS_TIER_GROUP_AIRLINE', DEFAULT_TIER_GROUP_AIRLINE);
+  if (!plain(toolsTierGroupAirline, 120)) return { problem: 'the app .env has no valid AAG_TOOLS_TIER_GROUP_AIRLINE' };
   // Optional: absent or empty is the default.
   const agentScope = settings.AAG_AGENT_SCOPE === undefined || settings.AAG_AGENT_SCOPE === '' ? DEFAULT_AGENT_SCOPE : settings.AAG_AGENT_SCOPE;
   // One scope name (the owner's setup script looks one up), and not the gateway scope: exchange 1 must go to the resource that owns the agent scope.
@@ -181,7 +188,7 @@ export function realConfig(settings = {}, env = {}) {
   const hitl = optionalUrl(settings, 'AAG_HITL_SERVICE_URL');
   return {
     ...a2aFrom(settings), environmentId, base, gateway: gw.gateway, ...(gw.gatewayProblem ? { gatewayProblem: gw.gatewayProblem } : {}), agentScope, username: settings.AAG_DEMO_USERNAME,
-    provider, toolsAudience, toolsTierGroup, toolsSeUrl: se.url, ...(se.problem ? { toolsSeProblem: se.problem } : {}), hitlUrl: hitl.url, ...(hitl.problem ? { hitlProblem: hitl.problem } : {}),
+    provider, toolsAudience, toolsTierGroup, toolsTierGroupAirline, toolsSeUrl: se.url, ...(se.problem ? { toolsSeProblem: se.problem } : {}), hitlUrl: hitl.url, ...(hitl.problem ? { hitlProblem: hitl.problem } : {}),
     hitlSecret: typeof settings.AAG_HITL_INTERNAL_SECRET === 'string' && settings.AAG_HITL_INTERNAL_SECRET && !isPlaceholder(settings.AAG_HITL_INTERNAL_SECRET) ? settings.AAG_HITL_INTERNAL_SECRET : null,
     user: { id: settings.AAG_USER_CLIENT_ID, secret: settings.AAG_USER_CLIENT_SECRET }, agent: { id: settings.AAG_AGENT_CLIENT_ID, secret: settings.AAG_AGENT_CLIENT_SECRET, authMethod: settings.AAG_AGENT_TOKEN_AUTH === 'CLIENT_SECRET_POST' ? 'post' : 'basic' },
   };
@@ -428,7 +435,10 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       const legNotRun = (key, why) => { const r = L.rows[key]; notRun(r.kind, r.label, r.from, r.to, why, r.title, L.tools ? { capability: 'tools' } : undefined); };
       // expectAct: an exchange token; the page shows its act (or that it has none) next to the label.
       const addToken = (label, raw, notice, expectAct = false) => { const d = decodeJwt(raw); tokens.push({ label, mock: false, live: false, real: true, ...(expectAct ? { expectAct: true } : {}), notice, raw, header: d?.header ?? null, claims: d?.claims ?? { note: 'the token is opaque, not a JWT: there is nothing to decode' } }); };
-      let outcome = null; let reply = null; let groupsClaim = null; // groupsClaim: for a group-gated tool run, whether the delegated token carried the claim ('present' | 'absent')
+      let outcome = null; let reply = null; let groupsClaim = null; let constrained = null; let bookingPayload = null; // constrained / bookingPayload: the airline booking's own answer, read in gatewayLeg
+      const sit = situationOf(uc.id, vertical);
+      const airline = isAirline(vertical);
+       // groupsClaim: for a group-gated tool run, whether the delegated token carried the claim ('present' | 'absent')
       const finishNotRun = (from, why) => { for (const key of LEG_KEYS.slice(from)) legNotRun(key, why); };
 
       // 1. Sign-in (done in the dialog before this run): what happened, and the user's token.
@@ -517,7 +527,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
               } else {
                 addToken('delegated token (A2A exchange 2: nested act)', delegated, `Delegated token: your subject, act = the specialist with the first agent inside it. Shown raw for teaching. Its audience is the A2A gateway audience, not AAG_GATEWAY_AUDIENCE: whether the Agent Gateway accepts it is for this run to show (UNVERIFIED).${aud2Note}`, true);
                 const leg = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun, legNotRun, receipt, gw, P, L, dClaims });
-                outcome = leg.outcome; reply = leg.reply; groupsClaim = leg.groupsClaim ?? null;
+                outcome = leg.outcome; reply = leg.reply; groupsClaim = leg.groupsClaim ?? null; constrained = leg.constrained ?? null; bookingPayload = leg.payload ?? null;
                 if (leg.challengeId) challenge = leg.challengeId;
               }
             }
@@ -549,7 +559,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
           } else {
             addToken(L.tools ? 'delegated token (exchange 2: for the tools)' : 'delegated token (exchange 2: for the gateway)', delegated, `Delegated token: your subject, the agent in the act claim, the ${L.tools ? 'tools' : 'gateway'} audience and ${L.tools ? 'the one scope' : 'scope'}. Shown raw for teaching.${audNote}`, true);
             const leg = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun, legNotRun, receipt, gw, P, L, dClaims });
-            outcome = leg.outcome; reply = leg.reply; groupsClaim = leg.groupsClaim ?? null;
+            outcome = leg.outcome; reply = leg.reply; groupsClaim = leg.groupsClaim ?? null; constrained = leg.constrained ?? null; bookingPayload = leg.payload ?? null;
             if (leg.challengeId) challenge = leg.challengeId; // a REAL_HOLD with a minted challenge: the phone can approve it
           }
           }
@@ -561,12 +571,16 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         expectedOutcome: uc.expectedOutcome, real: { level: 'full', tool, provider: P.provider, ...(A2A ? { a2a: true } : {}) }, labSimulated: false, computed: false, persona: null, outcome, matchesExpected: null, reply,
         // Who answered is DATA (hop.provider, hop.answeredBy, run.provider), not a chip: the page never names it by itself (owner 2026-11-16).
         provider: P.provider, providerWhy: P.why,
-        hops: hops.map(({ shortTitle, factOverride, ...h }) => { const e0 = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'raw' }); const e = e0.verdict === 'error' ? { ...e0, fact: 'no decision' } : e0; const t0 = shortTitle ? { ...e, title: shortTitle } : e; const sp = L.tools ? toolsSpecFor(h.kind, L.lab) : null; const t = sp && t0.spec && !t0.spec.none ? { ...t0, spec: { ...t0.spec, ...sp } } : t0; return factOverride && e.verdict === 'ok' ? { ...t, fact: factOverride } : t; }),
+        hops: hops.map(({ shortTitle, factOverride, ...h }) => { const e0 = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'raw' }); const e = e0.verdict === 'error' ? { ...e0, fact: 'no decision' } : e0; const t0 = shortTitle ? { ...e, title: shortTitle } : e; const sp = L.tools ? toolsSpecFor(h.kind, L.lab, airline) : null; const t = sp && t0.spec && !t0.spec.none ? { ...t0, spec: { ...t0.spec, ...sp } } : t0; return factOverride && e.verdict === 'ok' ? { ...t, fact: factOverride } : t; }),
         // A tool server's refusal is the lab's own rule, not a gateway's: the vendored "What Privilege did" panel would attribute it to one, so a tools run builds none.
         gatewayTrace: L.tools ? [] : gw, tokens, traceId: trace.traceId, traceparent: formatTraceparent(trace.traceId, rootSpan),
         narration: reply?.text ?? '',
         ...(outcome === 'REAL_HOLD' && challenge ? { challenge } : {}),
         ...(groupsClaim ? { groupsClaim } : {}),
+        // The airline pack (design-airline-real.md 5.3): the rule on every airline Real run, the booking on every run of the booking tool, the narrowing when the tool server narrowed.
+        ...(airline ? { fareRule: { ...FARE_RULE } } : {}),
+        ...(airline && tool === 'book_airline_flight' ? { booking: bookingOf(sit, bookingPayload) } : {}),
+        ...(constrained ? { constrained } : {}),
       }; }
     } finally { inFlight -= 1; }
   }
@@ -618,7 +632,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         if (uc.id === 'UC21') {
           const g = dClaims?.groups;
           const has = Array.isArray(g) || typeof g === 'string';
-          const tier = config.toolsTierGroup;
+          const tier = toolPackOf(tool) === 'airline' ? config.toolsTierGroupAirline : config.toolsTierGroup;
           // The groups claim is UNVERIFIED in a real exchanged token: when it is absent the tool server could not tell the tier at all, which is not the same as "not in the group".
           // The run says which it was (`groupsClaim`), and the decision card words it so.
           const whose = L.lab ? `Lab policy (${L.where}), not PingOne Authorize` : `The tool server's own policy (${L.where})`;
@@ -654,7 +668,8 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       rest(2, 'Not run: the tool was not called.');
       return { outcome: 'REAL_TOOL_ERROR', reply: { who: 'Agent', text: `I could not find ${needTwo ? 'two accounts' : 'an account'} of yours for ${tool}, so I did not call it.` } };
     }
-    const args = toolArgs(tool, { vertical, accounts, amount: situationOf(uc.id, vertical).amount, args: situationOf(uc.id, vertical).args });
+    const sit = situationOf(uc.id, vertical);
+    const args = toolArgs(tool, { vertical, accounts, amount: sit.amount, args: sit.args, trip: sit.trip });
     // Owner 2026-11-13: a HITL retry echoes the provider's challenge id as the control field _hitl_challenge_id
     // (the provider strips it before dispatch; a verified receipt discharges the consent obligation).
     if (receipt) args._hitl_challenge_id = receipt;
@@ -665,6 +680,9 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     const m = mapped(last);
     const audit = parseAuditTrail(last.headers['x-gw-audit-trail']);
     const decisionOutcome = last.kind === 'deny' ? 'DENY' : last.kind === 'hold' ? 'HOLD' : last.kind === 'ok' ? 'PERMIT' : last.kind === 'token' ? 'TOKEN REFUSED' : 'NO DECISION';
+    // The airline booking: a 200 whose answer carries a valid `constrained` is the tool server narrowing the cabin (design-airline-real.md 5.2). Nothing else is.
+    const bookingResult = tool === 'book_airline_flight' && last.kind === 'ok' ? toolPayload(last.rpc?.result) : null;
+    const narrowed = constrainedOf(bookingResult);
     const decisionVerdict = last.kind === 'ok' ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny';
     const decisionBody = { tool, arguments: argsShown(args) };
     const decisionRes = { status: last.status, ...(audit ? { 'x-gw-audit-trail': audit.parsed ?? audit.raw, decision: audit.decision } : {}), ...(last.headers['www-authenticate'] ? { 'www-authenticate': last.headers['www-authenticate'] } : {}), ...(last.rawText ? { body: last.rawText } : {}), ...(last.status === 0 ? { no_response: last.timedOut ? `no HTTP response within ${Math.round((last.waitedMs ?? 0) / 1000)} s: the lab stopped waiting` : 'the connection failed before any response' } : {}) };
@@ -674,9 +692,10 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       // Observed when the answer's audit header says it, inferred when only the status does; and when nothing answered there is no decision to attribute.
       const noAnswer = last.kind === 'unreachable' || last.kind === 'other';
       const decidedBy = noAnswer ? 'no decision: nothing answered' : L.lab ? `lab policy (${L.where}), not PingOne Authorize` : `the tool server (${L.where}); the lab cannot see which policy it applied`;
-      leg({ kind: 'authorize-decision', factOverride: noAnswer ? undefined : L.lab ? 'lab policy decided' : 'tool server decided', label: L.lab ? `Lab policy (${L.where}) decision: ${decisionOutcome}, read from the tool server's answer to tools/call (not PingOne Authorize)` : `Tool server (${L.where}) decision: ${decisionOutcome}, read from its answer to tools/call`, from: 'toolserver', to: 'toolserver', verdict: decisionVerdict, traceparent: last.traceparent,
-        decision: { outcome: audit?.decision ?? decisionOutcome, by: decidedBy, basis: audit?.decision ? 'observed' : 'inferred' },
-        note: last.kind === 'ok' ? (L.lab ? `The tool server let tools/call through: the lab's own policy (${L.where}) permitted it, not PingOne Authorize.` : `The tool server (${L.where}) let tools/call through.`) : m.note, request: decisionBody, response: decisionRes }, 'decide');
+      const word = narrowed ? 'CONSTRAINED' : decisionOutcome;
+      leg({ kind: 'authorize-decision', factOverride: noAnswer ? undefined : L.lab ? 'lab policy decided' : 'tool server decided', label: L.lab ? `Lab policy (${L.where}) decision: ${word}, read from the tool server's answer to tools/call (not PingOne Authorize)` : `Tool server (${L.where}) decision: ${word}, read from its answer to tools/call`, from: 'toolserver', to: 'toolserver', verdict: decisionVerdict, traceparent: last.traceparent,
+        decision: { outcome: audit?.decision ?? word, by: decidedBy, basis: audit?.decision ? 'observed' : 'inferred' },
+        note: narrowed ? `The tool server (${L.where}) answered 200 and narrowed the cabin from ${narrowed.asked} to ${narrowed.granted} (${L.lab ? `lab policy (${L.where}), not PingOne Authorize` : `the tool server's own policy (${L.where}), which the lab cannot see`}).` : last.kind === 'ok' ? (L.lab ? `The tool server let tools/call through: the lab's own policy (${L.where}) permitted it, not PingOne Authorize.` : `The tool server (${L.where}) let tools/call through.`) : m.note, request: decisionBody, response: decisionRes }, 'decide');
     } else {
       leg({ kind: 'authorize-decision', label: `Authorize decision: ${decisionOutcome}, read from the gateway's answer to tools/call`, from: 'gateway', to: 'authorize', verdict: decisionVerdict, traceparent: last.traceparent,
         decision: { outcome: audit?.decision ?? decisionOutcome, by: 'the Agent Gateway' },
@@ -688,11 +707,11 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     const cut = last.kind === 'ok' && !result && last.truncated;
     leg({
       kind: last.kind === 'ok' ? 'tool-dispatched' : last.kind === 'hold' ? 'tool-held' : 'tool-refused', label: L.tools ? `${P.label}: tools/call ${tool}` : `MCP tool: tools/call ${tool}${calls.length > 1 ? ' (after get_my_accounts for your account ids)' : ''}`, from: L.tools ? 'toolserver' : 'gateway', to: L.tools ? 'toolserver' : 'mcp', verdict: last.kind === 'ok' && !toolFailed ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny', traceparent: last.traceparent,
-      note: last.kind === 'ok' ? (toolFailed ? 'The tool answered with an error.' : L.tools ? (L.lab ? 'The tool server ran the tool. The data is lab-invented.' : `The tool server (${L.where}) ran the tool.`) : 'The SE MCP server ran the tool.') : m.note,
+      note: last.kind === 'ok' ? (toolFailed ? 'The tool answered with an error.' : L.tools ? (narrowed ? `The tool server${L.lab ? '' : ` (${L.where})`} ran the tool with the cabin narrowed to ${narrowed.granted}.${L.lab ? ' The data is lab-invented.' : ''}` : L.lab ? 'The tool server ran the tool. The data is lab-invented.' : `The tool server (${L.where}) ran the tool.`) : 'The SE MCP server ran the tool.') : m.note,
       request: { calls: calls.map((c) => shownReq(c, { method: 'tools/call', name: c === call ? tool : 'get_my_accounts', arguments: c === call ? argsShown(args) : {} })) },
       response: { calls: calls.map((c) => shownRes(c, c.kind !== 'ok' ? (c.rawText ? { raw: c.rawText } : (c.rpc ?? null)) : c.rpc ? (c.rpc.error ? { error: { code: c.rpc.error.code ?? null, message: str(c.rpc.error.message) } } : { isError: c.rpc.result?.isError === true, content: contentShown(c.rpc.result) }) : null)) },
     }, 'tool');
-    if (last.kind !== 'ok') { rest(2, `Not run: ${m.note}`); return { outcome: m.outcome, reply: m.reply, ...(m.challengeId ? { challengeId: m.challengeId } : {}) }; }
+    if (last.kind !== 'ok') { rest(2, `Not run: ${m.note}`); return { outcome: m.outcome, reply: m.reply, ...(m.challengeId ? { challengeId: m.challengeId } : {}), ...(last.kind === 'hold' && tool === 'book_airline_flight' ? { payload: last.rpc } : {}) }; }
     if (toolFailed) {
       legNotRun('api', 'Not known: the tool answered with an error.');
       const why = rpcError ? str(rpcError.message) : textOf(result);
@@ -702,9 +721,15 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     }
     if (L.tools) legNotRun('api', L.lab ? 'Not run: this tool serves lab-invented data itself; no API sits behind it.' : 'Not run: the lab sees no API behind the tool server; its own answer is the data.');
     else push({ kind: 'api-call', label: 'API: the call behind the tool, made by the SE MCP server (seen only through its result)', from: 'mcp', to: 'api', verdict: 'ok', traceparent: last.traceparent, note: 'The lab does not see this call itself: the MCP server makes it with its own token and hands back the result.', request: { note: 'made by the SE MCP server, not by this lab' }, response: { content: contentShown(result) }, ...L.ans });
-    const text = replyText(tool, result, { provider: P.provider });
+    // "As approved" only when the tool server's own audit rule says the booking went through on an approval (lab-fare-approved); a receipt the lab merely sent proves nothing.
+    const text = replyText(tool, result, { provider: P.provider, approved: audit?.parsed?.rule === 'lab-fare-approved' });
     push({ kind: 'agent-reply', label: 'Agent reply: written from the tool result', from: 'agent', to: 'page', verdict: 'ok', traceparent: tp(), request: {}, response: { reply: text } });
-    return { outcome: 'REAL_PERMIT', reply: { who: 'Agent', text } };
+    if (narrowed) {
+      const by = L.lab ? `lab policy (${L.where}), not PingOne Authorize` : `the tool server (${L.where}); the lab cannot see which policy it applied`;
+      const reason = `the tool server answered 200 with the cabin narrowed from ${narrowed.asked} to ${narrowed.granted}: ${becauseWords(narrowed.because, narrowed.limit)}`;
+      return { outcome: 'REAL_CONSTRAINED', reply: { who: 'Agent', text }, constrained: { ...narrowed, by, reason }, payload: bookingResult };
+    }
+    return { outcome: 'REAL_PERMIT', reply: { who: 'Agent', text }, ...(bookingResult ? { payload: bookingResult } : {}) };
   }
 
   // UC24 on the tool server: the public tool is called with NO token, then a protected tool is probed with no token and must be refused (401). No agent token,
@@ -720,12 +745,13 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     if (init.kind === 'ok') { await gs.initialized(); list = await gs.listTools(); }
     const listed = Array.isArray(list?.rpc?.result?.tools) ? list.rpc.result.tools.filter((t) => t && typeof t.name === 'string').map((t) => t.name.slice(0, 80)).slice(0, 300) : [];
     const firstBad = init.kind !== 'ok' ? init : list && list.kind !== 'ok' ? list : null;
-    leg({ kind: 'gateway-check', label: `${P.label}: initialize and tools/list over MCP without a token`, from: 'agent', to: 'toolserver', verdict: firstBad ? 'deny' : 'ok', traceparent: init.traceparent,
+    leg({ kind: 'gateway-check', label: `${P.label}: initialize and tools/list over MCP without a token`, from: 'agent', to: 'toolserver', ...(isAirline(vertical) && !firstBad ? { factOverride: `tool server answered without a token (${L.where})` } : {}), verdict: firstBad ? 'deny' : 'ok', traceparent: init.traceparent,
       note: firstBad ? mapped(firstBad).note : `The tool server (${L.where}) answered with no token and listed ${listed.length} tool${listed.length === 1 ? '' : 's'}: the public ones only.`,
       request: { calls: [shownReq(init, { method: 'initialize' }), ...(list ? [shownReq(list, { method: 'notifications/initialized, then tools/list' })] : [])] },
       response: { calls: [shownRes(init, init.rpc?.result ? { serverInfo: init.rpc.result.serverInfo ?? null, protocolVersion: str(init.rpc.result.protocolVersion) } : init.rpc ?? null), ...(list ? [shownRes(list, { tools: listed.length, names: listed.slice(0, 40) })] : [])] } }, 'check', !(firstBad && firstBad.kind === 'unreachable'));
     if (firstBad) { const m = mapped(firstBad); legNotRun('tool', `Not run: ${m.note}`); legNotRun('reply', `Not run: ${m.note}`); return { outcome: m.outcome, reply: m.reply }; }
-    const args = toolArgs(tool, { vertical, args: situationOf(uc.id, vertical).args });
+    const sit = situationOf(uc.id, vertical);
+    const args = toolArgs(tool, { vertical, args: sit.args, trip: sit.trip });
     const call = await gs.callTool(tool, args);
     const m = mapped(call);
     leg({ kind: call.kind === 'ok' ? 'tool-dispatched' : call.kind === 'hold' ? 'tool-held' : 'tool-refused', label: `${P.label}: tools/call ${tool} without a token (a public tool)`, from: 'toolserver', to: 'toolserver', verdict: call.kind === 'ok' ? 'ok' : call.kind === 'hold' ? 'held' : (call.kind === 'unreachable' || call.kind === 'other') ? 'error' : 'deny', traceparent: call.traceparent,
@@ -733,16 +759,17 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       request: { calls: [shownReq(call, { method: 'tools/call', name: tool, arguments: args })] }, response: { calls: [shownRes(call, call.kind !== 'ok' ? (call.rawText ? { raw: call.rawText } : (call.rpc ?? null)) : call.rpc?.error ? { error: { code: call.rpc.error.code ?? null, message: str(call.rpc.error.message) } } : { isError: call.rpc?.result?.isError === true, content: contentShown(call.rpc?.result) })] } }, 'tool');
     if (call.kind !== 'ok') { legNotRun('reply', `Not run: ${m.note}`); return { outcome: m.outcome, reply: m.reply }; }
     let probed = null;
+    const probeTool = probeToolOf(vertical);
     if (probe) {
       const pArgs = { limit: 1 };
-      const pc = await gs.callTool(PROBE_TOOL, pArgs);
+      const pc = await gs.callTool(probeTool, pArgs);
       probed = pc.kind === 'token';
-      leg({ kind: 'tool-refused', label: `${P.label}: tools/call ${PROBE_TOOL} without a token (the protected tool, probed)`, from: 'toolserver', to: 'toolserver', verdict: probed ? 'deny' : 'error', traceparent: pc.traceparent,
+      leg({ kind: 'tool-refused', label: `${P.label}: tools/call ${probeTool} without a token (the protected tool, probed)`, from: 'toolserver', to: 'toolserver', verdict: probed ? 'deny' : 'error', traceparent: pc.traceparent,
         note: probed ? 'Refused as it should be: the protected tool answered 401 with no token.' : 'NOT refused: the protected tool answered without a token',
-        request: { calls: [shownReq(pc, { method: 'tools/call', name: PROBE_TOOL, arguments: pArgs })] }, response: { calls: [shownRes(pc, pc.kind !== 'ok' ? (pc.rawText ? { raw: pc.rawText } : (pc.rpc ?? null)) : { content: contentShown(pc.rpc?.result) })] } }, 'tool');
+        request: { calls: [shownReq(pc, { method: 'tools/call', name: probeTool, arguments: pArgs })] }, response: { calls: [shownRes(pc, pc.kind !== 'ok' ? (pc.rawText ? { raw: pc.rawText } : (pc.rpc ?? null)) : { content: contentShown(pc.rpc?.result) })] } }, 'tool');
     }
     const found = replyText(tool, call.rpc?.result ?? null, { provider: P.provider });
-    const text = probed === null ? found : probed ? `${found} The protected tool ${PROBE_TOOL} was refused with no token (HTTP 401).` : `${found} The protected tool ${PROBE_TOOL} answered with no token: it was NOT refused.`;
+    const text = probed === null ? found : probed ? `${found} The protected tool ${probeTool} was refused with no token (HTTP 401).` : `${found} The protected tool ${probeTool} answered with no token: it was NOT refused.`;
     push({ kind: 'agent-reply', label: 'Agent reply: written from the tool result', from: 'agent', to: 'page', verdict: probed === false ? 'error' : 'ok', traceparent: tp(), request: {}, response: { reply: text } });
     if (probed === false) return { outcome: 'REAL_NOT_REFUSED', reply: { who: 'Tool server', text } };
     return { outcome: 'REAL_PERMIT', reply: { who: 'Agent', text } };
@@ -757,11 +784,12 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     hosts: () => (configured() ? [...new Set(endpoints().map((u) => new URL(u).hostname).filter((h) => !net.isIP(h.replace(/^\[|\]$/g, ''))))] : []),
     gateway: () => (configured() ? config.gateway : null), gatewayProblem: () => (configured() ? config.gatewayProblem ?? null : null),
     providerSetting: () => (configured() ? config.provider : 'auto'), toolsAudience: () => (configured() ? config.toolsAudience : DEFAULT_TOOLS_AUDIENCE), toolsTierGroup: () => (configured() ? config.toolsTierGroup : DEFAULT_TIER_GROUP),
+    toolsTierGroupAirline: () => (configured() ? config.toolsTierGroupAirline : DEFAULT_TIER_GROUP_AIRLINE),
     toolsSeUrl: () => (configured() ? config.toolsSeUrl : null), toolsSeProblem: () => (configured() ? config.toolsSeProblem ?? null : null),
     // The SE HITL service (F1: from the same settings as everything else), or null. The secret is write-only: it leaves here only to the approvals module.
     hitl: () => (configured() && config.hitlUrl ? { url: config.hitlUrl, secret: config.hitlSecret } : null), hitlProblem: () => (configured() ? config.hitlProblem ?? null : null),
     // What the local tool server needs at init (no secret): the issuer is always the user's own PingOne; the agent client is the one actor it accepts.
-    localConfig: () => (configured() ? { issuer: `${config.base}/as`, audience: config.toolsAudience, allowedActors: [config.agent.id], tierGroup: config.toolsTierGroup } : null),
+    localConfig: () => (configured() ? { issuer: `${config.base}/as`, audience: config.toolsAudience, allowedActors: [config.agent.id], tierGroup: config.toolsTierGroup, tierGroupAirline: config.toolsTierGroupAirline } : null),
     a2aReady: () => configured() && Boolean(config.a2a), a2aProblem: () => (configured() ? config.a2aProblem ?? null : null),
     signIn, session: sessionOf, signOut: (ws) => sessions.delete(ws), userOf, run,
     // A workspace's session, or one signed in silently from the PingOne session (null when there is none or it has ended). Waits 5 s after a failed try.
@@ -880,6 +908,52 @@ export function accountIds(payload) {
   const list = Array.isArray(payload) ? payload : Array.isArray(payload?.accounts) ? payload.accounts : [];
   return list.map((a) => (a && typeof a.id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(a.id) ? a.id : null)).filter(Boolean).slice(0, 2);
 }
+// The airline booking (design-airline-real.md 5). constrainedOf: the answer's `constrained` object, or null unless the answer is a booking that really was narrowed and
+// every field is a member of its fixed set (strings from the answer are never copied beyond these checked members and numbers).
+const CABINS = ['business', 'economy'];
+const BECAUSE = ['international', 'over-limit'];
+export function constrainedOf(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) || payload.status !== 'booked') return null;
+  const c = payload.constrained;
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+  if (c.field !== 'cabin' || !CABINS.includes(c.asked) || !CABINS.includes(c.granted) || c.asked === c.granted) return null;
+  if (!Array.isArray(c.because) || c.because.length < 1 || c.because.length > BECAUSE.length || !c.because.every((b) => BECAUSE.includes(b)) || new Set(c.because).size !== c.because.length) return null;
+  if (typeof c.limit !== 'number' || !Number.isFinite(c.limit)) return null;
+  if (payload.cabin_booked !== c.granted) return null;
+  return { field: 'cabin', asked: c.asked, granted: c.granted, because: BECAUSE.filter((b) => c.because.includes(b)), limit: c.limit };
+}
+// The words for a narrowing, from the checked members only. The limit shown is the rule's own (a limit, not a price paid).
+const becauseWords = (because, limit) => because.map((b) => (b === 'international' ? 'this trip is international' : `the fare is over the $${Number.isFinite(limit) ? limit : FARE_RULE.limit} limit`)).join(' and ');
+// run.booking, with the engine's keys: the fare is the one the rule JUDGED (the tool server's table), never a price paid; booked is null until a booking was made.
+// The fare the tool server judged is read from its 200 answer (fare_judged) or from its 428 body (the hold, same field), as a number in 0..100000. A refusal or a missing
+// answer carries no fare, so the lab's own staged figure stands in and the booking says so (fareStaged: true): the page never presents a staged figure as judged.
+const judgedFare = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 100000 ? v : null);
+export function bookingOf(sit, payload, hold = null) {
+  const t = sit?.trip ?? {};
+  const src = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : hold && typeof hold === 'object' && !Array.isArray(hold) ? hold : null;
+  const judged = judgedFare(src?.fare_judged);
+  return {
+    flight: t.flight, from: t.from, to: t.to,
+    fare: judged ?? sit?.amount,
+    ...(judged === null ? { fareStaged: true } : {}),
+    international: typeof src?.international === 'boolean' ? src.international : sit?.international === true,
+    asked: t.cabin ?? FARE_RULE.from,
+    booked: payload?.status === 'booked' && CABINS.includes(payload.cabin_booked) ? payload.cabin_booked : null,
+  };
+}
+// The booking reply, from the answer's own checked fields only; null when the answer does not look like a booking (the generic text then speaks). Never a fare or price.
+function bookingReply(result, { approved = false } = {}) {
+  const p = toolPayload(result);
+  if (!p || typeof p !== 'object' || Array.isArray(p) || p.lab_invented !== true || p.status !== 'booked') return null;
+  if (!(typeof p.flight === 'string' && /^[A-Z]{2} \d{3}$/.test(p.flight) && typeof p.from === 'string' && /^[A-Z]{3}$/.test(p.from) && typeof p.to === 'string' && /^[A-Z]{3}$/.test(p.to)
+    && typeof p.confirmation === 'string' && /^LKR-[0-9A-F]{6}$/.test(p.confirmation) && CABINS.includes(p.cabin_booked))) return null;
+  const where = `${p.flight} from ${p.from} to ${p.to}, confirmation ${p.confirmation}${LAB_DATA_NOTE}.`;
+  if (Object.hasOwn(p, 'constrained')) {
+    const c = constrainedOf(p);
+    return c ? `Booked in ${c.granted}, not ${c.asked}: ${becauseWords(c.because, c.limit)}. ${where}` : null;
+  }
+  return `${approved ? 'Booked as approved' : 'Booked'}: a ${p.cabin_booked} seat on ${where}`;
+}
 // The reply in the Agent's voice, from the real result: up to six plain fields, or the first sentence of text. Never more than 600 characters. A payload that says
 // lab_invented (the lab's own tool server's data) gets that said in the reply, and the flag itself is not read out as a field.
 export const LAB_DATA_NOTE = ' (lab-invented data from the lab\'s own tool server)';
@@ -890,11 +964,22 @@ function cleanKeepIds(text, max) {
   const held = String(text).replace(UUID_ANYWHERE, (m) => { ids.push(m); return `uidph${ids.length - 1}x`; });
   return cleanFree(held, max + ids.length * 40).replace(/uidph(\d{1,3})x/g, (m, i) => ids[Number(i)] ?? m).slice(0, max);
 }
-export function replyText(tool, result, _opts = {}) {
+// The airline tools' own fields, the only ones the generic reply reads out for them: a tool server that is not this lab's (an SE-hosted copy) may add others, and the lab
+// shows no field it did not pin (a passport number, say, is never read out because an answer carried it).
+const AIRLINE_SHOWN = {
+  get_airline_bookings: ['signed_in_sub', 'total', 'returned', 'miles'],
+  get_flight_status: ['flight', 'route', 'status', 'gate', 'departs'],
+  sensitive_passenger_record: ['passport_last4', 'known_traveller_number', 'card_last4', 'note'],
+  list_airports: ['total'],
+  request_change_fee_waiver: ['request_id', 'status', 'flight', 'requested_by', 'note'],
+};
+export function replyText(tool, result, opts = {}) {
+  if (tool === 'book_airline_flight') { const b = bookingReply(result, opts); if (b) return b; }
   const p = toolPayload(result);
   if (typeof p === 'string') return cleanFree(`Here is what ${tool} returned: ${p}`, 600);
   const labData = p && typeof p === 'object' && !Array.isArray(p) && p.lab_invented === true;
-  const flat = (o) => Object.entries(o || {}).filter(([k, v]) => k !== 'lab_invented' && ['string', 'number', 'boolean'].includes(typeof v)).slice(0, 6).map(([k, v]) => `${k} ${v}`).join(', ');
+  const shown = Object.hasOwn(AIRLINE_SHOWN, tool) ? AIRLINE_SHOWN[tool] : null;
+  const flat = (o) => Object.entries(o || {}).filter(([k, v]) => k !== 'lab_invented' && (!shown || shown.includes(k)) && ['string', 'number', 'boolean'].includes(typeof v)).slice(0, 6).map(([k, v]) => `${k} ${v}`).join(', ');
   if (Array.isArray(p)) return cleanKeepIds(`${tool} returned ${p.length} ${p.length === 1 ? 'item' : 'items'}${p.length && typeof p[0] === 'object' ? `; the first: ${flat(p[0])}` : ''}.`, 600);
   if (p && typeof p === 'object') {
     const arr = Object.entries(p).find(([, v]) => Array.isArray(v));

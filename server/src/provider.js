@@ -21,17 +21,29 @@ export const providerSettingOf = (raw) => {
 export const LOCAL_TOOLS = new Set([
   'get_my_issues', 'bulk_update_issues', 'get_project_security_settings', 'get_release_summary', 'list_marketplace_apps',
   'get_deployment_status', 'request_admin_access', 'scan_repository', 'brave_news_search', 'code_search',
+  'get_airline_bookings', 'get_flight_status', 'book_airline_flight', 'sensitive_passenger_record', 'list_airports', 'request_change_fee_waiver',
 ]);
 export const TOOL_SCOPES = {
   get_my_issues: 'issues:read', bulk_update_issues: 'issues:write', get_project_security_settings: 'security:read', get_release_summary: 'release:read',
   list_marketplace_apps: null, get_deployment_status: 'deploy:read', request_admin_access: 'admin:request', scan_repository: 'security:read',
   brave_news_search: 'issues:read', code_search: 'issues:read',
+  get_airline_bookings: 'trips:read', get_flight_status: 'flights:read', book_airline_flight: 'flights:book',
+  sensitive_passenger_record: 'travellers:read', list_airports: null, request_change_fee_waiver: 'fees:request',
 };
-export const PUBLIC_TOOLS = new Set(['list_marketplace_apps']);
-// Hidden from tools/list unless the token's groups claim holds the tier group (design R3); a call to it is still refused (403 group_required).
-export const GROUP_GATED_TOOLS = new Set(['get_project_security_settings']);
+export const PUBLIC_TOOLS = new Set(['list_marketplace_apps', 'list_airports']);
+// Hidden from tools/list unless the token's groups claim holds the tier group (design R3); each pack has its own group; a call to it is still refused (403 group_required).
+export const GROUP_GATED_TOOLS = new Set(['get_project_security_settings', 'sensitive_passenger_record']);
 // Use cases that call a tool even when tools/list does not offer it (UC9 is the probe: it shows the call-time 403 for a user outside the tier group).
 export const CALL_UNLISTED = new Set(['UC9']);
+
+// Which pack each tool belongs to (a copy of registry.js TOOL_META[*].pack; localParity.test.js pins equality) and which pack a cast's castToolServer value names.
+export const TOOL_PACK = {
+  get_my_issues: 'software', bulk_update_issues: 'software', get_project_security_settings: 'software', get_release_summary: 'software', list_marketplace_apps: 'software',
+  get_deployment_status: 'software', request_admin_access: 'software', scan_repository: 'software', brave_news_search: 'software', code_search: 'software',
+  get_airline_bookings: 'airline', get_flight_status: 'airline', book_airline_flight: 'airline', sensitive_passenger_record: 'airline', list_airports: 'airline', request_change_fee_waiver: 'airline',
+};
+export const PACK_OF_TOOL_SERVER = { 'work-suite': 'software', 'larkspur-air': 'airline' };
+export const toolPackOf = (tool) => (typeof tool === 'string' && Object.hasOwn(TOOL_PACK, tool) ? TOOL_PACK[tool] : null);
 
 export const toolScopeOf = (tool) => (typeof tool === 'string' && Object.hasOwn(TOOL_SCOPES, tool) ? TOOL_SCOPES[tool] : null);
 
@@ -97,7 +109,7 @@ export function createProviders({ setting = 'auto', real = null, local = null, t
   const toolsLocalPick = (why) => ({ provider: 'local', capability: 'tools', url: local.mcpUrl(), audience: toolsAudience(), scope: null, why, answeredBy: TOOLS_LOCAL_ANSWERED_BY, label: 'Tool server [local]' });
 
   // Exactly the Pick of the design, or null when nothing can answer. Called once per run.
-  async function choose({ capability } = {}) {
+  async function choose({ capability, pack = null } = {}) {
     if (hosted) return null;
     if (capability === 'gateway') {
       const gw = gateway();
@@ -110,6 +122,9 @@ export function createProviders({ setting = 'auto', real = null, local = null, t
       const se = seUrl();
       if (chosen === 'se') return se ? toolsSePick('forced') : null;
       if (chosen === 'local') return localReady() ? toolsLocalPick('forced') : null;
+      // The airline tools exist on the lab's own tool server only: an SE-hosted copy is not known to carry them and its probe (an initialize) cannot tell, so on auto the airline
+      // pack uses the local one whenever it is up. AAG_PROVIDER=se still forces SE (the owner's explicit choice).
+      if (pack === 'airline' && localReady()) return toolsLocalPick('auto-airline-local');
       if (se && await probe(se)) return toolsSePick('auto-se-ok');
       if (localReady()) return toolsLocalPick(se ? 'auto-se-probe-failed' : 'auto-se-not-configured');
       return null;

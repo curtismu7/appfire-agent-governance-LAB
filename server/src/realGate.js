@@ -12,7 +12,7 @@
 // reach (none today).
 import { isFlow, chainOf } from './flow.js';
 import { toolFor } from './cast.js';
-import { LOCAL_TOOLS } from './provider.js';
+import { LOCAL_TOOLS, PACK_OF_TOOL_SERVER, TOOL_PACK } from './provider.js';
 
 export const SE_MCP_TOOLS = new Set([
   'get_my_accounts', 'get_account_balance', 'create_transfer', 'get_sensitive_account_details', 'get_branch_hours', 'request_fee_waiver',
@@ -41,7 +41,7 @@ const GATEWAY_MISSING = 'the SE gateway is not set up here (AAG_AGENT_GATEWAY_UR
 const gatewayWhy = (problem) => (typeof problem === 'string' && problem ? `the SE gateway is not set up here: ${problem}` : GATEWAY_MISSING);
 // What the lab says about its own tool server when it is not up, by the state the supervisor is in (the default is the plain "not running here").
 const localDown = (st) => (st === 'starting' ? "the lab's tool server is restarting here" : st === 'failed' ? "the lab's tool server stopped here and could not be restarted yet (it is tried again on a later run)" : "the lab's tool server is not running here");
-const GATEWAY_LOCAL_ONLY = 'AAG_PROVIDER=local is set and the local tool server serves the software vertical only';
+const GATEWAY_LOCAL_ONLY = 'AAG_PROVIDER=local is set and the local tool server serves the airline and software verticals only';
 
 // { real: true, tool, capability } or { real: false, reason } (fixed words; the reason names the part that keeps it on the lab's own steps).
 // opts.a2a: the AAG_A2A_* settings are complete and the vertical is A2A_VERTICAL; opts.a2aWhy: the fixed words saying why not, when they are not.
@@ -50,8 +50,8 @@ export function realGate(uc, cast, { a2a = false, a2aWhy = null, tools = { se: f
   if (!isFlow(uc)) return { real: false, reason: 'it is a guided page: the lab shows it and does not compute it' };
   // The pack's tools are served by a tool server, not the SE gateway (castToolServer, software): the capability decides which provider can answer.
   const capability = cast && Object.hasOwn(cast, 'castToolServer') ? 'tools' : 'gateway';
-  // The airline pack (castFareRule) has no tool server yet (phase B hosts its tools there) and nobody ran the SE gateway's airline tools (UNVERIFIED): it runs on the lab's own steps,
-  // whatever its tool is called, and the reason is neutral so the page never says what SE serves.
+  // A pack with a fare rule but no tool server would be left to the SE gateway, whose airline tools nobody ran (UNVERIFIED): it stays on the lab's own steps with a neutral
+  // reason. The shipped airline pack has castToolServer, so it does not reach this line.
   if (cast?.castFareRule && capability !== 'tools') return { real: false, reason: "this vertical runs on the lab's own steps here" };
   const chain = chainOf(uc);
   // Owner 2026-11-13: UC7/UC8 (the hitl track, tool create_transfer) run REAL — the SE gateway's HITL pipeline
@@ -78,6 +78,10 @@ export function realGate(uc, cast, { a2a = false, a2aWhy = null, tools = { se: f
   if (Object.hasOwn(TOOL_NEEDS, tool)) return { real: false, reason: `its tool ${tool} needs ${TOOL_NEEDS[tool]}` };
   if (capability === 'tools') {
     if (!LOCAL_TOOLS.has(tool)) return { real: false, reason: `its tool ${tool} is not served by the lab's tool server` };
+    // A tool of the other pack (brave_news_search and code_search are software's) is not this vertical's: its scope would be the wrong pack's.
+    const packOfServer = Object.hasOwn(PACK_OF_TOOL_SERVER, cast.castToolServer) ? PACK_OF_TOOL_SERVER[cast.castToolServer] : null;
+    const packOfTool = Object.hasOwn(TOOL_PACK, tool) ? TOOL_PACK[tool] : null;
+    if (packOfTool !== packOfServer) return { real: false, reason: `its tool ${tool} is not served by the lab's tool server for this vertical` };
     if (setting === 'se' && !tools.se) return { real: false, reason: 'AAG_PROVIDER=se is set and AAG_TOOLS_SE_URL is not' };
     if (setting === 'local' && !tools.local) return { real: false, reason: `AAG_PROVIDER=local is set and ${localDown(tools.localState)}` };
     if (setting === 'auto' && !tools.se && !tools.local) return { real: false, reason: `${localDown(tools.localState)} and AAG_TOOLS_SE_URL is not set` };
@@ -92,7 +96,7 @@ export function realGate(uc, cast, { a2a = false, a2aWhy = null, tools = { se: f
 // The arguments the lab sends for each tool (lab-invented, labelled). Account ids come from get_my_accounts in the same session (the user's own).
 // Every value is a string or number this table or a situation fixed, never visitor text (`said` is not a tool argument).
 export const NEEDS_ACCOUNTS = new Set(['get_account_balance', 'create_transfer', 'request_fee_waiver']);
-export function toolArgs(tool, { vertical, accounts = [], amount, args }) {
+export function toolArgs(tool, { vertical, accounts = [], amount, args, trip }) {
   const a0 = accounts[0] ?? null; const a1 = accounts[1] ?? accounts[0] ?? null;
   const amt = Number.isFinite(amount) ? amount : 25;
   switch (tool) {
@@ -113,6 +117,14 @@ export function toolArgs(tool, { vertical, accounts = [], amount, args }) {
     case 'get_deployment_status': return { environment: 'production' };
     case 'request_admin_access': return { role: 'project-admin', project: 'PLAT', reason: 'Lab request: approve the release' };
     case 'scan_repository': return { repo: typeof args?.repo === 'string' ? args.repo : 'platform' };
+    // The airline pack's tool server (design-airline-real.md 3.2). Every value is a string or number this table or a situation fixed, never visitor text.
+    // The booking never carries a fare, amount, price or international flag: the tool server owns them.
+    case 'get_airline_bookings': return { limit: 5 };
+    case 'get_flight_status': return { flight: typeof trip?.flight === 'string' ? trip.flight : 'LK 214' };
+    case 'book_airline_flight': return { flight: typeof trip?.flight === 'string' ? trip.flight : 'LK 214', cabin: typeof trip?.cabin === 'string' ? trip.cabin : 'business' };
+    case 'sensitive_passenger_record': return {};
+    case 'list_airports': return { limit: 5 };
+    case 'request_change_fee_waiver': return { flight: 'LK 214', reason: 'Lab request: waive the change fee' };
     default: return {};
   }
 }

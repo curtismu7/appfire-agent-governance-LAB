@@ -2,7 +2,7 @@
 import test, { after, before } from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';
-import { ACTOR, TIER_GROUP } from './localFakeIdp.js';
+import { ACTOR, AIRLINE_SCOPES, ALL_SCOPES, TIER_GROUP, TIER_GROUP_AIRLINE } from './localFakeIdp.js';
 import { startRig } from './localHarness.js';
 import { TOOL_META } from '../src/local/registry.js';
 
@@ -10,8 +10,10 @@ let rig;
 before(async () => { rig = await startRig(); });
 after(async () => { await rig.close(); });
 
-const PUBLIC_ONLY = ['list_marketplace_apps'];
-const NOT_GATED = Object.keys(TOOL_META).filter((n) => !TOOL_META[n].group).sort();
+const PUBLIC_ONLY = ['list_airports', 'list_marketplace_apps'];
+// The default test token holds the six software scopes: it sees the nine ungated software tools and the one public airline tool (the tool server cannot tell the vertical).
+const NOT_GATED = Object.keys(TOOL_META).filter((n) => !TOOL_META[n].group && (TOOL_META[n].pack === 'software' || TOOL_META[n].public)).sort();
+const FULL = () => rig.token({ scope: `${ALL_SCOPES} ${AIRLINE_SCOPES}`, groups: [TIER_GROUP, TIER_GROUP_AIRLINE] });
 
 test('initialize opens a session, echoes a known protocol version, and a tokenless session is anonymous', async () => {
   const r = await rig.rpc('initialize', { protocolVersion: '2025-03-26' });
@@ -64,26 +66,31 @@ test('sessions expire after 15 idle minutes and at most 200 are kept', async () 
   assert.equal((await rig.rpc('tools/list', {}, { session: first })).status, 404, 'the oldest one was dropped');
 });
 
-test('tools/list: no token lists the public tool only; scopes decide the rest; the group-gated tool needs the tier group', async () => {
-  assert.deepEqual(await rig.list(), PUBLIC_ONLY);
-  assert.deepEqual((await rig.list(rig.token({ scope: 'issues:read' }))).sort(), ['brave_news_search', 'code_search', 'get_my_issues', 'list_marketplace_apps']);
-  assert.deepEqual((await rig.list(rig.token({ scope: ['deploy:read'] }))).sort(), ['get_deployment_status', 'list_marketplace_apps']);
+test('tools/list: no token lists the public tools only; scopes decide the rest; the group-gated tool needs the tier group', async () => {
+  assert.deepEqual((await rig.list()).sort(), PUBLIC_ONLY);
+  assert.deepEqual((await rig.list(rig.token({ scope: 'issues:read' }))).sort(), ['brave_news_search', 'code_search', 'get_my_issues', 'list_airports', 'list_marketplace_apps']);
+  assert.deepEqual((await rig.list(rig.token({ scope: ['deploy:read'] }))).sort(), ['get_deployment_status', 'list_airports', 'list_marketplace_apps']);
   assert.deepEqual((await rig.list(rig.token({}))).sort(), NOT_GATED, 'every scope but no tier group: the gated tool is hidden');
   const withArray = await rig.list(rig.token({ groups: [TIER_GROUP] }));
   assert.ok(withArray.includes('get_project_security_settings'));
-  assert.equal(withArray.length, 10);
+  assert.equal(withArray.length, 11, 'software ten and the public airline tool');
+  const airline = await rig.list(rig.token({ scope: AIRLINE_SCOPES, groups: [TIER_GROUP_AIRLINE] }));
+  assert.deepEqual(airline.sort(), ['book_airline_flight', 'get_airline_bookings', 'get_flight_status', 'list_airports', 'list_marketplace_apps', 'request_change_fee_waiver', 'sensitive_passenger_record']);
+  assert.ok(!(await rig.list(rig.token({ scope: AIRLINE_SCOPES, groups: [TIER_GROUP] }))).includes('sensitive_passenger_record'), 'the software tier group does not unlock the airline tool');
+  assert.ok(!(await rig.list(rig.token({ scope: ALL_SCOPES, groups: [TIER_GROUP_AIRLINE] }))).includes('get_project_security_settings'), 'the airline tier group does not unlock the software tool');
   assert.ok((await rig.list(rig.token({ groups: TIER_GROUP }))).includes('get_project_security_settings'), 'a single string groups claim');
   for (const groups of [['Other_Group'], [], undefined, 'Other_Group', { a: TIER_GROUP }]) {
     assert.ok(!(await rig.list(rig.token({ groups }))).includes('get_project_security_settings'));
   }
   const noScope = await rig.list(rig.token({ scope: 'unrelated:thing' }));
-  assert.deepEqual(noScope, PUBLIC_ONLY);
+  assert.deepEqual(noScope.sort(), PUBLIC_ONLY);
 });
 
 test('every descriptor is strict, names its scope and carries the control field', async () => {
-  const s = await rig.open(rig.token({ groups: [TIER_GROUP] }));
-  const r = await rig.rpc('tools/list', {}, { tok: rig.token({ groups: [TIER_GROUP] }), session: s });
-  assert.equal(r.json.result.tools.length, 10);
+  const full = FULL();
+  const s = await rig.open(full);
+  const r = await rig.rpc('tools/list', {}, { tok: full, session: s });
+  assert.equal(r.json.result.tools.length, 16);
   for (const t of r.json.result.tools) {
     assert.equal(t.inputSchema.additionalProperties, false, t.name);
     assert.ok(t.inputSchema.properties._hitl_challenge_id, t.name);
@@ -97,9 +104,10 @@ test('every descriptor is strict, names its scope and carries the control field'
 const GOOD = {
   get_my_issues: {}, bulk_update_issues: { project: 'PLAT', issue_count: 5 }, get_project_security_settings: {}, get_release_summary: {}, list_marketplace_apps: {},
   get_deployment_status: {}, request_admin_access: { role: 'project-admin', reason: 'because' }, scan_repository: { repo: 'platform' }, brave_news_search: { query: 'q' }, code_search: { query: 'q' },
+  get_airline_bookings: {}, get_flight_status: {}, book_airline_flight: { flight: 'LK 214' }, sensitive_passenger_record: {}, list_airports: {}, request_change_fee_waiver: { reason: 'because' },
 };
 test('every tool: its good call passes, an extra key and a wrong type are -32602, defaults are applied', async () => {
-  const tok = rig.token({ groups: [TIER_GROUP] });
+  const tok = FULL();
   const s = await rig.open(tok);
   for (const [name, args] of Object.entries(GOOD)) {
     const ok = await rig.call(name, args, { tok, session: s });
@@ -112,7 +120,7 @@ test('every tool: its good call passes, an extra key and a wrong type are -32602
     assert.equal(extra.json.error.message, 'invalid arguments: unexpected field');
     assert.ok(!extra.text.includes('surprise'), 'the request text is never echoed');
     const first = Object.keys(args)[0] ?? Object.keys(rig && {})[0];
-    const field = first ?? { get_my_issues: 'limit', get_project_security_settings: 'project', get_release_summary: 'project', list_marketplace_apps: 'limit', get_deployment_status: 'environment' }[name];
+    const field = first ?? { get_my_issues: 'limit', get_project_security_settings: 'project', get_release_summary: 'project', list_marketplace_apps: 'limit', get_deployment_status: 'environment', get_airline_bookings: 'limit', list_airports: 'limit', get_flight_status: 'flight', sensitive_passenger_record: 'project' }[name];
     const wrong = await rig.call(name, { ...args, [field]: { nested: true } }, { tok, session: s });
     assert.equal(wrong.json.error.code, -32602, `${name}: wrong type`);
   }
@@ -214,7 +222,7 @@ test('request guards: host, origin, size, media type, unknown paths, health', as
   const health = await rig.raw('/health');
   assert.equal(health.status, 200);
   assert.deepEqual(Object.keys(health.json), ['ok', 'service', 'version', 'issuer', 'jwks', 'tools']);
-  assert.equal(health.json.tools, 10); assert.equal(health.json.issuer, rig.config.issuer);
+  assert.equal(health.json.tools, 16); assert.equal(health.json.issuer, rig.config.issuer);
   assert.ok(!health.text.includes(String(rig.local.port)) && !health.text.includes(rig.config.hitlSecret), 'no port, no secret');
 });
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// OWNER-RUN. Makes the PingOne side of the lab's own tool server (the software vertical): ONE custom resource, its six scopes, its two attributes, the tier
-// group, and the agent app's grant of the six scopes.
+// OWNER-RUN. Makes the PingOne side of the lab's own tool server (the software and airline verticals): ONE custom resource, its eleven scopes, its two
+// attributes, the two tier groups, and the agent app's grant of the eleven scopes.
 //
 //   node scripts/owner/pingone-tools-setup.mjs            # dry run (default): reads PingOne, writes nothing, prints the plan
 //   node scripts/owner/pingone-tools-setup.mjs --apply    # creates what is missing (nothing that exists is changed or replaced)
@@ -10,11 +10,12 @@
 //
 // What it makes (every name is fixed; a thing that already exists is reused and reported, never edited):
 //   resource  "Appfire Work Suite Tools", audience appfire-work-tools (a custom resource: its access tokens are signed JWTs)
-//   scopes    issues:read issues:write security:read release:read deploy:read admin:request
+//   scopes    issues:read issues:write security:read release:read deploy:read admin:request   (software)
+//             trips:read flights:read flights:book travellers:read fees:request              (airline)
 //   attributes  act     the subject token's act, passed through (so the delegated token keeps the agent in act.sub)
 //               groups  the user's group names (memberOfGroupNames), which the tool server checks for the tier group
-//   group     Software_EnterpriseTier (made empty: adding a user to it is the owner's step; the script never edits a membership)
-//   grant     the AGENT app is granted all six scopes on that one resource (the lab's exchange 2 asks for ONE scope from this ONE resource per request:
+//   groups    Software_EnterpriseTier and Airline_OrbitTier (made empty: adding a user to one is the owner's step; the script never edits a membership)
+//   grant     the AGENT app is granted all eleven scopes on that one resource (the lab's exchange 2 asks for ONE scope from this ONE resource per request:
 //             PingOne refuses scopes from two resources in one request)
 // UNVERIFIED against a real tenant: the groups expression below, and that the groups claim appears in an EXCHANGED token (only a client-credentials token
 // was checked). The script reports an attribute that exists with another value as DRIFT and leaves it alone.
@@ -31,6 +32,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 export const TOOLS_RESOURCE_NAME = 'Appfire Work Suite Tools';
 export const TOOLS_AUDIENCE = 'appfire-work-tools';
 export const TIER_GROUP = 'Software_EnterpriseTier';
+export const AIRLINE_TIER_GROUP = 'Airline_OrbitTier';
 // PingOne rejects a description with any of $ + < = > ^ ` | ~ (HTTP 400 INVALID_VALUE on (description)): every description here is plain text.
 export const TOOLS_RESOURCE = { name: TOOLS_RESOURCE_NAME, description: 'Appfire Agent Governance LAB: the tools of the lab\'s own tool server (invented data). Created by the owner setup script.', type: 'CUSTOM', audience: TOOLS_AUDIENCE };
 export const TOOLS_SCOPES = [
@@ -40,6 +42,11 @@ export const TOOLS_SCOPES = [
   { name: 'release:read', description: 'Read a release summary' },
   { name: 'deploy:read', description: 'Read a deployment status' },
   { name: 'admin:request', description: 'Ask for admin access (a request only)' },
+  { name: 'trips:read', description: 'Read the signed-in traveller\'s trips' },
+  { name: 'flights:read', description: 'Read the status of a flight' },
+  { name: 'flights:book', description: 'Book a flight, under the lab fare rule' },
+  { name: 'travellers:read', description: 'Read the traveller\'s private record (tier group)' },
+  { name: 'fees:request', description: 'File a change fee waiver request (a request only)' },
 ];
 // The act attribute is the same subject-token pass-through the gateway resource uses (exchange 2 keeps the act that exchange 1 stamped).
 export const ACT_EXPRESSION = GATEWAY_ACT_PASSTHROUGH;
@@ -48,7 +55,8 @@ export const GROUPS_EXPRESSION = '${user.memberOfGroupNames}';
 export const TOOLS_ATTRIBUTES = [{ name: 'act', value: ACT_EXPRESSION }, { name: 'groups', value: GROUPS_EXPRESSION }];
 export const TIER_GROUP_SPEC = { name: TIER_GROUP, description: 'Appfire Agent Governance LAB: the premium tier of the lab\'s tool server. Members are chosen by the owner.' };
 // What the lab's .env may carry for this (all optional: the values shown are the defaults).
-export const ENV_HINTS = [['AAG_PROVIDER', 'auto'], ['AAG_TOOLS_AUDIENCE', TOOLS_AUDIENCE], ['AAG_TOOLS_TIER_GROUP', TIER_GROUP]];
+export const AIRLINE_TIER_GROUP_SPEC = { name: AIRLINE_TIER_GROUP, description: 'Appfire Agent Governance LAB: the premium tier of the airline vertical. Members are chosen by the owner.' };
+export const ENV_HINTS = [['AAG_PROVIDER', 'auto'], ['AAG_TOOLS_AUDIENCE', TOOLS_AUDIENCE], ['AAG_TOOLS_TIER_GROUP', TIER_GROUP], ['AAG_TOOLS_TIER_GROUP_AIRLINE', AIRLINE_TIER_GROUP]];
 
 export function parseArgs(argv) {
   const o = { apply: false, envFile: path.join(repoRoot, '.env'), help: false };
@@ -111,7 +119,7 @@ export async function run(opts, { fetchImpl = fetch, log = console.log, credFile
     log(`c. resource "${TOOLS_RESOURCE_NAME}" (audience ${TOOLS_AUDIENCE}): created`);
   }
 
-  // d. the six scopes
+  // d. the eleven scopes
   const haveScopes = res ? await p1.list(`/resources/${res.id}/scopes`, 'scopes') : [];
   for (const sc of TOOLS_SCOPES) {
     if (haveScopes.some((x) => x.name === sc.name)) { log(`d. scope ${sc.name}: present`); continue; }
@@ -136,14 +144,16 @@ export async function run(opts, { fetchImpl = fetch, log = console.log, credFile
   }
   log('   UNVERIFIED: that the groups claim appears in an EXCHANGED token (only a client-credentials token was checked). Run the lab and read the delegated token\'s groups claim.');
 
-  // f. the tier group (empty; the owner adds members)
-  const groups = await p1.list(`/groups?filter=${encodeURIComponent(`name eq "${TIER_GROUP}"`)}`, 'groups');
-  if (groups.length > 1) decisions.push(`${groups.length} groups are named ${TIER_GROUP}: check them in the console.`);
-  if (groups.length) log(`f. group ${TIER_GROUP}: found, reused (its members are not touched)`);
-  else if (!apply) log(`f. group ${TIER_GROUP}: would create (empty)`);
-  else { await p1.call('POST', '/groups', TIER_GROUP_SPEC); log(`f. group ${TIER_GROUP}: created (empty)`); }
+  // f. the two tier groups (empty; the owner adds members)
+  for (const [groupName, spec] of [[TIER_GROUP, TIER_GROUP_SPEC], [AIRLINE_TIER_GROUP, AIRLINE_TIER_GROUP_SPEC]]) {
+    const groups = await p1.list(`/groups?filter=${encodeURIComponent(`name eq "${groupName}"`)}`, 'groups');
+    if (groups.length > 1) decisions.push(`${groups.length} groups are named ${groupName}: check them in the console.`);
+    if (groups.length) log(`f. group ${groupName}: found, reused (its members are not touched)`);
+    else if (!apply) log(`f. group ${groupName}: would create (empty)`);
+    else { await p1.call('POST', '/groups', spec); log(`f. group ${groupName}: created (empty)`); }
+  }
 
-  // g. the agent app's grant of the six scopes on this one resource. The grant needs the scopes to exist, so a dry run before they do only says what it would do.
+  // g. the agent app's grant of the eleven scopes on this one resource. The grant needs the scopes to exist, so a dry run before they do only says what it would do.
   const names = TOOLS_SCOPES.map((x) => x.name);
   const allExist = names.every((n) => haveScopes.some((x) => x.name === n)) || (apply && res);
   if (!res || !allExist) log(`g. grant to the agent app: would grant ${names.join(' ')} on "${TOOLS_RESOURCE_NAME}" (after the resource and scopes exist)`);
@@ -159,6 +169,7 @@ export async function run(opts, { fetchImpl = fetch, log = console.log, credFile
     return { applied: false, decisions };
   }
   log(`OWNER STEP: add the users who should get the premium tier to the group ${TIER_GROUP} in the PingOne console, then sign out and sign in again in the lab.`);
+  log(`OWNER STEP: add the users who should get the premium tier of the airline vertical to the group ${AIRLINE_TIER_GROUP} in the PingOne console, then sign out and sign in again in the lab.`);
   for (const d of decisions) log(`OWNER DECISION: ${d}`);
   return { applied: true, decisions };
 }
@@ -166,6 +177,6 @@ export async function run(opts, { fetchImpl = fetch, log = console.log, credFile
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   let opts;
   try { opts = parseArgs(process.argv.slice(2)); } catch (e) { console.error(`refusing: ${e.message}`); process.exit(2); }
-  if (opts.help) { console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 22).map((l) => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
+  if (opts.help) { console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 23).map((l) => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(0); }
   run(opts).catch((e) => { console.error(`failed: ${e.message}`); process.exit(1); });
 }

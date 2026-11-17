@@ -71,14 +71,14 @@ const TOOLS_RES = { name: 'Appfire Work Suite Tools', type: 'CUSTOM', audience: 
 const ALL = tools.TOOLS_SCOPES.map((s) => s.name);
 const attrsOk = [{ name: 'act', value: tools.ACT_EXPRESSION }, { name: 'groups', value: tools.GROUPS_EXPRESSION }];
 
-test('the fixed facts: one resource, its audience, six scopes, two attributes, the tier group, and the defaults the .env may carry', () => {
-  assert.equal(tools.TOOLS_RESOURCE_NAME, 'Appfire Work Suite Tools'); assert.equal(tools.TOOLS_AUDIENCE, 'appfire-work-tools'); assert.equal(tools.TIER_GROUP, 'Software_EnterpriseTier');
-  assert.deepEqual(ALL, ['issues:read', 'issues:write', 'security:read', 'release:read', 'deploy:read', 'admin:request']);
+test('the fixed facts: one resource, its audience, eleven scopes, two attributes, the two tier groups, and the defaults the .env may carry', () => {
+  assert.equal(tools.TOOLS_RESOURCE_NAME, 'Appfire Work Suite Tools'); assert.equal(tools.TOOLS_AUDIENCE, 'appfire-work-tools'); assert.equal(tools.TIER_GROUP, 'Software_EnterpriseTier'); assert.equal(tools.AIRLINE_TIER_GROUP, 'Airline_OrbitTier');
+  assert.deepEqual(ALL, ['issues:read', 'issues:write', 'security:read', 'release:read', 'deploy:read', 'admin:request', 'trips:read', 'flights:read', 'flights:book', 'travellers:read', 'fees:request']);
   assert.deepEqual(tools.TOOLS_ATTRIBUTES.map((a) => a.name), ['act', 'groups']);
   assert.equal(tools.ACT_EXPRESSION, '${#root.context.requestData.subjectToken.act}');
-  assert.deepEqual(tools.ENV_HINTS, [['AAG_PROVIDER', 'auto'], ['AAG_TOOLS_AUDIENCE', 'appfire-work-tools'], ['AAG_TOOLS_TIER_GROUP', 'Software_EnterpriseTier']]);
+  assert.deepEqual(tools.ENV_HINTS, [['AAG_PROVIDER', 'auto'], ['AAG_TOOLS_AUDIENCE', 'appfire-work-tools'], ['AAG_TOOLS_TIER_GROUP', 'Software_EnterpriseTier'], ['AAG_TOOLS_TIER_GROUP_AIRLINE', 'Airline_OrbitTier']]);
   // PingOne refuses a description with any of $ + < = > ^ ` | ~
-  for (const d of [tools.TOOLS_RESOURCE.description, tools.TIER_GROUP_SPEC.description, ...tools.TOOLS_SCOPES.map((s) => s.description)]) assert.ok(!/[$+<=>^`|~]/.test(d), d);
+  for (const d of [tools.TOOLS_RESOURCE.description, tools.TIER_GROUP_SPEC.description, tools.AIRLINE_TIER_GROUP_SPEC.description, ...tools.TOOLS_SCOPES.map((s) => s.description)]) assert.ok(!/[$+<=>^`|~]/.test(d), d);
 });
 
 test('arguments: dry run is the default; --apply and --env-file parse; bad combinations are refused', () => {
@@ -98,55 +98,87 @@ test('dry run on an empty tenant: only reads, says what it would create, and pri
   const text = out.join('\n');
   assert.match(text, /DRY RUN/); assert.match(text, /resource "Appfire Work Suite Tools" \(audience appfire-work-tools\): would create/);
   for (const n of ALL) assert.match(text, new RegExp(`scope ${n}: would create`));
-  assert.match(text, /attribute act: would create/); assert.match(text, /attribute groups: would create/); assert.match(text, /group Software_EnterpriseTier: would create/);
-  assert.match(text, /would grant issues:read issues:write security:read release:read deploy:read admin:request/);
+  assert.match(text, /attribute act: would create/); assert.match(text, /attribute groups: would create/); assert.match(text, /group Software_EnterpriseTier: would create/); assert.match(text, /group Airline_OrbitTier: would create/);
+  assert.match(text, /would grant issues:read issues:write security:read release:read deploy:read admin:request trips:read flights:read flights:book travellers:read fees:request on "Appfire Work Suite Tools"/);
+  assert.match(text, /AAG_TOOLS_TIER_GROUP_AIRLINE=Airline_OrbitTier/);
   assert.match(text, /AAG_PROVIDER=auto/); assert.match(text, /Dry run done/);
   assertNoSecretOrId(text);
 });
 
-test('--apply on an empty tenant creates the resource, the six scopes, both attributes, the group and the agent grant, in that order, and nothing else', async () => {
+test('--apply on an empty tenant creates the resource, the eleven scopes, both attributes, both groups and the agent grant, in that order, and nothing else', async () => {
   const { envFile, credFile } = labFiles(); const p1 = fakePingOne(); const { out, log } = capture();
   const r = await tools.run(tools.parseArgs(['--apply', '--env-file', envFile]), { fetchImpl: p1.fetchImpl, log, credFile });
   assert.equal(r.applied, true); assert.deepEqual(r.decisions, []);
   const w = shortWrites(p1);
-  assert.deepEqual(w, ['POST /resources', ...ALL.map(() => 'POST /resources/r-tools/scopes'), 'POST /resources/r-tools/attributes', 'POST /resources/r-tools/attributes', 'POST /groups', 'POST /applications/<agent>/grants']);
+  assert.deepEqual(w, ['POST /resources', ...ALL.map(() => 'POST /resources/r-tools/scopes'), 'POST /resources/r-tools/attributes', 'POST /resources/r-tools/attributes', 'POST /groups', 'POST /groups', 'POST /applications/<agent>/grants']);
   const res = p1.state.resources[0];
   assert.deepEqual({ name: res.name, type: res.type, audience: res.audience }, TOOLS_RES);
   assert.deepEqual(p1.state.scopes['r-tools'].map((s) => s.name), ALL);
   assert.deepEqual(p1.state.attrs['r-tools'].map((a) => [a.name, a.value, a.type]), [['act', tools.ACT_EXPRESSION, 'CUSTOM'], ['groups', tools.GROUPS_EXPRESSION, 'CUSTOM']]);
-  assert.deepEqual(p1.state.groups.map((g) => g.name), ['Software_EnterpriseTier']);
-  assert.deepEqual(scopesGranted(p1), ALL.map((n) => `s-new-${n}`).sort(), 'the agent app holds all six scopes');
+  assert.deepEqual(p1.state.groups.map((g) => g.name), ['Software_EnterpriseTier', 'Airline_OrbitTier']);
+  assert.deepEqual(scopesGranted(p1), ALL.map((n) => `s-new-${n}`).sort(), 'the agent app holds all eleven scopes');
   const text = out.join('\n');
-  assert.match(text, /OWNER STEP: add the users who should get the premium tier to the group Software_EnterpriseTier/); assert.match(text, /UNVERIFIED: that the groups claim appears in an EXCHANGED token/);
+  assert.match(text, /OWNER STEP: add the users who should get the premium tier to the group Software_EnterpriseTier in the PingOne console, then sign out and sign in again in the lab\./);
+  assert.match(text, /OWNER STEP: add the users who should get the premium tier of the airline vertical to the group Airline_OrbitTier in the PingOne console, then sign out and sign in again in the lab\./); assert.match(text, /UNVERIFIED: that the groups claim appears in an EXCHANGED token/);
   assertNoSecretOrId(text);
 });
 
 test('idempotent: a second --apply on a finished tenant changes nothing; every object is reported present', async () => {
   const { envFile, credFile } = labFiles();
-  const p1 = fakePingOne({ resource: TOOLS_RES, scopes: ALL, attrs: attrsOk, groups: ['Software_EnterpriseTier'] });
+  const p1 = fakePingOne({ resource: TOOLS_RES, scopes: ALL, attrs: attrsOk, groups: ['Software_EnterpriseTier', 'Airline_OrbitTier'] });
   p1.state.grants['app-agent-0123456789'] = [{ id: 'g-grant', resource: { id: 'r-tools' }, scopes: ALL.map((n) => ({ id: `s-${ALL.indexOf(n)}-${n}` })) }];
   const { out, log } = capture();
   const r = await tools.run(tools.parseArgs(['--apply', '--env-file', envFile]), { fetchImpl: p1.fetchImpl, log, credFile });
   assert.equal(r.applied, true); assert.deepEqual(r.decisions, []); assert.deepEqual(writesOf(p1), [], 'no POST, PUT or DELETE');
   const text = out.join('\n');
   assert.match(text, /resource "Appfire Work Suite Tools" \(audience appfire-work-tools\): found, reused/); assert.match(text, /scope issues:read: present/);
-  assert.match(text, /attribute act: present, as expected/); assert.match(text, /attribute groups: present, as expected/); assert.match(text, /group Software_EnterpriseTier: found, reused/); assert.match(text, /already granted/);
+  assert.match(text, /attribute act: present, as expected/); assert.match(text, /attribute groups: present, as expected/); assert.match(text, /group Software_EnterpriseTier: found, reused/); assert.match(text, /group Airline_OrbitTier: found, reused/); assert.match(text, /already granted/);
 });
 
 test('partial tenant: only the missing parts are created; the existing resource, scopes, attributes and group are reused as they are', async () => {
   const { envFile, credFile } = labFiles();
-  const p1 = fakePingOne({ resource: TOOLS_RES, scopes: ['issues:read', 'issues:write', 'security:read'], attrs: [{ name: 'act', value: tools.ACT_EXPRESSION }] });
+  const p1 = fakePingOne({ resource: TOOLS_RES, scopes: ['issues:read', 'issues:write', 'security:read'], attrs: [{ name: 'act', value: tools.ACT_EXPRESSION }], groups: ['Software_EnterpriseTier'] });
   const { log } = capture();
   await tools.run(tools.parseArgs(['--apply', '--env-file', envFile]), { fetchImpl: p1.fetchImpl, log, credFile });
   const w = shortWrites(p1);
-  assert.deepEqual(w, ['POST /resources/r-tools/scopes', 'POST /resources/r-tools/scopes', 'POST /resources/r-tools/scopes', 'POST /resources/r-tools/attributes', 'POST /groups', 'POST /applications/<agent>/grants']);
-  assert.equal(p1.state.scopes['r-tools'].length, 6); assert.deepEqual(p1.state.attrs['r-tools'].map((a) => a.name), ['act', 'groups']);
+  assert.deepEqual(w, [...Array(8).fill('POST /resources/r-tools/scopes'), 'POST /resources/r-tools/attributes', 'POST /groups', 'POST /applications/<agent>/grants']);
+  assert.deepEqual(p1.state.groups.map((g) => g.name), ['Software_EnterpriseTier', 'Airline_OrbitTier']);
+  assert.equal(p1.state.scopes['r-tools'].length, 11); assert.deepEqual(p1.state.attrs['r-tools'].map((a) => a.name), ['act', 'groups']);
   assert.ok(!w.includes('POST /resources'), 'the resource is not created again');
+});
+
+test('the software six already there, the airline five absent: only the five scopes, the airline group and the grant top-up are written', async () => {
+  const { envFile, credFile } = labFiles();
+  const SOFT = ALL.slice(0, 6);
+  const p1 = fakePingOne({ resource: TOOLS_RES, scopes: SOFT, attrs: attrsOk, groups: ['Software_EnterpriseTier'] });
+  p1.state.grants['app-agent-0123456789'] = [{ id: 'g-grant', resource: { id: 'r-tools' }, scopes: SOFT.map((n) => ({ id: `s-${ALL.indexOf(n)}-${n}` })) }];
+  const { out, log } = capture();
+  await tools.run(tools.parseArgs(['--apply', '--env-file', envFile]), { fetchImpl: p1.fetchImpl, log, credFile });
+  assert.deepEqual(shortWrites(p1).map((c) => c.split(' ')[0] + ' ' + c.split(' ')[1].replace(/\/applications\/<agent>\/grants\/.*/, '/grants')), [...Array(5).fill('POST /resources/r-tools/scopes'), 'POST /groups', 'PUT /grants']);
+  assert.equal(scopesGranted(p1).length, 11, 'the grant holds all eleven');
+  for (const n of SOFT) assert.ok(scopesGranted(p1).includes(`s-${ALL.indexOf(n)}-${n}`), `${n} is kept`);
+  assert.match(out.join('\n'), /scope issues:read: present/);
+});
+
+test('the tenant the owner already set up by hand (eleven scopes, both groups, a grant of eleven): a dry run and an apply write nothing', async () => {
+  const { envFile, credFile } = labFiles();
+  for (const apply of [false, true]) {
+    const p1 = fakePingOne({ resource: TOOLS_RES, scopes: ALL, attrs: attrsOk, groups: ['Software_EnterpriseTier', 'Airline_OrbitTier'] });
+    p1.state.grants['app-agent-0123456789'] = [{ id: 'g-grant', resource: { id: 'r-tools' }, scopes: ALL.map((n, i) => ({ id: `s-${i}-${n}` })) }];
+    const { out, log } = capture();
+    await tools.run(tools.parseArgs([...(apply ? ['--apply'] : []), '--env-file', envFile]), { fetchImpl: p1.fetchImpl, log, credFile });
+    assert.deepEqual(writesOf(p1), []);
+    const text = out.join('\n');
+    for (const n of ALL) assert.match(text, new RegExp(`scope ${n}: present`));
+    assert.match(text, /group Airline_OrbitTier: found, reused/); assert.match(text, /already granted/);
+    assert.ok(!p1.calls.some((c) => /\/members|\/groupMemberships/.test(c)), 'no membership is read or written');
+    assertNoSecretOrId(text);
+  }
 });
 
 test('an attribute that exists with another value is reported as DRIFT and never replaced; a stale grant is topped up, not replaced', async () => {
   const { envFile, credFile } = labFiles();
-  const p1 = fakePingOne({ resource: TOOLS_RES, scopes: ALL, attrs: [{ name: 'act', value: tools.ACT_EXPRESSION }, { name: 'groups', value: "${user.somethingElse}" }], groups: ['Software_EnterpriseTier'] });
+  const p1 = fakePingOne({ resource: TOOLS_RES, scopes: ALL, attrs: [{ name: 'act', value: tools.ACT_EXPRESSION }, { name: 'groups', value: "${user.somethingElse}" }], groups: ['Software_EnterpriseTier', 'Airline_OrbitTier'] });
   p1.state.grants['app-agent-0123456789'] = [{ id: 'g-grant', resource: { id: 'r-tools' }, scopes: [{ id: 's-0-issues:read' }] }];
   const { out, log } = capture();
   const r = await tools.run(tools.parseArgs(['--apply', '--env-file', envFile]), { fetchImpl: p1.fetchImpl, log, credFile });
@@ -155,7 +187,7 @@ test('an attribute that exists with another value is reported as DRIFT and never
   assert.equal(r.decisions.length, 1); assert.match(r.decisions[0], /groups attribute of the tools resource differs/);
   assert.deepEqual(p1.state.attrs['r-tools'].find((a) => a.name === 'groups').value, '${user.somethingElse}', 'the existing value is untouched');
   assert.deepEqual(writesOf(p1).map((c) => c.split(' ')[0]), ['PUT'], 'only the grant is topped up');
-  assert.equal(scopesGranted(p1).length, 6);
+  assert.equal(scopesGranted(p1).length, 11);
 });
 
 test('refusals before anything is written: no agent app, two agent apps, two resources with the audience, the name on another audience', async () => {

@@ -30,7 +30,7 @@ test('all packs share one set of required keys (optional keys only where named),
   // software defines every optional key of its own; airline defines the optional keys it uses (no unit, no scan tool, and the airline-only fare keys instead of software's)
   assert.deepEqual(Object.keys(VERTICALS.software).filter((k) => OPTIONAL_CAST_KEYS.includes(k)).sort(), OPTIONAL_CAST_KEYS.filter((k) => !/^castFare/.test(k)).sort(), 'software defines every optional key except the airline fare keys');
   const airlineOptional = Object.keys(VERTICALS.airline).filter((k) => OPTIONAL_CAST_KEYS.includes(k)).sort();
-  for (const k of ['castPublicTool', 'castStatusTool', 'castRequestTool', 'castPerson', 'castFareRule', 'castFareLimit', 'castFareHold']) assert.ok(airlineOptional.includes(k), `airline defines ${k}`);
+  for (const k of ['castPublicTool', 'castStatusTool', 'castRequestTool', 'castPerson', 'castToolServer', 'castFareRule', 'castFareLimit', 'castFareHold']) assert.ok(airlineOptional.includes(k), `airline defines ${k}`);
   for (const k of ['castScanTool', 'castUnit']) assert.ok(!airlineOptional.includes(k), `airline does not define ${k}`);
 });
 

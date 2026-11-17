@@ -1,14 +1,14 @@
 // Test support for the local tool server: a fake issuer + the real server on a loopback port + small HTTP and MCP helpers.
 import http from 'node:http';
 import { startLocalServer } from '../src/local/server.js';
-import { ACTOR, AUDIENCE, TIER_GROUP, startFakeIdp } from './localFakeIdp.js';
+import { ACTOR, AUDIENCE, TIER_GROUP, TIER_GROUP_AIRLINE, startFakeIdp } from './localFakeIdp.js';
 
 export const SECRET = ['ab', 'cd', '12', '34'].join('').repeat(8);
 
-export async function startRig({ tierGroup = TIER_GROUP, jwks = { timeoutMs: 15_000 }, bodyDeadlineMs } = {}) {
+export async function startRig({ tierGroup = TIER_GROUP, tierGroupAirline = TIER_GROUP_AIRLINE, jwks = { timeoutMs: 15_000 }, bodyDeadlineMs } = {}) {
   const idp = await startFakeIdp();
   const clock = { t: Date.now() };
-  const config = { issuer: idp.issuer, audience: AUDIENCE, allowedActors: [ACTOR], tierGroup, hitlSecret: SECRET, clockSkewSeconds: 60 };
+  const config = { issuer: idp.issuer, audience: AUDIENCE, allowedActors: [ACTOR], tierGroup, tierGroupAirline, hitlSecret: SECRET, clockSkewSeconds: 60 };
   const local = await startLocalServer({ config, now: () => clock.t, jwks, ...(bodyDeadlineMs ? { bodyDeadlineMs } : {}) });
   const origin = `http://127.0.0.1:${local.port}`;
   const seen = [];     // every response this rig saw: { status, headers, text }
