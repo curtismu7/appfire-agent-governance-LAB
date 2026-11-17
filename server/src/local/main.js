@@ -3,6 +3,7 @@
 // `error` out; `shutdown` in. It writes one fixed line on a fatal error and never a value, a stack or a message.
 import { installGuard } from './guard.js';
 import { startLocalServer, validateInit } from './server.js';
+import { createBroker } from './util.js';
 
 // The guard first: before any server, any fetch, any message. It allows nothing but loopback until init names the issuer host.
 const guard = installGuard({ allowHosts: [] });
@@ -20,6 +21,7 @@ const sendAndExit = (m) => {
   try { process.send(m, undefined, undefined, end); } catch { end(); }
 };
 let running = null;
+let broker = null;      // only when the init said authorize: true; it asks the parent, which holds the secret and the network
 let stopping = false;
 
 async function stop(code) {
@@ -37,6 +39,7 @@ let initDone = false;
 process.on('message', async (m) => {
   if (!m || typeof m !== 'object') return;
   if (m.type === 'shutdown') { await stop(0); return; }
+  if (m.type === 'authorize-result') { broker?.onMessage(m); return; }      // with no broker (authorize false) this is ignored
   if (m.type !== 'init' || initDone) return;
   initDone = true;
   clearTimeout(initTimer);
@@ -44,7 +47,8 @@ process.on('message', async (m) => {
   if (!checked.ok) { sendAndExit({ type: 'error', code: 'init_invalid', detail: 'the init message was refused' }); return; }
   if (checked.issuerHost) guard.allowHost(checked.issuerHost);
   try {
-    running = await startLocalServer({ config: checked.config });
+    broker = checked.config.authorize ? createBroker({ send }) : null;
+    running = await startLocalServer({ config: checked.config, ...(broker ? { authorize: broker.ask } : {}) });
   } catch {
     sendAndExit({ type: 'error', code: 'listen_failed', detail: 'the server could not listen on loopback' });
     return;

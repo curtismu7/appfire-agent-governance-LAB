@@ -5,11 +5,12 @@ import { ACTOR, AUDIENCE, TIER_GROUP, TIER_GROUP_AIRLINE, startFakeIdp } from '.
 
 export const SECRET = ['ab', 'cd', '12', '34'].join('').repeat(8);
 
-export async function startRig({ tierGroup = TIER_GROUP, tierGroupAirline = TIER_GROUP_AIRLINE, jwks = { timeoutMs: 15_000 }, bodyDeadlineMs } = {}) {
+// authorize: the broker's ask (or a stub of it) to run the rig with the tool server's PingOne Authorize branch on (init `authorize: true`); absent means the lab's own policy answers.
+export async function startRig({ tierGroup = TIER_GROUP, tierGroupAirline = TIER_GROUP_AIRLINE, jwks = { timeoutMs: 15_000 }, bodyDeadlineMs, authorize } = {}) {
   const idp = await startFakeIdp();
   const clock = { t: Date.now() };
-  const config = { issuer: idp.issuer, audience: AUDIENCE, allowedActors: [ACTOR], tierGroup, tierGroupAirline, hitlSecret: SECRET, clockSkewSeconds: 60 };
-  const local = await startLocalServer({ config, now: () => clock.t, jwks, ...(bodyDeadlineMs ? { bodyDeadlineMs } : {}) });
+  const config = { issuer: idp.issuer, audience: AUDIENCE, allowedActors: [ACTOR], tierGroup, tierGroupAirline, hitlSecret: SECRET, clockSkewSeconds: 60, ...(typeof authorize === 'function' ? { authorize: true } : {}) };
+  const local = await startLocalServer({ config, now: () => clock.t, jwks, ...(bodyDeadlineMs ? { bodyDeadlineMs } : {}), ...(typeof authorize === 'function' ? { authorize } : {}) });
   const origin = `http://127.0.0.1:${local.port}`;
   const seen = [];     // every response this rig saw: { status, headers, text }
 

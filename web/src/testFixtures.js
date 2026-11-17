@@ -145,6 +145,41 @@ export const airlineRealBody = (kind = "constrained") => {
   } : h));
   return b;
 };
+// The same airline runs when PingOne Authorize decided the booking (design-authorize-lab.md D.1 and D.2): `decidedBy` on the run and the decision hop, the hop drawn to
+// the Authorize lane, the one-line sentence of the policy row in `decision.line`, the raw request and answer. kind adds "nodecision": Authorize was asked and gave none.
+// MAPPING fixtures: they hold what the server is specified to send, they prove how the page reads it.
+export const AUTH_BY = "PingOne Authorize (policy Larkspur Air Booking Authorization)";
+const AUTH_CODE = { permit: "airline-permit-as-asked", constrained: "airline-economy-intl", hold: "airline-approval-required", approved: "airline-approved-as-asked" };
+const AUTH_WORD = { permit: "PERMIT", constrained: "CONSTRAINED", hold: "HITL_REQUIRED", approved: "PERMIT" };
+const AUTH_READ = { permit: "book as asked", constrained: "economy only", hold: "hold for a person to approve", approved: "book as approved" };
+// PingOne Authorize returns PERMIT (or DENY) and a statement; the lab's own word (CONSTRAINED, HITL_REQUIRED) is its reading of the statement code.
+export const authorizeLine = (kind) => `${AUTH_BY} returned PERMIT with the statement ${AUTH_CODE[kind]}; the lab read that as ${AUTH_READ[kind]} and applied it`;
+export const AUTH_PARAMS = { AirLabMarker: "larkspur-air", ToolName: "book_airline_flight", UserId: "lab-user-sub", AirFare: "380", AirIsInternational: "true", AirCabinAsked: "business", AirApproval: "none" };
+export const airlineAuthorizeBody = (kind = "constrained", reason = "timeout") => {
+  const none = kind === "nodecision";
+  const b = airlineRealBody(none ? "permit" : kind);
+  const word = AUTH_WORD[kind];
+  b.run.decidedBy = none ? "none" : "pingone-authorize";
+  b.run.authorize = { configured: true, asked: true, answered: !none, code: none ? null : AUTH_CODE[kind], reason: none ? reason : null };
+  if (kind === "constrained") b.run.constrained = { ...b.run.constrained, by: AUTH_BY, reason: `PingOne Authorize returned PERMIT with the statement ${AUTH_CODE[kind]}; the lab read that as economy only, and the tool server applied it: this trip is international` };
+  if (none) {
+    b.run.outcome = "REAL_NO_DECISION";
+    b.run.booking = { ...b.run.booking, booked: null };
+    b.run.reply = { who: "Tool server", text: "PingOne Authorize gave no decision (it did not reply in time). Nothing was booked, and the lab did not use its own rule instead." };
+  }
+  b.run.hops = b.run.hops.map((h) => (h.kind === "authorize-decision" && h.verdict !== "skip" ? {
+    ...h, from: "toolserver", to: none ? "toolserver" : "authorize", decidedBy: none ? "none" : "pingone-authorize", shortTitle: "PingOne Authorize (P1AZ)",
+    title: none ? "PingOne Authorize gave no decision" : "PingOne Authorize decision",
+    ...(none ? { verdict: "error", decision: { outcome: "NO DECISION", by: "PingOne Authorize gave no decision: it did not reply in time", basis: "inferred" } } : {
+      verdict: kind === "hold" ? "held" : "ok",
+      authorize: { code: AUTH_CODE[kind], said: "PERMIT", outcome: word, correlationId: "5b1c-demo", elapsedMs: 412 },
+      decision: { outcome: "PERMIT", by: AUTH_BY, basis: "observed", line: authorizeLine(kind) },
+      request: { method: "POST", url: "https://api.pingone.example/v1/environments/env/decisionEndpoints/ep", headers: { authorization: "Bearer (worker token, not shown)", "content-type": "application/json" }, body: { parameters: AUTH_PARAMS } },
+      response: { ...(h.response || {}), status: 200, body: { decision: "PERMIT", statements: [{ code: AUTH_CODE[kind], name: "Larkspur Air Booking" }] } },
+    }),
+  } : h));
+  return b;
+};
 export const mockInRealBody = (ucId = "UC2") => runBody(ucId, { realGate: { real: false, reason: "the agent-to-agent (A2A) chain needs the specialist agent's PingOne settings (AAG_A2A_*), which are not set" }, hops: runBody(ucId).run.hops.map((h) => ({ ...h, source: "mock", label: h.label })) });
 export const FULL_INFO = { real: { level: "full", label: "Real: sign-in (pi.flow), agent token, token exchange and the Agent Gateway", missing: [], redirectUri: "https://local.example/cb", origins: [] } };
 

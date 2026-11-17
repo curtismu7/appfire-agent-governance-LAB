@@ -76,7 +76,9 @@ export const COMPOSE_ENV = {
     // ... and, optional, the agent scope (empty = agent:invoke), the agent client's token auth, and the SE HITL service (the mock phone's real approvals).
     'AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET',
     // ... and, optional, Real A2A (2026-11-16): the specialist agent's app and the two audiences and scopes of the chained exchange (all six together turn it on).
-    'AAG_A2A_AGENT_CLIENT_ID', 'AAG_A2A_AGENT_CLIENT_SECRET', 'AAG_A2A_AGENT_TOKEN_AUTH', 'AAG_A2A_INTERMEDIATE_AUDIENCE', 'AAG_A2A_INTERMEDIATE_SCOPE', 'AAG_A2A_GATEWAY_AUDIENCE', 'AAG_A2A_SCOPE'],
+    'AAG_A2A_AGENT_CLIENT_ID', 'AAG_A2A_AGENT_CLIENT_SECRET', 'AAG_A2A_AGENT_TOKEN_AUTH', 'AAG_A2A_INTERMEDIATE_AUDIENCE', 'AAG_A2A_INTERMEDIATE_SCOPE', 'AAG_A2A_GATEWAY_AUDIENCE', 'AAG_A2A_SCOPE',
+    // ... and, optional (2026-11-17), PingOne Authorize for the airline booking: the decision endpoint id and a worker app's id and secret (all three together turn it on).
+    'AAG_AUTHORIZE_ENDPOINT_ID', 'AAG_AUTHORIZE_CLIENT_ID', 'AAG_AUTHORIZE_CLIENT_SECRET'],
   fixed: ['PORT', 'CALAB_BIND', 'AAG_PUBLISH', 'ALLOW_MOCK_SIGNIN', 'AAG_DEPLOY_MODE', 'AAG_LIVE_FROM_ENV'],
 };
 export function environmentOf(text) {

@@ -52,7 +52,10 @@ export const DEFAULT_AGENT_SCOPE = 'agent:invoke';
 // empty (Basic). Any other combination leaves A2A use cases on the labelled mock engine and says which name is missing.
 export const A2A_REQUIRED = ['AAG_A2A_AGENT_CLIENT_ID', 'AAG_A2A_AGENT_CLIENT_SECRET', 'AAG_A2A_INTERMEDIATE_AUDIENCE', 'AAG_A2A_INTERMEDIATE_SCOPE', 'AAG_A2A_GATEWAY_AUDIENCE', 'AAG_A2A_SCOPE'];
 export const A2A_KEYS = [...A2A_REQUIRED, 'AAG_A2A_AGENT_TOKEN_AUTH'];
-export const OPTIONAL_KEYS = ['AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET', ...GATEWAY_KEYS, ...PROVIDER_KEYS, ...A2A_KEYS];
+// PingOne Authorize decides the airline booking (owner, 2026-11-17): the decision endpoint's id and a WORKER app's client id and secret. All three set turn it on (the environment id and
+// region come from PINGONE_*); none leaves the lab's own policy answering and saying so; a partial set is a named problem. The secret is write-only, held by the parent process only.
+export const AUTHORIZE_KEYS = ['AAG_AUTHORIZE_ENDPOINT_ID', 'AAG_AUTHORIZE_CLIENT_ID', 'AAG_AUTHORIZE_CLIENT_SECRET'];
+export const OPTIONAL_KEYS = ['AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET', ...GATEWAY_KEYS, ...PROVIDER_KEYS, ...A2A_KEYS, ...AUTHORIZE_KEYS];
 export const REAL_KEYS = [...LIVE_KEYS, ...FULL_KEYS, ...OPTIONAL_KEYS];
 export function readLiveSettings(file) {
   try {
@@ -71,6 +74,8 @@ export const missingLiveSettings = (file) => missingIn(readLiveSettings(file));
 // Full Real: wanted when any AAG_* name holds a real value; missing = the required names that do not.
 export const fullWanted = (s) => [...FULL_KEYS, ...GATEWAY_KEYS].some((k) => !unset(s, k));
 export const missingFull = (s) => FULL_REQUIRED.filter((k) => unset(s, k));
+// The names (never the values) of the PingOne Authorize settings that are not set (or are placeholders).
+export const missingAuthorize = (s) => AUTHORIZE_KEYS.filter((k) => unset(s, k));
 
 // Docker (owner, 2026-11-10): the image has no .env, so docker-compose.yml fills these names from the app's .env by ${VAR:-} substitution and pins
 // AAG_LIVE_FROM_ENV=1. Only then are they taken from the environment: a host run never picks up PINGONE_* or AAG_* exported in a shell for another

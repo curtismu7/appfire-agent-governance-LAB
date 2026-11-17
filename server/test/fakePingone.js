@@ -16,6 +16,10 @@
 //   PingOne's error text echoes the subject token and the agent's client secret, as a careless authorization server might) }.
 import http from 'node:http';
 import { createECDH, createHash, createPrivateKey, randomBytes, sign } from 'node:crypto';
+import { AUTHORIZE_CLIENT_ID, AUTHORIZE_CLIENT_SECRET, AUTHORIZE_ENDPOINT_ID, authorizeSettings, createFakeAuthorize } from './fakeAuthorize.js';
+
+// PingOne Authorize (phase C): startFakePingOne({ authorize: true }) also serves the decision endpoint and the worker client's token, through `.authorize` (fakeAuthorize.js).
+export { AUTHORIZE_CLIENT_ID, AUTHORIZE_CLIENT_SECRET, AUTHORIZE_ENDPOINT_ID, authorizeSettings };
 
 export const ENV_ID = '11111111-2222-4333-8444-555555555555';
 export const CLIENT_ID = '66666666-7777-4888-8999-aaaaaaaaaaaa';
@@ -71,8 +75,9 @@ const claimsIn = (t) => { try { return JSON.parse(Buffer.from(String(t).split('.
 const AT_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
 
 // behaviour: 'ok' | 'bad-secret' | 'discovery-500' | 'redirect' | 'huge' | 'slow' | 'html' | 'opaque'
-export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentScope = AGENT_SCOPE } = {}) {
+export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentScope = AGENT_SCOPE, authorize = false } = {}) {
   const seen = [];
+  const authorizeFake = authorize ? createFakeAuthorize({ envId: ENV_ID }) : null;
   let issuer = `http://fake.invalid/${ENV_ID}/as`; // the real one once the fake listens
   const jwt = (claims) => signJwt(issuer, claims);
   const resources = {
@@ -141,6 +146,7 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
         if (b === 'huge') return send(200, JSON.stringify({ filler: 'x'.repeat(200 * 1024) }));
         if (b === 'html') return send(200, '<html>not json</html>', { 'content-type': 'text/html' });
         const u = new URL(req.url, 'http://fake.invalid');
+        if (authorizeFake && authorizeFake.handle(req, res, u, Buffer.concat(body).toString('utf8'))) return;
         const cookieOf = () => /(?:^|;\s*)ST=([^;]+)/.exec(String(req.headers.cookie || ''))?.[1] ?? null;
         if (req.method === 'GET' && u.pathname === `/${ENV_ID}/as/authorize`) {
           const q = Object.fromEntries(u.searchParams);
@@ -239,7 +245,7 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
   issuer = `http://127.0.0.1:${port}/${ENV_ID}/as`;
-  return { seen, state, issued, port, base: `http://127.0.0.1:${port}/${ENV_ID}`, close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(r); }) };
+  return { seen, state, issued, port, authorize: authorizeFake, base: `http://127.0.0.1:${port}/${ENV_ID}`, close: () => new Promise((r) => { authorizeFake?.release(); server.closeAllConnections?.(); server.close(r); }) };
 }
 
 export const settingsFor = () => ({ PINGONE_ENVIRONMENT_ID: ENV_ID, PINGONE_REGION: 'com', PINGONE_CLIENT_ID: CLIENT_ID, PINGONE_CLIENT_SECRET: CLIENT_SECRET });

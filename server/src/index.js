@@ -5,6 +5,7 @@ import { assertBindAllowed, bindHost, isLoopbackHost, liveRefusal, resolvePort }
 import { deployModeFrom, modeFrom, openingMode } from './config.js';
 import { applySharedSettings, fullWanted, liveSettingsFor, missingFull, missingIn, takeLiveSettingsFromEnv } from './settings.js';
 import { createReal, realConfig } from './real.js';
+import { createAuthorize } from './authorize.js';
 import { createLive, hostToAllow, liveConfig } from './live.js';
 import { createHealth } from './health.js';
 import { createWorkspaces } from './workspaces.js';
@@ -35,7 +36,11 @@ const liveSettings = hosted ? {} : liveSettingsFor(process.env);
 // Full Real (owner, 2026-11-10): the AAG_* settings. When any of them is set, the old identity-provider-only path (PINGONE_CLIENT_*, AI-DEMO2's worker
 // client) is not built at all: its secret is never read into a client, and only the full chain can be selected.
 const wanted = !hosted && fullWanted(liveSettings);
-const real = hosted ? createReal() : createReal({ config: realConfig(liveSettings, process.env), missing: missingFull(liveSettings), wanted });
+// PingOne Authorize for the airline booking (optional): built here from the settings, held by THIS process only. The tool server (a child with no network and no secret) asks it over IPC;
+// real.js reads its evidence for the step detail. Null unless all three AAG_AUTHORIZE_* names are set and valid.
+const realCfg = hosted ? null : realConfig(liveSettings, process.env);
+const authorize = !hosted && realCfg?.authorize ? createAuthorize({ config: realCfg.authorize }) : null;
+const real = hosted ? createReal() : createReal({ config: realCfg, missing: missingFull(liveSettings), wanted, authorize });
 const live = hosted || wanted ? createLive() : createLive({ config: liveConfig(liveSettings, process.env), missing: missingIn(liveSettings) });
 const liveRefused = liveRefusal({ env: process.env, bind: host, headers: {} });
 const fullOn = real.configured() && liveRefused === null;
@@ -51,7 +56,7 @@ for (const h of allowHosts) guard.allowHost(h);
 // The lab's own tool server and approval service (owner 2026-11-16): ONE child process on 127.0.0.1, an ephemeral port nothing publishes, forked when Real is
 // configured, the build is not hosted and AAG_PROVIDER is not se. The lab never refuses to start because of it: a failed start leaves the local provider off.
 const caCerts = typeof process.env.NODE_EXTRA_CA_CERTS === 'string' && process.env.NODE_EXTRA_CA_CERTS.length <= 1024 ? process.env.NODE_EXTRA_CA_CERTS : undefined;
-const local = !hosted && fullOn && real.providerSetting() !== 'se' ? createLocalServices({ config: real.localConfig(), hosted, caCertsPath: caCerts }) : null;
+const local = !hosted && fullOn && real.providerSetting() !== 'se' ? createLocalServices({ config: real.localConfig(), hosted, caCertsPath: caCerts, authorize }) : null;
 if (local) {
   const started = await local.start();
   if (!started.ok) console.error('[appfire-agent-governance-lab] local tool server did not start');

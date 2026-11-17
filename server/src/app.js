@@ -106,7 +106,7 @@ export function createApp({
     return v === A2A_VERTICAL ? { a2a: true } : { a2a: false, a2aWhy: `the specialist agent set up for A2A Real is the ${A2A_VERTICAL} one` };
   };
   // What realGate needs per vertical: the A2A answer and what the providers can serve (sync, no network: the pick itself is made once per run, below).
-  const gateOpts = (v) => ({ ...a2aOpts(v), ...providers.snapshot() });
+  const gateOpts = (v) => ({ ...a2aOpts(v), ...providers.snapshot(), authorizeOn: Boolean(real.authorizeOn?.()) });
   const realLevel = () => (real.configured() ? 'full' : real.wanted() ? null : live.configured() ? 'idp-only' : null);
   // The approval service (owner 2026-11-13): the phone in both modes. A real approval is recorded with the HITL service of the provider that minted the challenge:
   // 'se' from the app's settings (write-only: the secret never reaches the page or a log; F1: it is read from the same settings as the rest, not from the

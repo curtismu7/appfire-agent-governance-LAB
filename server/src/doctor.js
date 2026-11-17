@@ -14,7 +14,7 @@ import { deployModeFrom, modeFrom } from './config.js';
 import { MANIFEST, TRACKS } from './manifest.js';
 import { KNOWN_STEPS, chainOf, runUseCase } from './flow.js';
 import { signMockJwt, verifyMockJwt } from './mockjwt.js';
-import { APP_ENV_FILE, DEFAULT_AGENT_SCOPE, fullWanted, liveSettingsFor, missingFull, settingsPath } from './settings.js';
+import { APP_ENV_FILE, AUTHORIZE_KEYS, DEFAULT_AGENT_SCOPE, fullWanted, liveSettingsFor, missingAuthorize, missingFull, settingsPath } from './settings.js';
 import { realConfig } from './real.js';
 import { providerSettingOf } from './provider.js';
 import { liveConfig } from './live.js';
@@ -122,6 +122,13 @@ export async function runChecks({ env = process.env } = {}) {
   const providerSetting = providerSettingOf(settings.AAG_PROVIDER);
   add('provider', providerSetting ? 'pass' : 'fail', providerSetting ? `AAG_PROVIDER is ${providerSetting}: ${providerSetting === 'auto' ? 'an SE provider when its settings are present and a health probe passes, else the lab\'s own' : providerSetting === 'se' ? 'only an SE provider' : 'only the lab\'s own tool server'}; chosen once per run` : 'the app .env has no valid AAG_PROVIDER (auto, se or local)');
   if (wanted && !full.problem) add('gateway', 'info', full.gateway ? 'SE gateway: set' : full.gatewayProblem ? `SE gateway: not usable (${full.gatewayProblem}); banking, healthcare and retail stay on the lab's own steps` : 'SE gateway: not set (banking, healthcare and retail stay on the lab\'s own steps)');
+  // PingOne Authorize decides the airline booking (optional): names only, never a value. All three set turn it on; none leaves the lab's own policy answering; a partial set asks nothing.
+  const azMissing = missingAuthorize(settings);
+  if (azMissing.length === AUTHORIZE_KEYS.length) add('authorize', 'info', `PingOne Authorize for the airline booking: not set (${AUTHORIZE_KEYS.join(', ')}); the lab's own fare rule answers and says so`);
+  else if (azMissing.length) add('authorize', 'info', `PingOne Authorize for the airline booking: some of ${AUTHORIZE_KEYS.join(', ')} are set but not ${azMissing.join(', ')}, so nothing is asked and the lab's own fare rule answers`);
+  else if (full.authorizeProblem) add('authorize', 'info', `PingOne Authorize for the airline booking: ${full.authorizeProblem}, so nothing is asked and the lab's own fare rule answers`);
+  else if (full.authorize) add('authorize', 'pass', `PingOne Authorize for the airline booking: set; the lab's main process calls ${new URL(full.authorize.decisionUrl).origin} (one decision endpoint, a worker app's token from ${new URL(full.authorize.tokenUrl).origin}) and the tool server never holds the secret`);
+  else add('authorize', 'info', 'PingOne Authorize for the airline booking: set, but full Real is not configured yet, so nothing is asked');
   add('tenant', 'pass', liveOn ? 'mock runs touch no tenant and no network; a Real run reaches only the hosts named above' : 'simulated only: no tenant, no credentials, no outbound network');
   return checks;
 }

@@ -56,7 +56,7 @@
     },
     {
       "id": "az",
-      "label": "Authorize (policy decision)",
+      "label": "PingOne Authorize (P1AZ)",
       "group": "ping",
       "x": 1000,
       "y": 300
@@ -74,6 +74,13 @@
       "group": "appfire",
       "x": 1000,
       "y": 600
+    },
+    {
+      "id": "ts",
+      "label": "Lab tool server (own tools, local)",
+      "group": "tool",
+      "x": 1000,
+      "y": 0
     }
   ],
   "edges": [
@@ -112,6 +119,16 @@
       "target": "mcp",
       "label": "governs which MCP servers may be used (represented, not called)",
       "dashed": true
+    },
+    {
+      "source": "bff",
+      "target": "ts",
+      "label": "tool call with the delegated token (lab's own tools)"
+    },
+    {
+      "source": "ts",
+      "target": "az",
+      "label": "booking decision request (PingOne Authorize)"
     }
   ],
   "steps": [
@@ -161,6 +178,22 @@
       "hop": "tool-dispatched",
       "edges": [
         5
+      ]
+    },
+    {
+      "title": "Lab tool server",
+      "what": "On the lab's own tools (the airline and software packs) the delegated token goes to the lab's tool server, which checks it itself. No gateway is in this path.",
+      "hop": "gateway-check",
+      "edges": [
+        7
+      ]
+    },
+    {
+      "title": "PingOne Authorize (P1AZ): booking decision",
+      "what": "With the Authorize settings set, the lab's own tool server asks PingOne Authorize about an airline booking (fare, international or not, cabin, approval state) and applies the answer: a real call, drawn solid. Without them, or in the hosted build, the lab's own policy answers and the page says so.",
+      "hop": "authorize-decision",
+      "edges": [
+        8
       ]
     },
     {

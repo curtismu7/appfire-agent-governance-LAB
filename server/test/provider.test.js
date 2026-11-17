@@ -78,7 +78,7 @@ test('hosted: choose is null, snapshot is all false, info says hosted; nothing i
   const p = createProviders({ setting: 'se', real: mkReal(), local: mkLocal(), hosted: true, fetchImpl: okFetch(log) });
   assert.equal(await p.choose({ capability: 'tools' }), null); assert.equal(await p.choose({ capability: 'gateway' }), null);
   assert.deepEqual(p.snapshot(), { setting: 'auto', gateway: false, tools: { se: false, local: false } });
-  assert.deepEqual(p.info(), { setting: 'auto', hosted: true, gateway: false, toolsSe: false, local: { state: 'hosted', tools: 0 } });
+  assert.deepEqual(p.info(), { setting: 'auto', hosted: true, gateway: false, toolsSe: false, authorize: false, local: { state: 'hosted', tools: 0 } });
   assert.equal(log.length, 0);
 });
 
@@ -127,7 +127,7 @@ test('snapshot() never touches the network and reflects what can answer; info() 
   const p = createProviders({ setting: 'auto', real: mkReal(), local, fetchImpl: okFetch(log) });
   assert.deepEqual(p.snapshot(), { setting: 'auto', gateway: true, tools: { se: true, local: false, localState: 'starting' } });
   assert.equal(log.length, 0);
-  const info = p.info(); assert.deepEqual(info, { setting: 'auto', hosted: false, gateway: true, toolsSe: true, local: { state: 'starting', tools: 16 } });
+  const info = p.info(); assert.deepEqual(info, { setting: 'auto', hosted: false, gateway: true, toolsSe: true, authorize: false, local: { state: 'starting', tools: 16 } });
   const text = JSON.stringify(info); assert.ok(!/https?:|127\.0\.0\.1|secret|token/i.test(text), text);
   assert.deepEqual(createProviders({ setting: 'local', real: mkReal({ gateway: null, toolsSe: null }), local: mkLocal() }).snapshot(), { setting: 'local', gateway: false, tools: { se: false, local: true, localState: 'ready' } });
   assert.deepEqual(createProviders({ real: mkReal({ configured: false }) }).snapshot(), { setting: 'auto', gateway: false, tools: { se: false, local: false, localState: 'off' } }, 'Real not configured: SE is not usable');
@@ -218,4 +218,31 @@ test('choose with the airline pack: on auto the lab\'s own tool server answers (
   assert.equal(await createProviders({ setting: 'auto', real: mkReal({ toolsSe: null }), local: mkLocal('failed'), fetchImpl: okFetch([], 200) }).choose({ capability: 'tools', pack: 'airline' }), null);
   const forced = createProviders({ setting: 'se', real: mkReal(), local: mkLocal('ready'), fetchImpl: okFetch([], 200) });
   assert.equal((await forced.choose({ capability: 'tools', pack: 'airline' })).why, 'forced'); assert.equal((await forced.choose({ capability: 'tools', pack: 'airline' })).provider, 'se');
+});
+
+test('info().authorize is on only when the lab\'s own tool server is the chosen provider and is ready (never for AAG_PROVIDER=se, never while it is down)', () => {
+  const real = { ...mkReal(), authorizeOn: () => true };
+  assert.equal(createProviders({ setting: 'auto', real, local: mkLocal('ready') }).info().authorize, true);
+  assert.equal(createProviders({ setting: 'local', real, local: mkLocal('ready') }).info().authorize, true);
+  assert.equal(createProviders({ setting: 'se', real, local: mkLocal('ready') }).info().authorize, false, 'AAG_PROVIDER=se never forks the tool server: nothing asks PingOne Authorize');
+  assert.equal(createProviders({ setting: 'auto', real, local: mkLocal('starting') }).info().authorize, false);
+  assert.equal(createProviders({ setting: 'auto', real, local: mkLocal('failed') }).info().authorize, false);
+  assert.equal(createProviders({ setting: 'auto', real, local: null }).info().authorize, false);
+});
+
+test('a booking that stays on the lab\'s own steps while PingOne Authorize is set up says so in the gate\'s reason; without the settings the reason is unchanged', async () => {
+  const { realGate } = await import('../src/realGate.js');
+  const { loadCast } = await import('../src/cast.js');
+  const { MANIFEST } = await import('../src/manifest.js');
+  const cast = loadCast(undefined, 'airline');
+  const uc = MANIFEST.usecases.find((u) => u.id === 'UC7');
+  const down = createProviders({ setting: 'auto', real: mkReal({ gateway: null, toolsSe: null }), local: mkLocal('failed') });
+  const plain = realGate(uc, cast, down.snapshot());
+  assert.equal(plain.real, false);
+  assert.ok(!/PingOne Authorize/.test(plain.reason), 'no Authorize settings: nothing is said about it');
+  const on = realGate(uc, cast, { ...down.snapshot(), authorizeOn: true });
+  assert.equal(on.reason, `${plain.reason}. PingOne Authorize is set up here, but this run is not sent to it: the lab's own fare rule decides it`);
+  // a run that does go Real on the tool server gets no such clause
+  const up = createProviders({ setting: 'auto', real: mkReal({ gateway: null, toolsSe: null }), local: mkLocal('ready') });
+  assert.equal(realGate(uc, cast, { ...up.snapshot(), authorizeOn: true }).real, true);
 });

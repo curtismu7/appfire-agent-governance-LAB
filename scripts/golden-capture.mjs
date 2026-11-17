@@ -40,6 +40,41 @@ module.registerHooks({
   },
 });
 
+// The ONE intended change to the two diagrams (design-authorize-lab.md D.5, E.3): PingOne Authorize (P1AZ) is drawn. undoIntendedDiagram(name, answer) takes a /api/diagram answer
+// ({ diagram: { nodes, edges, steps, ... }, names }) and puts back EXACTLY these items and nothing else, so the baseline hashes still apply to the four older packs:
+//   delegation-chain: node `az` label "PingOne Authorize (P1AZ)" -> "Authorize (policy decision)"; the node `ts`; the edges n 7 and 8; the two steps that walk them.
+//   gateway-refusals: node `az` label "PingOne Authorize (P1AZ)" -> "Authorize".
+// Anything else that differs (an extra unlisted node, edge or step, another label) is NOT undone, so --check still fails on it. Returns { value, notes }.
+export const P1AZ_LABEL = 'PingOne Authorize (P1AZ)';
+const OLD_AZ_LABEL = { 'delegation-chain': 'Authorize (policy decision)', 'gateway-refusals': 'Authorize' };
+const NEW_TS = { id: 'ts', label: 'Lab tool server (own tools, local)', group: 'tool' };
+const NEW_EDGES = { 7: { source: 'bff', target: 'ts', label: "tool call with the delegated token (lab's own tools)" }, 8: { source: 'ts', target: 'az', label: 'booking decision request (PingOne Authorize)' } };
+const NEW_STEPS = {
+  7: { from: 'bff', to: 'ts', label: 'Lab tool server', say: "On the lab's own tools (the airline and software packs) the delegated token goes to the lab's tool server, which checks it itself. No gateway is in this path.", hop: 'gateway-check', dashed: false },
+  8: { from: 'ts', to: 'az', label: 'PingOne Authorize (P1AZ): booking decision', say: "With the Authorize settings set, the lab's own tool server asks PingOne Authorize about an airline booking (fare, international or not, cabin, approval state) and applies the answer: a real call, drawn solid. Without them, or in the hosted build, the lab's own policy answers and the page says so.", hop: 'authorize-decision', dashed: false },
+};
+const sameKeys = (o, want) => Object.entries(want).every(([k, v]) => o?.[k] === v);
+export function undoIntendedDiagram(name, answer) {
+  const notes = [];
+  const value = JSON.parse(JSON.stringify(answer));
+  const d = value?.diagram;
+  if (!d || !Array.isArray(d.nodes) || !Array.isArray(d.edges) || !Array.isArray(d.steps)) return { value, notes };
+  const az = d.nodes.find((n) => n.id === 'az');
+  if (az && az.label === P1AZ_LABEL && Object.hasOwn(OLD_AZ_LABEL, d.name ?? name)) { az.label = OLD_AZ_LABEL[d.name ?? name]; notes.push(`${name} node az relabelled to ${P1AZ_LABEL}`); }
+  if ((d.name ?? name) === 'delegation-chain') {
+    const ts = d.nodes.findIndex((n) => n.id === 'ts' && n.label === NEW_TS.label && n.kind === NEW_TS.group);
+    if (ts >= 0) { d.nodes.splice(ts, 1); notes.push(`${name} node ts (the lab tool server) added`); }
+    for (const n of [7, 8]) {
+      const e = d.edges.findIndex((x) => x.n === n && sameKeys(x, NEW_EDGES[n]));
+      if (e >= 0) { d.edges.splice(e, 1); notes.push(`${name} edge ${n} (${NEW_EDGES[n].source} to ${NEW_EDGES[n].target}) added`); }
+      const st = d.steps.findIndex((x) => x.edge === n && sameKeys(x, NEW_STEPS[n]));
+      if (st >= 0) { d.steps.splice(st, 1); notes.push(`${name} step "${NEW_STEPS[n].label}" added`); }
+    }
+  }
+  return { value, notes };
+}
+const diagramNotes = [];
+
 const imp = (rel) => import(pathToFileURL(path.join(ROOT, rel)).href);
 const JWT = /eyJ[\w-]+\.[\w-]+\.[\w-]+/g;
 const cutSig = (s) => s.replace(JWT, (m) => m.split('.').slice(0, 2).join('.'));
@@ -113,7 +148,9 @@ async function capture() {
       api.usecases[v] = hash(await getJson(url, `/api/usecases${q}`));
       api.instructions[v] = hash(await getJson(url, `/api/instructions${q}`));
       const first = await getJson(url, `/api/diagram${q}`);
-      api.diagram[v] = { names: first.names, ...Object.fromEntries(await Promise.all(first.names.map(async (n) => [n, hash(await getJson(url, `/api/diagram${q}&name=${n}`))]))) };
+      // The intended P1AZ change is undone BEFORE hashing (at capture and at check), so the four older packs are still compared byte for byte.
+      const undone = (n, a) => { const u = undoIntendedDiagram(n, a); for (const note of u.notes) diagramNotes.push(`${v}: ${note}`); return u.value; };
+      api.diagram[v] = { names: first.names, ...Object.fromEntries(await Promise.all(first.names.map(async (n) => [n, hash(undone(n, await getJson(url, `/api/diagram${q}&name=${n}`)))]))) };
       if (wb) {
         try {
           const [guide, compare] = await Promise.all([imp('web/src/demoGuide.js'), imp('web/src/compare.js')]);
@@ -165,6 +202,7 @@ function diffs(a, b, prefix = '') {
   return out;
 }
 
+if (process.argv[1] !== fileURLToPath(import.meta.url)) { /* imported (the undo test): export only */ } else {
 const argv = process.argv.slice(2);
 const outIdx = argv.indexOf('--out');
 const now = await capture();
@@ -175,6 +213,7 @@ if (argv.includes('--check')) {
   const info = diffs(gold.intended, JSON.parse(JSON.stringify(canonForFile(now.intended))), 'intended');
   if (now.webNote && !gold.webNote) fails.push(`web: ${now.webNote}`);
   for (const l of info) console.log(`INFO (allowed to change) ${l}`);
+  for (const l of [...new Set(diagramNotes)]) console.log(`INFO intended diagram change: ${l}`);
   if (fails.length) { console.log(`GOLDEN FAIL: ${fails.length} difference(s)`); for (const l of fails) console.log(`  ${l}`); process.exit(1); }
   console.log(`golden ok: ${gold.counts.runs} runs, ${gold.counts.runsDefaultPersona} default-persona runs, ${gold.counts.steered} steered, ${gold.counts.web} web, api + webStatic identical (${info.length} allowed change(s) reported above)`);
 } else {
@@ -184,3 +223,4 @@ if (argv.includes('--check')) {
   console.log(`wrote ${file} (${fs.statSync(file).size} bytes; ${now.counts.runs} runs, ${now.counts.runsDefaultPersona} default-persona, ${now.counts.steered} steered, ${now.counts.web} web)${now.webNote ? ` NOTE ${now.webNote}` : ''}`);
 }
 process.exit(0);
+}

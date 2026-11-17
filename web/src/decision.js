@@ -2,7 +2,7 @@
 // step 7): which agent acted, on whose behalf, which tool or resource, which policy applied, and what was decided. A pure
 // function of the run the server sent: it reads hops and tokens only and never decides anything itself.
 
-import { constrainedPolicy, constrainedReason, fareLevelOf, isConstrainedOutcome, riskRungsOf, seatFields } from "./fare"; // fare: the airline pack's logic lives in fare.js
+import { NO_DECISION_TAIL, constrainedPolicy, constrainedReason, fareLevelOf, isConstrainedOutcome, noDecisionWords, riskRungsOf, seatFields } from "./fare"; // fare: the airline pack's logic lives in fare.js
 
 export const NOT_REACHED = "not reached in this run";
 
@@ -42,7 +42,8 @@ function policyOf(run) {
   if (az && viaTools(run) && text(az.decision?.by)) {
     const rule = text(az.response?.["x-gw-audit-trail"]?.rule);
     // fare: a narrowed booking uses the run's own words (the tool server answered 200 with the cabin narrowed, and why), not just the rule name
-    return { by: az.decision.by, reason: (isConstrainedOutcome(run?.outcome) && text(run?.constrained?.reason)) || rule || text(az.note) || "the tool server's own rule", decision: text(az.decision?.outcome) };
+    // authorize: when PingOne Authorize answered, the hop carries the server's own one-line sentence for the policy row; it is shown verbatim
+    return { by: az.decision.by, reason: (isConstrainedOutcome(run?.outcome) && text(run?.constrained?.reason)) || rule || text(az.note) || "the tool server's own rule", decision: text(az.decision?.outcome), line: text(az.decision?.line) };
   }
   const azBody = bodyOf(az);
   const cp = constrainedPolicy(run, azBody); // fare: a constrained booking names the lab's own rule as the decider
@@ -170,6 +171,23 @@ export function decisionOf(run) {
       ],
     };
   }
+  // authorize: PingOne Authorize was asked and gave no decision (or its answer could not be used). Neither a pass nor a refusal: nothing was booked and the lab's
+  // own rule was NOT used instead. The words come from a fixed table keyed by run.authorize.reason, never from free text.
+  if (outcome === "REAL_NO_DECISION") {
+    const words = noDecisionWords(run?.authorize?.reason);
+    return {
+      verdict: "no-decision", word: "NO DECISION", tone: "warn", level: null, steer: steerOf(run),
+      reason: `PingOne Authorize gave no decision: ${words}. ${NO_DECISION_TAIL}`,
+      fields: [
+        { key: "agent", label: "Which agent acted", value: agent || NOT_REACHED },
+        { key: "principal", label: "On whose behalf", value: person || NOT_REACHED },
+        { key: "tool", label: "Which tool or resource", value: toolOf(run) || NOT_REACHED },
+        { key: "policy", label: "Which policy applied", value: `PingOne Authorize gave no decision: ${words}` },
+        { key: "decision", label: "Decision", value: "no decision" },
+        ...seatFields(run),
+      ],
+    };
+  }
   const verdict = verdictOf(outcome);
   const policy = policyOf(run);
   const tool = toolOf(run);
@@ -203,7 +221,7 @@ export function decisionOf(run) {
       { key: "agent", label: "Which agent acted", value: agent || NOT_REACHED },
       { key: "principal", label: "On whose behalf", value: person || NOT_REACHED },
       { key: "tool", label: "Which tool or resource", value: tool || NOT_REACHED },
-      { key: "policy", label: "Which policy applied", value: policy ? `${policy.by}: ${policy.reason}` : NOT_REACHED },
+      { key: "policy", label: "Which policy applied", value: policy ? policy.line || `${policy.by}: ${policy.reason}` : NOT_REACHED },
       { key: "decision", label: "Decision", value: decided },
       ...seatFields(run), // fare: what was asked and what was booked (only when the run carries run.booking)
     ],

@@ -26,6 +26,18 @@ export function createHitl({ now = Date.now, ttlMs = 300_000, max = 200, perSub 
 
   const shown = (c) => ({ ok: true, id: c.id, status: 'pending', expiresAt: iso(c.expiresAtMs), ttlSeconds: Math.round(ttlMs / 1000) });
 
+  // The body of verify with no state change: { valid: true, id } or { valid: false, reason }. verify calls it, so the reasons cannot drift.
+  function check(id, { sub, tool, argsDigest: digest }) {
+    const c = typeof id === 'string' ? store.get(id) : undefined;
+    if (!c) return { valid: false, reason: 'receipt_unknown' };
+    if (c.sub !== sub || c.tool !== tool || c.argsDigest !== digest) return { valid: false, reason: 'receipt_binding_mismatch' };
+    if (c.status === 'consumed') return { valid: false, reason: 'receipt_used' };
+    if (expired(c)) return { valid: false, reason: 'receipt_expired' };
+    if (c.status === 'pending') return { valid: false, reason: 'receipt_pending' };
+    if (c.status === 'denied') return { valid: false, reason: 'receipt_denied' };
+    return { valid: true, id: c.id };
+  }
+
   return {
     size: () => store.size,
     create({ sub, tool, argsDigest: digest, amount = null }) {
@@ -55,17 +67,13 @@ export function createHitl({ now = Date.now, ttlMs = 300_000, max = 200, perSub 
       c.respondedAtMs = now();
       return { ok: true, id, status: c.status, decision: c.status, respondedAt: iso(c.respondedAtMs) };
     },
+    check,
     // A valid verify spends the challenge. A failed one changes nothing.
-    verify(id, { sub, tool, argsDigest: digest }) {
-      const c = typeof id === 'string' ? store.get(id) : undefined;
-      if (!c) return { valid: false, reason: 'receipt_unknown' };
-      if (c.sub !== sub || c.tool !== tool || c.argsDigest !== digest) return { valid: false, reason: 'receipt_binding_mismatch' };
-      if (c.status === 'consumed') return { valid: false, reason: 'receipt_used' };
-      if (expired(c)) return { valid: false, reason: 'receipt_expired' };
-      if (c.status === 'pending') return { valid: false, reason: 'receipt_pending' };
-      if (c.status === 'denied') return { valid: false, reason: 'receipt_denied' };
-      c.status = 'consumed';
-      return { valid: true, id: c.id, consumed: true };
+    verify(id, binding) {
+      const r = check(id, binding);
+      if (!r.valid) return r;
+      store.get(id).status = 'consumed';
+      return { valid: true, id: r.id, consumed: true };
     },
     get(id) {
       const c = typeof id === 'string' ? store.get(id) : undefined;

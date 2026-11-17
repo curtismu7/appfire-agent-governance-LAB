@@ -132,9 +132,10 @@ export function createProviders({ setting = 'auto', real = null, local = null, t
     return null; // an unknown capability (a later wave, such as CIBA) has no provider yet
   }
 
+  // authorize: whether the lab's PingOne Authorize settings are all set (a boolean only: no id, URL or secret). It is on only for the lab's own tool server and the airline booking.
   const info = () => (hosted
-    ? { setting: 'auto', hosted: true, gateway: false, toolsSe: false, local: { state: 'hosted', tools: 0 } }
-    : { setting: chosen, hosted: false, gateway: Boolean(gateway()), toolsSe: Boolean(seUrl()), local: { state: local?.state?.() ?? 'off', tools: local?.toolNames?.().length ?? 0 } });
+    ? { setting: 'auto', hosted: true, gateway: false, toolsSe: false, authorize: false, local: { state: 'hosted', tools: 0 } }
+    : { setting: chosen, hosted: false, gateway: Boolean(gateway()), toolsSe: Boolean(seUrl()), authorize: Boolean(real?.configured?.() && real?.authorizeOn?.() && chosen !== 'se' && local?.state?.() === 'ready'), local: { state: local?.state?.() ?? 'off', tools: local?.toolNames?.().length ?? 0 } });
 
   return { setting: chosen, snapshot, prepare, choose, info };
 }

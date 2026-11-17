@@ -8,6 +8,7 @@
 import { fork as nodeFork } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import { normalizeParams, shapeResult } from './authorize.js';
 
 const TOOL_NAME = /^[a-z0-9_]{1,64}$/;
 const RESERVED_LO = 7814;
@@ -16,13 +17,16 @@ const MAX_TOOLS = 50;
 const RESTART_WINDOW_MS = 60_000;
 const MAX_RESTARTS = 3;
 const SKEW_SECONDS = 60;
+const MAX_AUTHORIZE_OUTSTANDING = 8;
+const MAX_AUTHORIZE_MESSAGE = 1024;
+const MAX_ID = 2147483647;
 
 const validPort = (p) => Number.isInteger(p) && p >= 1024 && p <= 65535 && !(p >= RESERVED_LO && p <= RESERVED_HI);
 const validTools = (t) => Array.isArray(t) && t.length <= MAX_TOOLS && t.every((n) => typeof n === 'string' && TOOL_NAME.test(n));
 
 export function createLocalServices({
   config, hosted = false, modulePath = new URL('./local/main.js', import.meta.url).pathname, forkImpl = nodeFork, caCertsPath = undefined,
-  now = Date.now, startTimeoutMs = 10_000, backoffMs = [1000, 2000, 4000], retryAfterMs = 30_000, pingMs = 15_000, pingTimeoutMs = 3_000, fetchImpl = (...a) => globalThis.fetch(...a),
+  authorize = null, now = Date.now, startTimeoutMs = 10_000, backoffMs = [1000, 2000, 4000], retryAfterMs = 30_000, pingMs = 15_000, pingTimeoutMs = 3_000, fetchImpl = (...a) => globalThis.fetch(...a),
 } = {}) {
   let state = 'off'; // 'off' | 'starting' | 'ready' | 'failed'
   let child = null; let port = null; let tools = []; let secret = null;
@@ -86,6 +90,24 @@ export function createLocalServices({
     pingTimer.unref?.();
   }
 
+  // The child's question for PingOne Authorize (design-authorize-lab.md B.3). The parent holds the secret and the network: the child sends seven canonical parameters and a trace id and gets
+  // back ONE small answer, bound by id, to this child only. Nothing the child sent is forwarded anywhere except through the fixed request builder in authorize.js.
+  let outstanding = 0;
+  const noDecision = (reason) => ({ outcome: 'no_decision', code: null, reason, correlationId: null, elapsedMs: null });
+  async function answerAuthorize(c, m) {
+    const id = m.id;
+    if (!Number.isInteger(id) || id < 1 || id > MAX_ID) return;                       // no usable id: no reply
+    const reply = (r) => { if (c === child) send(c, { type: 'authorize-result', id, ...(shapeResult(r) ?? noDecision('unavailable')) }); };
+    let tooBig = true;
+    try { tooBig = JSON.stringify(m).length > MAX_AUTHORIZE_MESSAGE; } catch { tooBig = true; }
+    if (outstanding >= MAX_AUTHORIZE_OUTSTANDING) { reply(noDecision('busy')); return; }
+    const trace = m.trace === null ? null : (typeof m.trace === 'string' && /^[0-9a-f]{32}$/.test(m.trace) ? m.trace : undefined);
+    if (tooBig || trace === undefined || !normalizeParams(m.params).ok) { reply(noDecision('malformed')); return; }
+    if (!authorize || typeof authorize.decide !== 'function') { reply(noDecision('unavailable')); return; }
+    outstanding += 1;
+    try { reply(await authorize.decide(m.params, { trace })); } catch { reply(noDecision('unavailable')); } finally { outstanding -= 1; }
+  }
+
   function launch() {
     secret = randomBytes(32).toString('hex');
     let c;
@@ -102,6 +124,7 @@ export function createLocalServices({
         watch(c);
         finish({ ok: true, port });
       } else if (m.type === 'error') fail(c, 'init_failed');
+      else if (m.type === 'authorize' && state === 'ready') void answerAuthorize(c, m);
     });
     c.on('error', () => { if (c === child && !stopping) fail(c, 'child_error'); });
     c.on('exit', () => {
@@ -111,7 +134,7 @@ export function createLocalServices({
       if (!supervising) { giveUp(); finish({ ok: false, reason: 'exited' }); return; }
       crashed();
     });
-    if (!send(c, { type: 'init', config: { issuer: config?.issuer, audience: config?.audience, allowedActors: config?.allowedActors, tierGroup: config?.tierGroup, tierGroupAirline: config?.tierGroupAirline, hitlSecret: secret, clockSkewSeconds: SKEW_SECONDS } })) fail(c, 'send_failed');
+    if (!send(c, { type: 'init', config: { issuer: config?.issuer, audience: config?.audience, allowedActors: config?.allowedActors, tierGroup: config?.tierGroup, tierGroupAirline: config?.tierGroupAirline, hitlSecret: secret, clockSkewSeconds: SKEW_SECONDS, authorize: Boolean(config?.authorize) } })) fail(c, 'send_failed');
   }
 
   function start() {

@@ -22,9 +22,10 @@ const claimsOf = (t) => { try { return JSON.parse(Buffer.from(String(t).split('.
 const scopesOf = (c) => (Array.isArray(c.scope) ? c.scope : typeof c.scope === 'string' ? c.scope.split(' ') : []);
 const groupsOf = (c) => (Array.isArray(c.groups) ? c.groups : typeof c.groups === 'string' ? [c.groups] : []);
 
-export async function startFakeToolServer({ behaviour = 'ok', isDelegated = () => true, tierGroup = 'Software_EnterpriseTier', tierGroupAirline = 'Airline_OrbitTier', reason = 'aud_mismatch' } = {}) {
+export async function startFakeToolServer({ behaviour = 'ok', isDelegated = () => true, tierGroup = 'Software_EnterpriseTier', tierGroupAirline = 'Airline_OrbitTier', reason = 'aud_mismatch', auditSource = 'lab-policy', auditRule = null } = {}) {
   const seen = [];
-  const state = { behaviour, reason, health: 200, hits: { health: 0 } };
+  // auditSource: what the fake claims in its audit header (a test sets 'pingone-authorize' to prove the lab does not credit a header it cannot trust)
+  const state = { behaviour, reason, health: 200, hits: { health: 0 }, auditSource, auditRule };
   const challenges = new Map(); // id -> { status, sub, tool, digest, used }
   const digest = (args) => JSON.stringify(Object.fromEntries(Object.entries(args ?? {}).filter(([k]) => k !== '_hitl_challenge_id').sort(([a], [b]) => (a < b ? -1 : 1))));
   const server = http.createServer((req, res) => {
@@ -35,7 +36,7 @@ export async function startFakeToolServer({ behaviour = 'ok', isDelegated = () =
       let rpc = null; try { rpc = JSON.parse(text); } catch { rpc = null; }
       seen.push({ method: req.method, url: req.url, headers: req.headers, rpc });
       const send = (status, obj, headers = {}) => { res.writeHead(status, { 'content-type': 'application/json', ...headers }); res.end(obj === null ? '' : JSON.stringify(obj)); };
-      const audit = (decision, rule, tool) => ({ 'x-gw-audit-trail': JSON.stringify({ decision, source: 'lab-policy', rule, tool, trace: null }) });
+      const audit = (decision, rule, tool) => ({ 'x-gw-audit-trail': JSON.stringify({ decision, source: state.auditSource, rule: state.auditRule ?? rule, tool, trace: null }) });
       if (req.url === '/health') { state.hits.health += 1; return send(state.health, { ok: true, service: 'fake-tool-server' }); }
       // The approval service (the secret is required on every route).
       const hm = /^\/hitl\/challenges\/([A-Za-z0-9-]+)\/respond$/.exec(req.url);

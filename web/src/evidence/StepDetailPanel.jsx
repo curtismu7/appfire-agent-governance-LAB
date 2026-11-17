@@ -85,7 +85,7 @@ export default function StepDetailPanel({ hops = [], selected = null, onSelect, 
   const order = withSkipped(hops, h.verdict === "skip");
   const at = order.indexOf(h);
   const prev = order[at - 1], next = order[at + 1];
-  const from = actorOf(h.from), to = actorOf(h.to);
+  const from = actorOf(h.from, hops), to = actorOf(h.to, hops);
   const stages = Array.isArray(h.stages) ? h.stages : [];
   const stopAt = stages.findIndex((s) => s.result === "fail");
   const kv = Array.isArray(h.kv) ? h.kv : [];

@@ -85,15 +85,33 @@ const TOOL_SERVER_CAPTIONS = {
   },
 };
 
+// A decision PingOne Authorize really made on an airline booking (hop.decidedBy "pingone-authorize"), or one it was asked for and did not make ("none"). NOT part of
+// CAPTIONS (the golden hashes that table). The division of labour is always: Authorize answers, the tool server enforces, the lab's own approval service approves.
+export const AUTHORIZE_CAPTIONS = {
+  say: "The tool server sent PingOne Authorize the booking: the fare, whether the trip is international, the cabin asked and whether a person has approved. PingOne Authorize answers with a decision and the tool server enforces it. The model has no say.",
+  deny: "PingOne Authorize says no. The tool server refuses the booking and nothing is run.",
+  held: "PingOne Authorize returned PERMIT with a statement the lab reads as: a person or a second factor must come first. The tool server holds the booking. The approval itself runs on the lab's own approval service.",
+  constrained: "PingOne Authorize returned PERMIT with a statement the lab reads as: economy only. The tool server applies it, so the agent's ask for business is not granted. The rule is the policy the owner wrote in PingOne Authorize.",
+  nodecision: "PingOne Authorize gave no decision. The tool server booked nothing and did not use its own rule instead.",
+  point: "The decision, the statement code PingOne Authorize returned, and the raw request and answer.",
+};
+
 const GENERIC = { agenda: null, say: "This is one step of the run. Open its detail for the request, the response and the decision.", point: "The request and the response below." };
 
+// authorize: PingOne Authorize was asked and no decision came back. `decidedBy: "none"` alone is not enough (a lab-policy run with no answer at all carries it too): the
+// hop's own `decision.by` must say that PingOne Authorize gave no decision.
+const authorizeNoDecision = (hop) => hop?.kind === "authorize-decision" && hop?.decidedBy === "none" && String(hop?.decision?.by || "").startsWith("PingOne Authorize gave no decision");
+
 const verdictOf = (hop) => {
+  if (authorizeNoDecision(hop)) return "nodecision";
   const outcome = typeof hop?.decision?.outcome === "string" ? hop.decision.outcome : "";
   if (hop?.verdict === "deny" || /^deny/i.test(outcome)) return "deny";
   if (hop?.verdict === "held" || /^(held|escalat|hitl)/i.test(outcome)) return "held";
   // fare: the lab's own CONSTRAINED outcome (the decision hop) or the narrowed arguments (the tool and API hops carry a `constraint` row)
   // A Real booking the tool server narrowed: its tool hop carries the server's fixed note (the cabin narrowed to economy), and its decision hop the word CONSTRAINED.
   if (hop?.capability === "tools" && typeof hop?.note === "string" && /cabin narrowed to economy/.test(hop.note)) return "constrained";
+  // authorize: PingOne Authorize returned PERMIT with a statement the lab reads as economy only; `decision.outcome` is what it returned, `authorize.outcome` the lab's reading.
+  if (hop?.decidedBy === "pingone-authorize" && hop?.authorize?.outcome === "CONSTRAINED") return "constrained";
   if (outcome === "CONSTRAINED" || (Array.isArray(hop?.kv) && hop.kv.some((r) => (Array.isArray(r) ? r[0] : r?.k ?? r?.key) === "constraint"))) return "constrained";
   return "ok";
 };
@@ -105,6 +123,10 @@ export function captionFor(hop) {
   const base = Object.hasOwn(CAPTIONS, hop.kind) ? CAPTIONS[hop.kind] : GENERIC;
   const c = hop.capability === "tools" && Object.hasOwn(TOOL_SERVER_CAPTIONS, hop.kind) ? { ...base, ...TOOL_SERVER_CAPTIONS[hop.kind] } : base;
   const v = verdictOf(hop);
+  // authorize: a booking decision PingOne Authorize made (or was asked for and did not make) has its own words; a lab-policy decision keeps the tool server's.
+  if (hop.kind === "authorize-decision" && (hop.decidedBy === "pingone-authorize" || authorizeNoDecision(hop))) {
+    return { say: (v !== "ok" && AUTHORIZE_CAPTIONS[v]) || AUTHORIZE_CAPTIONS.say, point: AUTHORIZE_CAPTIONS.point, agenda: c.agenda, notInPath: false, real: hop.source === "real" };
+  }
   // A booking is a write, not a low-risk read: the airline booking's allowed hop says so in its own words (read from the tool name the hop carries).
   if (hop.kind === "tool-dispatched" && v === "ok" && hop.request?.calls?.[0]?.body?.name === "book_airline_flight") {
     return { say: "The booking is allowed and goes through as asked. A booking within the limits needs nobody's approval, and the record is still written.", point: c.point, agenda: c.agenda, notInPath: false, real: hop.source === "real" };

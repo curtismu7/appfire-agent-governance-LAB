@@ -132,7 +132,10 @@ export default function PatternDiagram({ diagram, resetSignal = 0, lastRun = nul
   const stepper = useDiagramStepper(diagram.steps.length);
   const onMove = useCallback((id, p) => setPositions((cur) => ({ ...cur, [id]: { x: p.x, y: p.y } })), []);
   const step = stepper.step >= 0 ? diagram.steps[stepper.step] : null;
-  const hop = step && lastRun ? lastRun.run.hops.find((h) => h.kind === step.hop) : null;
+  // A step on the lab's own tool server (node ts) shows a hop of the last run only when that hop really is that step: the tool server's own checks for the arrow into it, and a
+  // decision PingOne Authorize made (`decidedBy`) for the arrow out of it. Any other run (a gateway run, a lab-policy decision, no run of the booking) shows no hop there.
+  const fits = (h) => (step.from === "ts" ? h.decidedBy === "pingone-authorize" : step.to === "ts" ? h.capability === "tools" && h.provider === "local" : true);
+  const hop = step && lastRun ? lastRun.run.hops.find((h) => h.kind === step.hop && fits(h)) : null;
   // Reset restores box positions as well as the walkthrough and the view. The page-level Reset raises resetSignal.
   const reset = useCallback(() => { stepper.stop(); setPositions(initial); setTimeout(() => window.dispatchEvent(new Event(REFIT_EVENT)), 0); }, [stepper.stop, initial]); // eslint-disable-line react-hooks/exhaustive-deps
   const seen = useRef(resetSignal);

@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { TOOL_META } from './registry.js';
 import { TOOL_NAMES, descriptorOf } from './tools.js';
-import { BY, decide, listedFor } from './policy.js';
+import { BY, decide, decideBookingWithAuthorize, listedFor } from './policy.js';
 import { isObj, parseJson, traceIdOf } from './util.js';
 
 const VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
@@ -29,7 +29,8 @@ export function tokenRefusal(v) {
   return plain(401, { error: 'invalid_token', message: 'The token was not accepted.', reason: v.reason, by: BY }, { 'WWW-Authenticate': `${REALM}, error="invalid_token", error_description="${v.reason}"` });
 }
 
-export function createMcp({ config, verifier, hitl, now = Date.now, newSessionId = randomUUID }) {
+// authorize: the broker's ask (util.js createBroker) or undefined. With config.authorize true the booking tool asks PingOne Authorize through it and never falls back to the lab's own rule.
+export function createMcp({ config, verifier, hitl, now = Date.now, newSessionId = randomUUID, authorize = undefined }) {
   const sessions = new Map();     // id -> { sub, last }
   const descriptors = Object.fromEntries(TOOL_NAMES.map((n) => [n, descriptorOf(n)]));
 
@@ -105,11 +106,15 @@ export function createMcp({ config, verifier, hitl, now = Date.now, newSessionId
     if (method === 'tools/call') {
       if (!isObj(params) || !Object.hasOwn(params, 'name') || typeof params.name !== 'string') return rpcError(200, id, -32602, 'invalid params');
       const name = params.name;
-      const decision = decide({ name, rawArgs: Object.hasOwn(params, 'arguments') ? params.arguments : undefined, auth, config, hitl, now });
+      const rawArgs = Object.hasOwn(params, 'arguments') ? params.arguments : undefined;
+      const decision = config.authorize === true && name === 'book_airline_flight'
+        ? await decideBookingWithAuthorize({ name, rawArgs, auth, config, hitl, now, authorize, trace: traceIdOf(traceparent) })
+        : decide({ name, rawArgs, auth, config, hitl, now });
       if (decision.kind === 'rpc_error') return rpcError(200, id, decision.code, decision.message);
       const headers = {};
       if (decision.audit) {
-        headers['X-Gw-Audit-Trail'] = JSON.stringify({ decision: decision.audit.decision, source: 'lab-policy', rule: decision.audit.rule, tool: name, trace: traceIdOf(traceparent) });
+        const { decision: word, rule, correlation, elapsed_ms: elapsed } = decision.audit;
+        headers['X-Gw-Audit-Trail'] = JSON.stringify({ decision: word, source: decision.source ?? 'lab-policy', rule, tool: name, trace: traceIdOf(traceparent), ...(correlation ? { correlation } : {}), ...(elapsed !== undefined ? { elapsed_ms: elapsed } : {}) });
       }
       if (decision.kind === 'refuse') {
         if (decision.wwwAuthenticate) headers['WWW-Authenticate'] = decision.wwwAuthenticate;

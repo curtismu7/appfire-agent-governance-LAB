@@ -57,7 +57,7 @@ test('main.js installs the guard before anything else can open a socket', () => 
 });
 
 test('registry.js exports exactly the names in the design and TOOL_META has the sixteen tools (ten software, six airline)', () => {
-  assert.deepEqual(Object.keys(registry).sort(), ['BANDS', 'BLOCKED_TERMS', 'DEFAULT_AIRLINE_TIER_GROUP', 'FARE', 'SCANNER_REPOS', 'SCOPES', 'TOOL_META']);
+  assert.deepEqual(Object.keys(registry).sort(), ['AUTHORIZE_CODES', 'AUTHORIZE_REASONS', 'BANDS', 'BLOCKED_TERMS', 'DEFAULT_AIRLINE_TIER_GROUP', 'FARE', 'SCANNER_REPOS', 'SCOPES', 'TOOL_META']);
   assert.equal(Object.keys(TOOL_META).length, 16);
   assert.deepEqual(Object.keys(TOOL_META), ['get_my_issues', 'bulk_update_issues', 'get_project_security_settings', 'get_release_summary', 'list_marketplace_apps', 'get_deployment_status', 'request_admin_access', 'scan_repository', 'brave_news_search', 'code_search',
     'get_airline_bookings', 'get_flight_status', 'book_airline_flight', 'sensitive_passenger_record', 'list_airports', 'request_change_fee_waiver']);
