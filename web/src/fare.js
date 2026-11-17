@@ -26,14 +26,17 @@ export const isConstrained = (run) => isConstrainedOutcome(String(run?.outcome |
 // Which rung an airline run landed on; null when the run made no decision (guided, identity only, not completed). Only called for a run with `fareRule`.
 export function fareLevelOf(run) {
   const o = String(run?.outcome || "");
-  if (run?.kind === "guided" || run?.computed === false || run?.kind === "live") return null;
+  // A Real run is read, not computed (the server sends computed:false for it), but one answered by the lab's own tool server did decide: only an unlabelled
+  // run, a guided page and the identity-provider-only path make no decision (the same exemption decision.js riskLevelOf makes for the other packs).
+  const viaToolServer = run?.kind === "real" && (run?.hops || []).some((h) => h?.capability === "tools");
+  if (run?.kind === "guided" || (run?.computed === false && !viaToolServer) || run?.kind === "live") return null;
   if (isConstrainedOutcome(o)) return 2;
   // A booking approved on the traveller's own phone ends PERMIT, but its decision was CIBA: a person approved it, so it sits on the person rung.
   if ((run?.hops || []).some((h) => h?.kind === "authorize-decision" && h.verdict !== "skip" && h.response?.body?.decision === "CIBA")) return 4;
   if (o === "PERMIT" || o === "DELEGATE_AND_EXECUTE" || o === "REAL_PERMIT") return 1;
   if (o === "STEP_UP") return 3;
   if (o === "HITL_REQUIRED" || o === "CIBA" || o === "REAL_HOLD") return 4;
-  if (o.startsWith("DENY") || o === "PERMIT_THEN_DENY" || o === "REAL_DENY") return 5;
+  if (o.startsWith("DENY") || o === "PERMIT_THEN_DENY" || o === "REAL_DENY" || o === "REAL_RECEIPT_REJECTED") return 5; // the card says DENIED for a refused receipt, so the strip lights Refused
   return null;
 }
 
@@ -73,7 +76,10 @@ export function seatFields(run) {
   const b = run?.booking;
   if (!b || typeof b !== "object") return [];
   const asked = text(b.asked) || "business";
-  const value = text(b.booked) ? `${asked} asked, ${b.booked} booked` : `${asked} asked, not booked yet (held)`;
+  // "held" only where something was held: a Real run that ended any other way (a refusal, a token problem, no answer) held nothing and says only that it was not booked.
+  const real = String(run?.outcome || "").startsWith("REAL_");
+  const held = !real || run.outcome === "REAL_HOLD";
+  const value = text(b.booked) ? `${asked} asked, ${b.booked} booked` : held ? `${asked} asked, not booked yet (held)` : `${asked} asked, not booked`;
   return [{ key: "seat", label: "Asked for, and what was booked", value }];
 }
 

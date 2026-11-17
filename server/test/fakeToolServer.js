@@ -11,13 +11,18 @@ import { randomUUID } from 'node:crypto';
 
 export const TOOL_SESSION_ID = 'fake-tool-session-0001';
 export const HITL_SECRET = ['fake', '-hitl-', 'secret-', 'for-tests-', '00ff00ff00ff00ff'].join('');
-const SCOPES = { get_my_issues: 'issues:read', bulk_update_issues: 'issues:write', get_project_security_settings: 'security:read', get_release_summary: 'release:read', list_marketplace_apps: null, get_deployment_status: 'deploy:read', request_admin_access: 'admin:request', scan_repository: 'security:read', brave_news_search: 'issues:read', code_search: 'issues:read' };
+const SCOPES = { get_my_issues: 'issues:read', bulk_update_issues: 'issues:write', get_project_security_settings: 'security:read', get_release_summary: 'release:read', list_marketplace_apps: null, get_deployment_status: 'deploy:read', request_admin_access: 'admin:request', scan_repository: 'security:read', brave_news_search: 'issues:read', code_search: 'issues:read',
+  get_airline_bookings: 'trips:read', get_flight_status: 'flights:read', book_airline_flight: 'flights:book', sensitive_passenger_record: 'travellers:read', list_airports: null, request_change_fee_waiver: 'fees:request' };
+// The airline pack's flights (a copy of the table the real tool server holds): the fake applies the same booking rule in a few lines.
+export const FLIGHTS = { 'LK 109': ['ORD', 'DEN', 150], 'LK 214': ['ORD', 'DEN', 380], 'LK 322': ['ORD', 'YYZ', 380], 'LK 330': ['ORD', 'SFO', 400], 'LK 331': ['ORD', 'SEA', 401], 'LK 560': ['ORD', 'BOS', 780], 'LK 650': ['ORD', 'LAX', 1500], 'LK 651': ['ORD', 'HNL', 1501], 'LK 704': ['ORD', 'CDG', 2400], 'LK 800': ['ORD', 'LHR', 1100] };
+export const COUNTRY = { ORD: 'US', DEN: 'US', YYZ: 'CA', SFO: 'US', SEA: 'US', BOS: 'US', LAX: 'US', HNL: 'US', CDG: 'FR', LHR: 'GB' };
+const GROUPED = { get_project_security_settings: 'software', sensitive_passenger_record: 'airline' };
 const ISSUES = [{ key: 'PLAT-412', summary: 'Rate limiter returns 500 on burst', status: 'In Progress', priority: 'High' }, { key: 'PLAT-418', summary: 'Upgrade build image to Node 26', status: 'To Do', priority: 'Medium' }, { key: 'BILL-77', summary: 'Invoice rounding on partial refunds', status: 'To Do', priority: 'Medium' }];
 const claimsOf = (t) => { try { return JSON.parse(Buffer.from(String(t).split('.')[1], 'base64url').toString('utf8')); } catch { return {}; } };
 const scopesOf = (c) => (Array.isArray(c.scope) ? c.scope : typeof c.scope === 'string' ? c.scope.split(' ') : []);
 const groupsOf = (c) => (Array.isArray(c.groups) ? c.groups : typeof c.groups === 'string' ? [c.groups] : []);
 
-export async function startFakeToolServer({ behaviour = 'ok', isDelegated = () => true, tierGroup = 'Software_EnterpriseTier', reason = 'aud_mismatch' } = {}) {
+export async function startFakeToolServer({ behaviour = 'ok', isDelegated = () => true, tierGroup = 'Software_EnterpriseTier', tierGroupAirline = 'Airline_OrbitTier', reason = 'aud_mismatch' } = {}) {
   const seen = [];
   const state = { behaviour, reason, health: 200, hits: { health: 0 } };
   const challenges = new Map(); // id -> { status, sub, tool, digest, used }
@@ -56,7 +61,7 @@ export async function startFakeToolServer({ behaviour = 'ok', isDelegated = () =
       if (rpc.method === 'notifications/initialized') { res.writeHead(202); res.end(); return undefined; }
       if (req.headers['mcp-session-id'] !== TOOL_SESSION_ID) return send(404, { error: 'session_unknown' });
       if (rpc.method === 'tools/list') {
-        const mine = Object.entries(SCOPES).filter(([name, scope]) => scope === null || (claims && scopesOf(claims).includes(scope) && (name !== 'get_project_security_settings' || groupsOf(claims).includes(tierGroup)))).map(([name]) => name);
+        const mine = Object.entries(SCOPES).filter(([name, scope]) => scope === null || (claims && scopesOf(claims).includes(scope) && (!Object.hasOwn(GROUPED, name) || groupsOf(claims).includes(GROUPED[name] === 'airline' ? tierGroupAirline : tierGroup)))).map(([name]) => name);
         return send(200, { jsonrpc: '2.0', id: rpc.id, result: { tools: mine.map((name) => ({ name, inputSchema: { type: 'object' } })) } });
       }
       if (rpc.method !== 'tools/call') return send(200, { jsonrpc: '2.0', id: rpc.id ?? null, error: { code: -32601, message: 'unknown method' } });
@@ -66,7 +71,28 @@ export async function startFakeToolServer({ behaviour = 'ok', isDelegated = () =
       if (!Object.hasOwn(SCOPES, name)) return bearer ? send(200, { jsonrpc: '2.0', id: rpc.id, error: { code: -32602, message: 'unknown tool' } }) : send(401, { error: 'no_token', message: 'fixed', reason: 'no_token', by: 'tool server' }, { 'www-authenticate': 'Bearer realm="appfire-tools-local"' });
       if (SCOPES[name] !== null && !bearer) return send(401, { error: 'no_token', message: 'fixed', reason: 'no_token', by: 'tool server' }, { 'www-authenticate': 'Bearer realm="appfire-tools-local"' });
       if (SCOPES[name] !== null && !scopesOf(claims).includes(SCOPES[name])) return refuse(403, 'insufficient_scope', 'lab-scope');
-      if (name === 'get_project_security_settings' && !groupsOf(claims).includes(tierGroup)) return refuse(403, 'group_required', 'lab-group-gate', { required_group: tierGroup });
+      if (Object.hasOwn(GROUPED, name) && !groupsOf(claims).includes(GROUPED[name] === 'airline' ? tierGroupAirline : tierGroup)) return refuse(403, 'group_required', 'lab-group-gate', { required_group: GROUPED[name] === 'airline' ? tierGroupAirline : tierGroup });
+      let narrow = null; let bookAudit = null;
+      if (name === 'book_airline_flight') {
+        // The same rule as the real tool server (section 4.3), in a few lines: the fare is the table's, a receipt is bound to the exact arguments, an approval beats a narrowing.
+        if (!Object.hasOwn(FLIGHTS, args.flight)) return send(200, { jsonrpc: '2.0', id: rpc.id, error: { code: -32602, message: 'invalid arguments: flight is not valid' } });
+        const [from, to, fare] = FLIGHTS[args.flight]; const cabin = args.cabin ?? 'economy'; const intl = COUNTRY[from] !== COUNTRY[to];
+        if (fare > 1500) {
+          const id = args._hitl_challenge_id;
+          if (typeof id === 'string') {
+            const ch = challenges.get(id);
+            const ok = ch && ch.status === 'approved' && !ch.used && ch.sub === claims.sub && ch.digest === digest(args);
+            if (!ok) return send(403, { error: 'hitl_receipt_rejected', message: 'fixed', reason: !ch ? 'receipt_unknown' : ch.status === 'pending' ? 'receipt_pending' : ch.status === 'denied' ? 'receipt_denied' : ch.used ? 'receipt_used' : 'receipt_binding_mismatch', by: 'tool server' });
+            ch.used = true; bookAudit = audit('PERMIT', 'lab-fare-approved', name);
+          } else {
+            const id2 = randomUUID(); challenges.set(id2, { status: 'pending', sub: claims.sub, tool: name, digest: digest(args), used: false, amount: fare });
+            return send(428, { error: 'approval_required', message: 'fixed', reason: 'lab-fare-hold', by: 'tool server', challengeId: id2, expiresAt: new Date(Date.now() + 300_000).toISOString(), tool: name, fare_judged: fare, international: intl }, audit('HITL_REQUIRED', 'lab-fare-hold', name));
+          }
+        } else if (cabin === 'business' && (intl || fare > 400)) {
+          narrow = [...(intl ? ['international'] : []), ...(fare > 400 ? ['over-limit'] : [])];
+          bookAudit = audit('CONSTRAINED', 'lab-fare-constrained', name);
+        }
+      }
       if (name === 'scan_repository' && !['platform', 'billing', 'mobile'].includes(String(args.repo || '').toLowerCase())) return refuse(403, 'repo_not_allowed', 'lab-repo-allowlist');
       if (name === 'brave_news_search' && /bitcoin|crypto/i.test(String(args.query || ''))) return refuse(403, 'blocked_term', 'lab-blocked-term');
       if (name === 'bulk_update_issues') {
@@ -97,9 +123,19 @@ export async function startFakeToolServer({ behaviour = 'ok', isDelegated = () =
         brave_news_search: () => ({ query: args.query, results: [{ title: 'Jira workflow automation (example)', url: 'https://news.example/a' }] }),
         code_search: () => ({ query: args.query, matches: [{ repo: 'platform', path: 'src/limiter.js', line: 42 }] }),
         get_release_summary: () => ({ project: 'PLAT', release: '2026.11.2', status: 'on track' }),
+        get_airline_bookings: () => ({ signed_in_sub: claims?.sub ?? null, total: 2, returned: 2, trips: [{ flight: 'LK 214', route: 'ORD to DEN', cabin: 'business', status: 'confirmed' }, { flight: 'LK 560', route: 'ORD to BOS', cabin: 'economy', status: 'confirmed' }], miles: 18400 }),
+        get_flight_status: () => ({ flight: args.flight, route: 'ORD to DEN', status: 'on time', gate: 'B12', departs: 'Friday 8:15 am' }),
+        book_airline_flight: () => {
+          const [from, to, fare] = FLIGHTS[args.flight]; const cabin = args.cabin ?? 'economy';
+          return { status: 'booked', confirmation: 'LKR-3F9A21', flight: args.flight, from, to, international: COUNTRY[from] !== COUNTRY[to], fare_judged: fare, cabin_asked: cabin, cabin_booked: narrow ? 'economy' : cabin,
+            ...(narrow ? { constrained: { field: 'cabin', asked: cabin, granted: 'economy', because: narrow, limit: 400, rule: 'lab-fare-constrained' } } : {}), note: 'Booked on synthetic lab data only.' };
+        },
+        sensitive_passenger_record: () => ({ passport_last4: '4471', known_traveller_number: 'on file (hidden)', card_last4: '4821', note: 'Full numbers are never returned by this tool.' }),
+        list_airports: () => ({ total: 11, airports: [{ code: 'MDW', name: 'Midway', miles_away: 14 }, { code: 'ORD', name: "O'Hare", miles_away: 17 }] }),
+        request_change_fee_waiver: () => ({ request_id: 'CFW-0a1b2c', status: 'pending review', flight: args.flight ?? 'LK 214', requested_by: claims?.sub ?? null, note: 'This tool only files a request; no tool here can grant a waiver.' }),
       };
       const payload = { ...payloads[name](), lab_invented: true };
-      return send(200, { jsonrpc: '2.0', id: rpc.id, result: { content: [{ type: 'text', text: JSON.stringify(payload) }], structuredContent: payload, isError: false } }, SCOPES[name] === null ? {} : audit('PERMIT', 'lab-no-restriction', name));
+      return send(200, { jsonrpc: '2.0', id: rpc.id, result: { content: [{ type: 'text', text: JSON.stringify(payload) }], structuredContent: payload, isError: false } }, SCOPES[name] === null ? {} : (bookAudit ?? audit('PERMIT', 'lab-no-restriction', name)));
     });
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));

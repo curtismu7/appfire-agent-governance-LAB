@@ -56,21 +56,25 @@ test('main.js installs the guard before anything else can open a socket', () => 
   assert.match(main, /process\.on\('uncaughtException'/); assert.match(main, /process\.on\('unhandledRejection'/);
 });
 
-test('registry.js exports exactly the names in the design and TOOL_META has the ten tools', () => {
-  assert.deepEqual(Object.keys(registry).sort(), ['BANDS', 'BLOCKED_TERMS', 'SCANNER_REPOS', 'SCOPES', 'TOOL_META']);
-  assert.equal(Object.keys(TOOL_META).length, 10);
-  assert.deepEqual(Object.keys(TOOL_META), ['get_my_issues', 'bulk_update_issues', 'get_project_security_settings', 'get_release_summary', 'list_marketplace_apps', 'get_deployment_status', 'request_admin_access', 'scan_repository', 'brave_news_search', 'code_search']);
-  assert.deepEqual(SCOPES, ['issues:read', 'issues:write', 'security:read', 'release:read', 'deploy:read', 'admin:request']);
+test('registry.js exports exactly the names in the design and TOOL_META has the sixteen tools (ten software, six airline)', () => {
+  assert.deepEqual(Object.keys(registry).sort(), ['BANDS', 'BLOCKED_TERMS', 'DEFAULT_AIRLINE_TIER_GROUP', 'FARE', 'SCANNER_REPOS', 'SCOPES', 'TOOL_META']);
+  assert.equal(Object.keys(TOOL_META).length, 16);
+  assert.deepEqual(Object.keys(TOOL_META), ['get_my_issues', 'bulk_update_issues', 'get_project_security_settings', 'get_release_summary', 'list_marketplace_apps', 'get_deployment_status', 'request_admin_access', 'scan_repository', 'brave_news_search', 'code_search',
+    'get_airline_bookings', 'get_flight_status', 'book_airline_flight', 'sensitive_passenger_record', 'list_airports', 'request_change_fee_waiver']);
+  assert.deepEqual(SCOPES, ['issues:read', 'issues:write', 'security:read', 'release:read', 'deploy:read', 'admin:request', 'trips:read', 'flights:read', 'flights:book', 'travellers:read', 'fees:request']);
+  assert.deepEqual(registry.FARE, { limit: 400, hold: 1500, from: 'business', to: 'economy' }); assert.ok(Object.isFrozen(registry.FARE));
+  assert.equal(registry.DEFAULT_AIRLINE_TIER_GROUP, 'Airline_OrbitTier');
   assert.deepEqual(BANDS, [{ min: 2000, decision: 'DENY', rule: 'lab-band-deny' }, { min: 500, decision: 'STEP_UP', rule: 'lab-band-step-up' }, { min: 200, decision: 'HITL_REQUIRED', rule: 'lab-band-hold' }]);
   assert.deepEqual(SCANNER_REPOS, ['platform', 'billing', 'mobile']);
   assert.deepEqual(BLOCKED_TERMS, ['bitcoin', 'crypto']);
   for (const [name, meta] of Object.entries(TOOL_META)) {
-    assert.deepEqual(Object.keys(meta), ['scope', 'role', 'public', 'group'], name);
+    assert.deepEqual(Object.keys(meta), ['scope', 'role', 'public', 'group', 'pack'], name);
+    assert.equal(meta.pack, ['get_airline_bookings', 'get_flight_status', 'book_airline_flight', 'sensitive_passenger_record', 'list_airports', 'request_change_fee_waiver'].includes(name) ? 'airline' : 'software', name);
     assert.ok(meta.scope === null || SCOPES.includes(meta.scope), name);
     assert.equal(meta.public, meta.scope === null, `${name}: public means no scope`);
   }
-  assert.deepEqual(Object.entries(TOOL_META).filter(([, m]) => m.public).map(([n]) => n), ['list_marketplace_apps']);
-  assert.deepEqual(Object.entries(TOOL_META).filter(([, m]) => m.group).map(([n]) => n), ['get_project_security_settings']);
+  assert.deepEqual(Object.entries(TOOL_META).filter(([, m]) => m.public).map(([n]) => n), ['list_marketplace_apps', 'list_airports']);
+  assert.deepEqual(Object.entries(TOOL_META).filter(([, m]) => m.group).map(([n]) => n), ['get_project_security_settings', 'sensitive_passenger_record']);
 });
 
 test('the test keys: the private members are chunked, no compact token and no key generation sits in the repository', () => {

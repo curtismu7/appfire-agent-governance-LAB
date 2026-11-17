@@ -137,8 +137,59 @@ test('the real child refuses what it should: an unknown actor, a wrong audience 
 test('/api/info says the local tool server is ready, with no url, port, secret or token', async () => {
   await withChild(async (url, { local }) => {
     const info = await (await get(url, '/api/info')).json();
-    assert.deepEqual(info.provider, { setting: 'auto', hosted: false, gateway: false, toolsSe: false, local: { state: 'ready', tools: 10 } });
+    assert.deepEqual(info.provider, { setting: 'auto', hosted: false, gateway: false, toolsSe: false, local: { state: 'ready', tools: 16 } });
     assert.ok(!/\d{4,5}|127\.0\.0\.1|secret|token/i.test(JSON.stringify(info.provider)), 'no port, address, secret or token in the provider data');
     const text = JSON.stringify(info); assert.ok(!text.includes(`:${new URL(local.mcpUrl()).port}`) && !text.includes(local.hitl().secret), 'neither the child\'s port nor its secret is in /api/info');
   });
+});
+
+// ---- The airline pack through the real child (design-airline-real.md 7 D.S6): the booking rule is the child's, read from its own answer ----
+const AIR_GROUP = 'Airline_OrbitTier';
+const runAir = async (url, id, extra = {}) => { const r = await run(url, id, { vertical: 'airline', ...extra }, { traceparent: TP }); assert.equal(r.status, 200, `${id}: ${JSON.stringify(r.body).slice(0, 300)}`); return r.body.run; };
+
+test('airline through the real child: UC7 books as asked, UC8 is CONSTRAINED (economy), UC1/UC33/UC28/UC24 permit; every decision is observed from the child\'s audit header', async () => {
+  await withChild(async (url) => {
+    for (const id of ['UC1', 'UC33', 'UC28', 'UC24']) { const x = await runAir(url, id); assert.equal(x.outcome, 'REAL_PERMIT', `${id}: ${x.reply?.text}`); assert.equal(x.provider, 'local'); assert.ok(x.fareRule, id); assert.deepEqual(vocab(x), [], id); assert.deepEqual(findWords(x, id), [], id); }
+    const seven = await runAir(url, 'UC7');
+    assert.equal(seven.outcome, 'REAL_PERMIT', seven.reply?.text); assert.equal(seven.booking.booked, 'business'); assert.equal(seven.constrained, undefined);
+    assert.match(seven.reply.text, /^Booked: a business seat on LK 214 from ORD to DEN, confirmation LKR-[0-9A-F]{6} /);
+    const eight = await runAir(url, 'UC8');
+    assert.equal(eight.outcome, 'REAL_CONSTRAINED', eight.reply?.text); assert.deepEqual(eight.booking, { flight: 'LK 322', from: 'ORD', to: 'YYZ', fare: 380, international: true, asked: 'business', booked: 'economy' });
+    assert.deepEqual(eight.constrained.because, ['international']); assert.equal(eight.constrained.by, 'lab policy (local), not PingOne Authorize');
+    const d = eight.hops.find((h) => h.kind === 'authorize-decision'); assert.deepEqual(d.decision, { outcome: 'CONSTRAINED', by: 'lab policy (local), not PingOne Authorize', basis: 'observed' });
+    assert.match(eight.reply.text, /^Booked in economy, not business: this trip is international\. LK 322 from ORD to YYZ, confirmation LKR-[0-9A-F]{6} /);
+    for (const x of [seven, eight]) { assert.deepEqual(vocab(x), []); assert.deepEqual(findWords(x, x.useCase.id), []); assert.ok(!/"basis":"checked"/.test(JSON.stringify(x))); }
+  });
+});
+
+test('airline UC6 through the real child: the hold (428), the phone on the child\'s approval service, the retry books business AS ASKED, a second use and a denial are refused receipts', async () => {
+  await withChild(async (url, { local }) => {
+    const hold = await runAir(url, 'UC6');
+    assert.equal(hold.outcome, 'REAL_HOLD', hold.reply?.text); assert.equal(hold.provider, 'local'); assert.match(hold.challenge, /^[0-9a-f-]{36}$/); assert.equal(hold.booking.booked, null); assert.equal(hold.booking.fare, 2400);
+    const secret = local.hitl().secret; assert.ok(!JSON.stringify(hold).includes(secret));
+    const start = await (await post(url, '/api/approval/start', { kind: 'real', tool: 'book_airline_flight', amount: hold.booking.fare, challengeId: hold.challenge, provider: hold.provider })).json(); assert.equal(start.ok, true);
+    assert.equal((await (await post(url, '/api/approval/decide', { id: start.approval.id, approved: true })).json()).approval.state, 'approved');
+    const retry = await runAir(url, 'UC6', { approvalId: start.approval.id });
+    assert.equal(retry.outcome, 'REAL_PERMIT', retry.reply?.text); assert.equal(retry.booking.booked, 'business'); assert.equal(retry.constrained, undefined);
+    assert.match(retry.reply.text, /^Booked as approved: a business seat on LK 704 from ORD to CDG, confirmation LKR-[0-9A-F]{6} /);
+    assert.deepEqual(retry.hops.find((h) => h.kind === 'authorize-decision').decision, { outcome: 'PERMIT', by: 'lab policy (local), not PingOne Authorize', basis: 'observed' });
+    for (const x of [hold, retry]) { assert.ok(!JSON.stringify({ hops: x.hops, reply: x.reply, narration: x.narration }).includes(hold.challenge), 'the challenge id is in no hop'); assert.deepEqual(vocab(x), []); }
+    assert.equal((await runAir(url, 'UC6', { approvalId: start.approval.id })).outcome, 'REAL_RECEIPT_REJECTED', 'a receipt is single use');
+    const hold2 = await runAir(url, 'UC6');
+    const s2 = (await (await post(url, '/api/approval/start', { kind: 'real', tool: 'book_airline_flight', challengeId: hold2.challenge, provider: 'local' })).json()).approval.id;
+    await post(url, '/api/approval/decide', { id: s2, approved: false });
+    const refused = await runAir(url, 'UC6', { approvalId: s2 });
+    assert.equal(refused.outcome, 'REAL_RECEIPT_REJECTED'); assert.match(refused.reply.text, /receipt_denied/); assert.equal(refused.booking.booked, null);
+  });
+});
+
+test('airline UC9 and UC21 through the real child: the airline tier group alone unlocks the sensitive record; the software group does not', async () => {
+  await withChild(async (url) => {
+    const nine = await runAir(url, 'UC9'); assert.equal(nine.outcome, 'REAL_DENY'); assert.match(nine.reply.text, /HTTP 403, group_required/);
+    assert.ok(JSON.stringify(nine.hops.find((h) => h.kind === 'authorize-decision').response).includes(AIR_GROUP));
+    assert.equal((await runAir(url, 'UC21')).outcome, 'REAL_NOT_LISTED');
+  }, { groups: [TIER_GROUP] });
+  await withChild(async (url) => {
+    for (const id of ['UC9', 'UC21']) { const x = await runAir(url, id); assert.equal(x.outcome, 'REAL_PERMIT', `${id}: ${x.reply?.text}`); assert.deepEqual(vocab(x), [], id); }
+  }, { groups: [AIR_GROUP] });
 });

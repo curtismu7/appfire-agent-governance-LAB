@@ -262,7 +262,7 @@ export default function App() {
       if (hold) {
         postJson("/api/approval/start", {
           kind: hold, tool: run.real?.tool || (OWN_TOOL_VERTICALS.includes(vertical) ? u.tool : null) || u.primaryTool || null, // the pack's own tool name only where its pack is not the catalog's (software, airline); the other three keep the catalog name
-          amount: run.booking?.fare ?? (run.real?.tool === "create_transfer" ? 300 : null), // fare: an airline booking shows the fare the rule judged
+          amount: (run.booking?.fareStaged ? null : run.booking?.fare) ?? (run.real?.tool === "create_transfer" ? 300 : null), // fare: an airline booking shows the fare the rule judged
           description: holdWords(run.outcome),
           ...(hold === "real" ? { challengeId: run.challenge } : {}),
           // Which service minted the challenge (the server's own words, a fixed pair): the phone answers it there.

@@ -9,7 +9,7 @@ import { createLocalServices } from '../src/localServices.js';
 import { makeFakeFork } from './fakeLocalChild.js';
 
 const CHILD = fileURLToPath(new URL('./fakeLocalChild.js', import.meta.url));
-const CONFIG = { issuer: 'https://auth.pingone.example/11111111-2222-4333-8444-555555555555/as', audience: 'appfire-work-tools', allowedActors: ['88888888-9999-4aaa-8bbb-cccccccccccc'], tierGroup: 'Software_EnterpriseTier' };
+const CONFIG = { issuer: 'https://auth.pingone.example/11111111-2222-4333-8444-555555555555/as', audience: 'appfire-work-tools', allowedActors: ['88888888-9999-4aaa-8bbb-cccccccccccc'], tierGroup: 'Software_EnterpriseTier', tierGroupAirline: 'Airline_OrbitTier' };
 const READY = (extra = {}) => ({ type: 'ready', port: 41234, pid: 99, tools: ['get_my_issues', 'bulk_update_issues'], ...extra });
 // Names the platform or Node itself puts into a child's environment (the IPC channel, macOS's __CF_USER_TEXT_ENCODING): not the parent's.
 const PLATFORM_ENV = /^(node_channel|__cf_)/;
@@ -23,8 +23,9 @@ test('start sends ONE init, resolves on ready, and exposes only urls built from 
   assert.equal(svc.state(), 'starting'); assert.equal(f.calls.length, 1);
   const child = f.last(); assert.equal(child.sent.length, 1);
   const init = child.sent[0]; assert.equal(init.type, 'init');
-  assert.deepEqual(Object.keys(init.config).sort(), ['allowedActors', 'audience', 'clockSkewSeconds', 'hitlSecret', 'issuer', 'tierGroup']);
+  assert.deepEqual(Object.keys(init.config).sort(), ['allowedActors', 'audience', 'clockSkewSeconds', 'hitlSecret', 'issuer', 'tierGroup', 'tierGroupAirline']);
   assert.deepEqual([init.config.issuer, init.config.audience, init.config.allowedActors, init.config.tierGroup, init.config.clockSkewSeconds], [CONFIG.issuer, CONFIG.audience, CONFIG.allowedActors, CONFIG.tierGroup, 60]);
+  assert.equal(init.config.tierGroupAirline, 'Airline_OrbitTier');
   assert.match(init.config.hitlSecret, /^[0-9a-f]{64}$/);
   child.emit('message', READY());
   assert.deepEqual(await started, { ok: true, port: 41234 });

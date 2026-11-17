@@ -111,7 +111,7 @@ export function createLocalServices({
       if (!supervising) { giveUp(); finish({ ok: false, reason: 'exited' }); return; }
       crashed();
     });
-    if (!send(c, { type: 'init', config: { issuer: config?.issuer, audience: config?.audience, allowedActors: config?.allowedActors, tierGroup: config?.tierGroup, hitlSecret: secret, clockSkewSeconds: SKEW_SECONDS } })) fail(c, 'send_failed');
+    if (!send(c, { type: 'init', config: { issuer: config?.issuer, audience: config?.audience, allowedActors: config?.allowedActors, tierGroup: config?.tierGroup, tierGroupAirline: config?.tierGroupAirline, hitlSecret: secret, clockSkewSeconds: SKEW_SECONDS } })) fail(c, 'send_failed');
   }
 
   function start() {

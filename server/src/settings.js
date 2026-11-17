@@ -43,7 +43,7 @@ export const GATEWAY_KEYS = ['AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'A
 export const FULL_REQUIRED = ['PINGONE_ENVIRONMENT_ID', ...FULL_KEYS];
 // Provider selection and the tools resource (all optional): AAG_PROVIDER auto|se|local, the tools resource's audience, the PingOne group that means the
 // premium tier, and the MCP endpoint of an SE-hosted tool server. Read like every other REAL_KEYS name (the app's .env on a host run, compose substitution in Docker).
-export const PROVIDER_KEYS = ['AAG_PROVIDER', 'AAG_TOOLS_AUDIENCE', 'AAG_TOOLS_TIER_GROUP', 'AAG_TOOLS_SE_URL'];
+export const PROVIDER_KEYS = ['AAG_PROVIDER', 'AAG_TOOLS_AUDIENCE', 'AAG_TOOLS_TIER_GROUP', 'AAG_TOOLS_TIER_GROUP_AIRLINE', 'AAG_TOOLS_SE_URL'];
 // Optional (never required, never makes full Real "wanted"): the scope the agent token and exchange 1 ask for (the scope of the resource whose `act`
 // attribute stamps the agent into the token). Empty or absent means the default; the owner's setup script writes it only when it is not the default.
 export const DEFAULT_AGENT_SCOPE = 'agent:invoke';

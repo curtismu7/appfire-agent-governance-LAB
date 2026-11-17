@@ -273,3 +273,21 @@ test('the airline pack names no real airline or programme anywhere in its data o
   for (const w of ['united airlines', 'delta', 'american airlines', 'southwest', 'jetblue', 'lufthansa', 'british airways', 'air france', 'emirates', 'qantas', 'mileageplus', 'skymiles', 'aadvantage', 'air canada']) assert.ok(!text.includes(w), w);
   assert.match(read('server/src/cast.js'), /castBrand: 'Larkspur Air'/);
 });
+
+test('the README airline flights table equals the tool server\'s own fare table (same ids, routes, fares, international flag), and the docs name the airline tier group and eleven scopes', async () => {
+  const { FLIGHTS, AIRPORTS, isInternational } = await import('../server/src/local/data.js');
+  const rows = [...read('README.md').matchAll(/^\| (LK \d{3}) \| ([A-Z]{3}) to ([A-Z]{3}) \| \$([\d,]+) \| (yes|no) \|/gm)]
+    .map((m) => ({ id: m[1], from: m[2], to: m[3], fare: Number(m[4].replace(/,/g, '')), intl: m[5] === 'yes' }));
+  assert.deepEqual(rows.map((r) => r.id).sort(), Object.keys(FLIGHTS).sort(), 'the same flight ids');
+  for (const r of rows) {
+    const f = FLIGHTS[r.id];
+    assert.equal(r.from, f.from, `${r.id} from`); assert.equal(r.to, f.to, `${r.id} to`); assert.equal(r.fare, f.fare, `${r.id} fare`);
+    assert.ok(AIRPORTS[r.from] && AIRPORTS[r.to], `${r.id} airports are listed`);
+    assert.equal(r.intl, isInternational(f), `${r.id} international column`);
+  }
+  const readme = read('README.md');
+  assert.match(readme, /AAG_TOOLS_TIER_GROUP_AIRLINE/); assert.match(readme, /Airline_OrbitTier/);
+  assert.match(read('docs/owner-steps.md'), /eleven scopes/);
+  assert.match(read('docs/owner-tools-resource.md'), /Airline_OrbitTier/);
+  assert.match(read('docs/owner-steps.md'), /AAG_TOOLS_TIER_GROUP_AIRLINE=Airline_OrbitTier/);
+});

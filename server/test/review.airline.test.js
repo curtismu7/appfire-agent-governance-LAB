@@ -47,11 +47,16 @@ test('the decider is the lab\'s own fare rule in every airline booking outcome, 
   assert.equal(go('UC8').constrained.by, BY);
 });
 
-test('an airline Real page gets a neutral reason, never a claim about what SE serves (it was never run)', () => {
+test('an airline Real page names the lab\'s tool server, never a claim about what SE serves (phase B: the airline pack has its own tools there)', () => {
   const g = realGate(findUseCase('UC1'), VERTICALS.airline);
   assert.equal(g.real, false);
+  assert.match(g.reason, /tool server/, 'with no provider up the reason is the tool server\'s state');
   assert.doesNotMatch(g.reason, /SE gateway|banking|healthcare|retail/);
-  assert.equal(g.reason, "this vertical runs on the lab's own steps here", 'the airline pack has no tool server yet (phase B): a neutral reason');
+  const up = realGate(findUseCase('UC1'), VERTICALS.airline, { tools: { se: false, local: true, localState: 'ready' } });
+  assert.deepEqual([up.real, up.capability, up.tool], [true, 'tools', 'get_airline_bookings']);
+  // a pack with a fare rule and NO tool server stays on the lab's own steps with the neutral reason (the guard is kept)
+  const { castToolServer, ...bare } = VERTICALS.airline;
+  assert.equal(realGate(findUseCase('UC1'), bare).reason, "this vertical runs on the lab's own steps here");
   assert.match(realGate(findUseCase('UC1'), VERTICALS.software).reason, /tool server/, 'the software pack keeps its own reason: its tool server');
 });
 

@@ -72,7 +72,7 @@ export const COMPOSE_ENV = {
     // Full Real (owner, 2026-11-10): the five app names the owner's scripts write, and (optional since 2026-11-16) the SE gateway trio ...
     'AAG_USER_CLIENT_ID', 'AAG_USER_CLIENT_SECRET', 'AAG_AGENT_CLIENT_ID', 'AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME', 'AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE',
     // ... and, optional (2026-11-16), the provider setting and the tools resource: AAG_PROVIDER, the audience, the tier group and an SE-hosted tool server's url.
-    'AAG_PROVIDER', 'AAG_TOOLS_AUDIENCE', 'AAG_TOOLS_TIER_GROUP', 'AAG_TOOLS_SE_URL',
+    'AAG_PROVIDER', 'AAG_TOOLS_AUDIENCE', 'AAG_TOOLS_TIER_GROUP', 'AAG_TOOLS_TIER_GROUP_AIRLINE', 'AAG_TOOLS_SE_URL',
     // ... and, optional, the agent scope (empty = agent:invoke), the agent client's token auth, and the SE HITL service (the mock phone's real approvals).
     'AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET',
     // ... and, optional, Real A2A (2026-11-16): the specialist agent's app and the two audiences and scopes of the chained exchange (all six together turn it on).

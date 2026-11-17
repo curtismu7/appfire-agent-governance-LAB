@@ -4,6 +4,7 @@ import { createHitl, argsDigest } from './hitl.js';
 import { createKeySource } from './jwks.js';
 import { createVerifier } from './verify.js';
 import { createMcp } from './mcp.js';
+import { DEFAULT_AIRLINE_TIER_GROUP } from './registry.js';
 import { TOOL_NAMES } from './tools.js';
 import { constantTimeEqual, isLoopbackHost, isObj, isPlainDnsName, parseJson, readBody } from './util.js';
 
@@ -24,12 +25,13 @@ export function validateInit(c) {
   if (!str(c.audience, 1, 300)) return { ok: false };
   if (!Array.isArray(c.allowedActors) || c.allowedActors.length < 1 || c.allowedActors.length > 5 || !c.allowedActors.every((a) => str(a, 1, 200))) return { ok: false };
   if (!str(c.tierGroup, 1, 120)) return { ok: false };
+  if (c.tierGroupAirline !== undefined && !str(c.tierGroupAirline, 1, 120)) return { ok: false };
   if (typeof c.hitlSecret !== 'string' || !/^[0-9a-f]{64}$/.test(c.hitlSecret)) return { ok: false };
   const skew = c.clockSkewSeconds === undefined ? 60 : c.clockSkewSeconds;
   if (!Number.isInteger(skew) || skew < 0 || skew > 300) return { ok: false };
   return {
     ok: true,
-    config: { issuer: c.issuer, audience: c.audience, allowedActors: [...c.allowedActors], tierGroup: c.tierGroup, hitlSecret: c.hitlSecret, clockSkewSeconds: skew },
+    config: { issuer: c.issuer, audience: c.audience, allowedActors: [...c.allowedActors], tierGroup: c.tierGroup, tierGroupAirline: c.tierGroupAirline ?? DEFAULT_AIRLINE_TIER_GROUP, hitlSecret: c.hitlSecret, clockSkewSeconds: skew },
     issuerHost: loopback ? null : u.hostname.toLowerCase(),
   };
 }

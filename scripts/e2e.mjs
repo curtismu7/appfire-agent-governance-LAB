@@ -727,9 +727,13 @@ try {
     await t('uc-UC1').waitFor();
     await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
     check((await t('mode-select').count()) === 0 && (await t('banner').innerText()) === BANNER_LOCAL && (await t('sign-in').isVisible()), `${tag}: with the full settings the lab opens in Real by itself (marker live, no mode control, the same neutral banner) and shows the Sign in button`);
-    // The default airline vertical is served by the lab's own steps even though the lab opened in Real: the persona and the inputs stay and there is no note about a person who signed in.
+    // The default airline vertical runs Real on the lab's own tool server (phase B): its reads run as the signed-in person, so no persona and no inputs and the note says so;
+    // a use case that stays on the lab's own steps (UC48, the over-the-limit booking: its approval is staged by the lab) keeps its persona and inputs and has no note.
     await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
-    check((await t('persona').count()) === 1 && (await t('lab-inputs').count()) === 1 && (await t('live-persona-note').count()) === 0 && (await t('gateway-status').count()) === 1, `${tag}: a use case the gateway does not serve keeps its persona and inputs while the lab opens in Real (airline), with no sign-in note`);
+    const airCounts = [await t('persona').count(), await t('lab-inputs').count(), await t('live-persona-note').count(), await t('gateway-status').count()];
+    check(airCounts.join() === '0,0,1,0', `${tag}: an airline use case the lab's own tool server answers runs as the signed-in person while the lab opens in Real: no persona, no inputs, the note says so and no gateway line is drawn (persona, inputs, note, gateway line: ${airCounts})`);
+    await t('search').fill('UC22'); await page.locator('[data-testid="uc-UC22"]').click(); await t('search').fill('');
+    check((await t('persona').count()) === 1 && (await t('live-persona-note').count()) === 0 && (await t('gateway-status').count()) === 1, `${tag}: an airline use case that stays on the lab's own steps keeps its persona while the lab opens in Real, with no sign-in note`);
     // The software vertical runs Real on the lab's own tool server (owner 2026-11-16): its reads run as the signed-in person, so no persona and no inputs and the
     // note says so; a use case that stays on the lab's own steps (UC25, enterprise-managed MCP: it needs an AI-DEMO2 feature flag) keeps its persona and has no note.
     await t('vertical').selectOption('software');
@@ -872,7 +876,7 @@ try {
     await page.goto(`${fullBase}/`);
     await t('uc-UC1').waitFor();
     await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
-    await t('vertical').selectOption('software'); // the default is airline (phase A has no tool server for it): this block is the software pack's own tool server
+    await t('vertical').selectOption('software'); // the default is airline (its own block, local-airline, follows): this block is the software pack's own tool server
     const info = await infoOf(fullBase);
     check(info.provider?.setting === 'auto' && info.provider?.local?.state === 'ready' && info.provider?.toolsSe === false && info.provider?.hosted === false && !/https?:|secret|token|127\.0\.0\.1|localhost/i.test(JSON.stringify(info.provider)), `${tag}: /api/info says the provider setting is auto and the lab's own tool server is ready, with no URL, port, secret or token`);
     // The local services are a child process of the lab (the tool server, the enforcer and the approval service are one process, loopback only, no published port).
@@ -969,6 +973,155 @@ try {
     await ctx.close();
   }
 
+  // ---- Real airline tools on the lab's own tool server (phase B, owner 2026-11-16/17): the default Larkspur Air vertical, against the fake PingOne (the tools resource of eleven scopes) ----
+  // The booking rule is enforced by the tool server (a separate process) from the verified token: 200 booked, 200 booked with the cabin narrowed, 428 held. The page says
+  // nothing about who answered; the DATA does. No real tenant, no SE: the fakes prove the lab's reading only.
+  {
+    const tag = 'local-airline';
+    await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
+    fullGw.seen.length = 0; fullGw.state.behaviour = 'ok'; fullP1.state.full.exchange = 'ok'; fullP1.state.resources.gateway.act = 'passthrough';
+    const setGroups = (g) => { fullP1.state.tools = fullP1.state.tools || {}; fullP1.state.tools.groups = g; };
+    setGroups([]);
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await ctx.newPage();
+    const external = []; const errors = []; const approvalStarts = [];
+    page.on('request', (r) => { if (!r.url().startsWith(fullBase) && !/^(data|blob):/.test(r.url())) external.push(r.url()); if (r.method() === 'POST' && r.url().endsWith('/api/approval/start')) approvalStarts.push(JSON.parse(r.postData() || '{}')); });
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
+    const t = (id) => page.getByTestId(id);
+    const watch = watchRuns(page);
+    const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
+    const runIt = async () => {
+      const n = watch.runs.length;
+      await t('run').click();
+      for (let i = 0; i < 300 && !watch.runs.slice(n).some(Boolean); i++) {
+        if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        await sleep(100);
+      }
+      const run = await watch.next(n);
+      await sleep(400);
+      return run;
+    };
+    const runUc = async (id) => { await pick(id); return runIt(); };
+    const textOf = async (id) => (await t(id).innerText()).replace(/\s+/g, ' ');
+    const exchangeScopes = () => fullP1.seen.filter((x) => x.method === 'POST' && x.url.endsWith('/as/token')).map((x) => Object.fromEntries(new URLSearchParams(x.body))).filter((f) => f.grant_type === 'urn:ietf:params:oauth:grant-type:token-exchange');
+    const lastEx2 = () => { const e = exchangeScopes(); return e[e.length - 1]; };
+    const idsShown = () => page.evaluate(() => { const re = /\bUC[-\w.]*\d\w*/; const hit = []; for (const e of document.body.querySelectorAll('*')) { const r = e.getBoundingClientRect(); if (!r.width && !r.height) continue; const own = [...e.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent).join(' '); for (const v of [own, e.getAttribute('title'), e.getAttribute('aria-label'), e.getAttribute('placeholder')]) if (v && re.test(v)) hit.push(v.trim().slice(0, 60)); } return hit.slice(0, 3); });
+    const BY = 'lab policy (local), not PingOne Authorize';
+    const bookingTool = (run) => (run?.hops || []).find((h) => h.kind === 'tool-dispatched' && h.source === 'real');
+    const cardWords = async (label) => { await walk(page, label); const ids = await idsShown(); check(ids.length === 0, `${label}: no use case id is visible (${ids.join(' | ')})`); };
+
+    await page.goto(`${fullBase}/`);
+    await t('uc-UC1').waitFor();
+    await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
+    check((await t('vertical').inputValue()) === 'airline', `${tag}: the page is on the airline vertical (the default; it is not selected here)`);
+
+    // UC1: the trip list, real, answered by the lab's own tool server; no persona and no lab inputs, the sign-in note says the run is made as the person who signed in
+    await pick('UC1');
+    check((await t('persona').count()) === 0 && (await t('lab-inputs').count()) === 0 && (await t('live-persona-note').count()) === 1, `${tag}: an airline use case the tool server answers runs as the signed-in person: no persona, no lab inputs, and the sign-in note is there`);
+    let run = await runIt();
+    let th = toolHop(run);
+    check(run?.kind === 'real' && run.outcome === 'REAL_PERMIT' && run.provider === 'local' && run.vertical === 'airline' && run.real?.tool === 'get_airline_bookings', `${tag}: UC1 reads the traveller's trips for real (REAL_PERMIT, provider local, tool get_airline_bookings): ${run?.outcome} ${run?.provider} ${run?.real?.tool}`);
+    check(th?.provider === 'local' && th?.answeredBy === 'tool server (local)' && th?.source === 'real' && fullGw.seen.length === 0, `${tag}: the tool step says it was answered by "tool server (local)" and the SE gateway was never called`);
+    check(lastEx2()?.scope === 'trips:read' && lastEx2().audience === undefined && !lastEx2().actor_token, `${tag}: exchange 2 asked PingOne for ONE scope, trips:read, from the one tools resource (no audience, no actor): ${lastEx2()?.scope}`);
+    check(run?.fareRule?.limit === 400 && run.fareRule.hold === 1500 && run.fareRule.from === 'business' && run.fareRule.to === 'economy' && !run.booking && !run.constrained, `${tag}: the run carries the fare rule (five rungs) and no booking`);
+    check(Array.isArray(run?.gatewayTrace) && run.gatewayTrace.length === 0 && (await t('gateway-trace').count()) === 0, `${tag}: no What Privilege did panel for a tool server run`);
+    check((await t('turn-answer-text').last().innerText()).includes('lab-invented') && (await t('risk-strip').locator('li').count()) === 5, `${tag}: the reply says the data is lab-invented and the strip draws five rungs`);
+    await t('row-' + th.n).click(); await t('step-detail').waitFor();
+    check((await textOf('step-detail')).includes('Answered by') && (await textOf('step-detail')).includes('tool server (local)'), `${tag}: the step detail shows the key fact "Answered by: tool server (local)"`);
+    await cardWords(`${tag}: an airline trip list answered by the tool server, step detail open`);
+
+    // UC7: Denver, $380 domestic: allowed as asked
+    run = await runUc('UC7');
+    let bt = bookingTool(run);
+    check(run?.outcome === 'REAL_PERMIT' && run.booking?.flight === 'LK 214' && run.booking.fare === 380 && run.booking.asked === 'business' && run.booking.booked === 'business' && !run.constrained, `${tag}: the Denver booking is REAL_PERMIT, booked business as asked (${JSON.stringify(run?.booking)})`);
+    check(lastEx2()?.scope === 'flights:book' && !lastEx2().audience, `${tag}: exchange 2 asked for the single scope flights:book`);
+    check((await t('decision-word').innerText()) === 'ALLOWED' && (await t('risk-strip').locator('li').count()) === 5 && (await t('risk-1').getAttribute('aria-current')) === 'step' && (await textOf('decision-seat')).includes('business asked, business booked'), `${tag}: the card says ALLOWED on the first of five rungs, business asked, business booked`);
+    check(/^Booked: a business seat on LK 214 from ORD to DEN, confirmation LKR-[0-9A-F]{6}/.test(await t('turn-answer-text').last().innerText()) && !/\$|fare|price/i.test(await t('turn-answer-text').last().innerText()), `${tag}: the reply is built from the tool server's answer and names no price`);
+    const sent = JSON.stringify(bt?.request || {});
+    check(sent.includes('LK 214') && sent.includes('business') && !/"(fare|price|amount|international|confirmation)"/.test(sent), `${tag}: the booking call carried only the flight and the cabin, never a fare, price, amount or international flag`);
+
+    // UC8: Toronto, $380 international: booked, economy only (CONSTRAINED), decided by the tool server
+    run = await runUc('UC8');
+    bt = bookingTool(run);
+    const dh = (run?.hops || []).find((h) => h.kind === 'authorize-decision' && h.source === 'real');
+    check(run?.outcome === 'REAL_CONSTRAINED' && run.provider === 'local' && run.constrained?.asked === 'business' && run.constrained.granted === 'economy' && run.constrained.by === BY && Array.isArray(run.constrained.because) && run.constrained.because.join() === 'international', `${tag}: the Toronto booking is REAL_CONSTRAINED, business narrowed to economy because it is international, by "${BY}"`);
+    check(run?.booking?.booked === 'economy' && run.booking.asked === 'business' && run.booking.international === true && lastEx2()?.scope === 'flights:book', `${tag}: run.booking says business asked, economy booked (${JSON.stringify(run?.booking)})`);
+    check(dh?.decision?.outcome === 'CONSTRAINED' && dh.decision.by === BY && dh.decision.basis === 'observed' && dh.from === 'toolserver' && dh.to === 'toolserver' && !/checked/i.test(JSON.stringify(dh.decision)), `${tag}: the decision hop is CONSTRAINED, observed from the tool server's answer, by "${BY}", never "checked"`);
+    check((await t('decision-word').innerText()) === 'CONSTRAINED' && (await t('decision-card').getAttribute('data-tone')) === 'info' && (await textOf('decision-policy')).includes(BY) && (await textOf('decision-seat')).includes('business asked, economy booked'), `${tag}: the card says CONSTRAINED (blue, not red), names "${BY}" as the policy and shows business asked, economy booked`);
+    check((await t('risk-strip').locator('li').count()) === 5 && (await t('risk-2').getAttribute('aria-current')) === 'step' && (await t('risk-2').innerText()).toLowerCase().includes('this run'), `${tag}: the strip has five rungs and rung two is marked "this run"`);
+    check((await textOf('turn-narrowed')) === 'Narrowed: business to economy' && /^Booked in economy, not business: this trip is international\./.test(await t('turn-answer-text').last().innerText()), `${tag}: the chat chip says "Narrowed: business to economy" and the reply says why`);
+    check(JSON.stringify(bt?.request || {}).includes('business') && JSON.stringify(bt?.response || {}).includes('economy') && !/(mock|simulat|engine)/i.test(String(bt?.note || '')), `${tag}: the tool step shows the cabin asked (business) and the cabin booked (economy)`);
+    await t('row-' + dh.n).click(); await t('step-detail').waitFor();
+    check((await textOf('step-detail')).includes('Answered by') && (await textOf('step-detail')).includes(BY), `${tag}: the decision step names the tool server and "${BY}"`);
+    await cardWords(`${tag}: the Toronto booking, decision step open`);
+    await t('evtab-sequence').click(); await sleep(300);
+    await cardWords(`${tag}: its Sequence tab`);
+    await page.setViewportSize({ width: 375, height: 800 }); await sleep(400);
+    check((await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)) <= 0 && (await t('risk-strip').locator('li').count()) === 5, `${tag}: at 375 px wide the five rungs fit and the page does not scroll sideways`);
+    await page.setViewportSize({ width: 1280, height: 900 }); await sleep(300);
+
+    // UC6: Paris, $2,400: held for a person (428), approved on the phone, retried with the receipt and booked AS ASKED (an approval beats a narrowing)
+    const before = watch.runs.length;
+    await pick('UC6');
+    await t('run').click();
+    await t('mp-approve').waitFor({ timeout: 20000 });
+    const held = await watch.next(before);
+    check(held?.outcome === 'REAL_HOLD' && typeof held.challenge === 'string' && held.provider === 'local' && held.booking?.booked === null && held.booking.fare === 2400 && held.reply?.approval?.head === 'Held for approval', `${tag}: the Paris booking is held for a person (REAL_HOLD, a challenge, booking.booked null, the fare the rule judged is 2400)`);
+    check((await t('decision-word').innerText()) === 'ESCALATED' && (await t('risk-4').getAttribute('aria-current')) === 'step' && (await textOf('decision-seat')).includes('business asked, not booked yet (held)'), `${tag}: the card says ESCALATED on the fourth rung, business asked, not booked yet`);
+    check((await t('mock-phone').innerText()).includes('2,400'), `${tag}: the phone opens showing the fare the rule judged ($2,400)`);
+    check(approvalStarts.length >= 1 && approvalStarts[approvalStarts.length - 1].provider === 'local' && approvalStarts[approvalStarts.length - 1].kind === 'real', `${tag}: the page told the server which service minted the challenge (provider local)`);
+    check(!JSON.stringify({ hops: held.hops, tokens: held.tokens, gatewayTrace: held.gatewayTrace, reply: held.reply }).includes(held.challenge), `${tag}: the challenge id is in no hop, no token and not in the reply (it is a field of the run only)`);
+    await t('mp-approve').click();
+    const retried = await watch.next(before + 1);
+    check(retried?.outcome === 'REAL_PERMIT' && retried.booking?.booked === 'business' && !retried.constrained && retried.provider === 'local', `${tag}: after the phone approves, the retry books business as asked: REAL_PERMIT, no narrowing (${retried?.outcome} ${retried?.booking?.booked})`);
+    await sleep(500);
+    // The retry is not a new chat turn (the page retries the held use case by itself); the evidence column shows its run and its data carries the reply.
+    check(typeof retried?.reply?.text === 'string' && retried.reply.text.startsWith('Booked as approved: a business seat on LK 704 from ORD to CDG, confirmation LKR-') && (await t('decision-word').innerText()) === 'ALLOWED' && (await textOf('decision-seat')).includes('business asked, business booked'), `${tag}: the retry's reply says "Booked as approved" and the card says ALLOWED, business asked, business booked (${String(retried?.reply?.text || '').slice(0, 70)})`);
+    await cardWords(`${tag}: after the approval`);
+
+    // The tier group of the airline vertical: the private traveller record
+    run = await runUc('UC21');
+    check(run?.outcome === 'REAL_NOT_LISTED' && (await t('decision-word').innerText()) === 'NOT OFFERED' && !(run.hops || []).some((h) => ['tool-dispatched', 'tool-held', 'tool-refused'].includes(h.kind) && h.source === 'real'), `${tag}: outside Airline_OrbitTier the private record is NOT OFFERED and the tool is never called`);
+    run = await runUc('UC9');
+    check(run?.outcome === 'REAL_DENY' && JSON.stringify(run.hops).includes('group_required') && JSON.stringify(run.hops).includes('Airline_OrbitTier') && (await textOf('decision-policy')).includes(BY), `${tag}: outside the group UC9 calls the record anyway and the tool server refuses it (group_required, Airline_OrbitTier), by "${BY}"`);
+    setGroups(['Software_EnterpriseTier']);
+    run = await runUc('UC9');
+    check(run?.outcome === 'REAL_DENY', `${tag}: the software tier group alone does not unlock the airline record (each vertical has its own group)`);
+    setGroups(['Airline_OrbitTier']);
+    run = await runUc('UC21');
+    const memberOk = run?.outcome === 'REAL_PERMIT';
+    run = await runUc('UC9');
+    check(memberOk && run?.outcome === 'REAL_PERMIT' && lastEx2()?.scope === 'travellers:read', `${tag}: with Airline_OrbitTier in the delegated token's groups claim the private record is offered and allowed (scope travellers:read)`);
+    setGroups([]);
+
+    // UC24: the public airport list with no token, then the protected trip list probed with no token (a real 401); no agent token and no exchange
+    run = await runUc('UC24');
+    const probe = (run?.hops || []).find((h) => h.kind === 'tool-refused');
+    check(run?.outcome === 'REAL_PERMIT' && probe?.verdict === 'deny' && /401/.test(JSON.stringify(probe?.response || {})) && !(run.hops || []).some((h) => h.kind === 'token-exchange' || (h.kind === 'actor-token' && h.source === 'real')), `${tag}: UC24 lists airports with no token and sees the protected trip list refused with a real 401; no token was made`);
+
+    // The tool server's own 401 for a tampered token
+    tamperTools = true;
+    run = await runUc('UC1');
+    tamperTools = false;
+    check(run?.outcome === 'REAL_TOKEN_PROBLEM' && JSON.stringify(run.hops).includes('signature_invalid') && run.provider === 'local', `${tag}: a delegated token tampered on the way gets a real 401 from the tool server (signature_invalid) and nothing falls back (${run?.outcome})`);
+
+    // What stays on the lab's own steps for the airline: the approval claims and the second-factor claim
+    for (const id of ['UC22', 'UC27']) {
+      run = await runUc(id);
+      check(run?.realGate?.real === false && run.mode === 'mock' && (run.hops || []).every((h) => h.provider === undefined) && /human approval|lab only/.test(run.realGate?.reason || ''), `${tag}: ${id} stays on the lab's own steps and says why (${run?.realGate?.reason})`);
+      if (await t('mp-deny').isVisible().catch(() => false)) { await t('mp-deny').click(); await t('mp-outcome').waitFor().catch(() => {}); }
+    }
+    const via = await page.evaluate(async (b) => { const r = await fetch(`${b}/api/run/UC48`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: JSON.stringify({ vertical: 'airline', persona: 'standard' }) }); return { status: r.status, run: (await r.json()).run || null }; }, fullBase);
+    check(via.status === 200 && via.run?.realGate?.real === false && via.run.mode === 'mock', `${tag}: the over-the-limit walkthrough booking stays on the lab's own steps (data: realGate.real false)`);
+
+    // No SE gateway call, no foreign origin, no error, and software and banking Real are checked by their own blocks
+    check(fullGw.seen.length === 0, `${tag}: the SE gateway was never called for an airline use case`);
+    check(external.length === 0, `${tag}: the browser made no request to another origin (${external.length})`);
+    check(errors.length === 0, `${tag}: no unexpected console error (${errors.slice(0, 2).join(' | ')})`);
+    await ctx.close();
+  }
+
   // ---- Real with only the lab's own provider: no SE gateway name at all, AAG_PROVIDER=local (the lab runs standalone on another machine) -----------------------------------
   {
     const tag = 'local-only';
@@ -1004,7 +1157,7 @@ try {
     check(run?.outcome === 'REAL_PERMIT' && run.provider === 'local' && run.providerWhy === 'forced' && toolHop(run)?.answeredBy === 'tool server (local)' , `${tag}: the software vertical runs real on the lab's own provider alone; AAG_PROVIDER=local says forced (${run?.outcome} ${run?.providerWhy})`);
     await t('vertical').selectOption('banking'); await pick('UC1');
     run = await runIt();
-    check(run?.realGate?.real === false && run.mode === 'mock' && /software vertical only|SE gateway is not set up/.test(run.realGate?.reason || '') && (run.hops || []).every((h) => h.provider === undefined), `${tag}: banking, healthcare and retail say the SE gateway is not served here and run on the lab's own steps (${run?.realGate?.reason})`);
+    check(run?.realGate?.real === false && run.mode === 'mock' && /airline and software verticals only|SE gateway is not set up/.test(run.realGate?.reason || '') && (run.hops || []).every((h) => h.provider === undefined), `${tag}: banking, healthcare and retail say the SE gateway is not served here and run on the lab's own steps (${run?.realGate?.reason})`);
     await walk(page, `${tag}: a banking run with no SE gateway`);
     check(external.length === 0, `${tag}: the browser made no request to another origin (${external.length})`);
     check(errors.length === 0, `${tag}: no unexpected console error (${errors.slice(0, 2).join(' | ')})`);

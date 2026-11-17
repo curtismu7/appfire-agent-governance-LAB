@@ -27,7 +27,7 @@ import { createLive, LiveRefused } from './live.js';
 import { createReal, RealRefused, REDIRECT_URI } from './real.js';
 import { createApprovals } from './approval.js';
 import { A2A_VERTICAL, realGate } from './realGate.js';
-import { createProviders } from './provider.js';
+import { createProviders, toolPackOf } from './provider.js';
 import { shelfInfo } from './shelfLink.js';
 import { localize, promptsFor, routeOf } from './routes.js';
 import { createBrain, REASONS } from './brain.js';
@@ -427,7 +427,7 @@ export function createApp({
             return await runMock(gate);
           }
           // The provider is chosen ONCE per run, here, and real.run never chooses again: a failure of the picked provider is an honest "no decision", never a switch.
-          const pick = await providers.choose({ capability: gate.capability });
+          const pick = await providers.choose({ capability: gate.capability, pack: toolPackOf(gate.tool) });
           if (!pick) return await runMock({ real: false, reason: 'no provider is available for this run' });
           const session = await real.ensureSession(id, traceparent);
           if (!session) return res.status(401).json({ error: 'sign_in_required', detail: 'Sign in first: this run is made as you. Use Sign in (pi.flow, the username is filled in for you).' });

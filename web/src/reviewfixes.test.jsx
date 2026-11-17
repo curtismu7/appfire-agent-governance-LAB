@@ -149,12 +149,12 @@ describe("a hand-off use case never sits in a step's chips on the airline pack",
 
 describe("the airline walkthrough and Compare words", () => {
   const cast = { castFareRule: "fare", castPerson: "traveller", castGroup: "orbit-tier", castAsset: "trip" };
-  test("step 4 does not send the presenter to a PingOne group that does not exist yet; the other packs keep the sentence", () => {
+  test("step 4 keeps the PingOne group sentence in the airline pack (its group exists and decides the record on a Real run) and says traveller", () => {
     const air = guideStep(DEMO_GUIDE.find((g) => g.id === "evaluate"), { cast, prompts: [] });
-    expect(air.prove).not.toMatch(/PingOne group|orbit-tier|Sign out/);
+    expect(air.prove).toMatch(/With a PingOne sign-in the tier is your PingOne group: flip your user in or out of the orbit-tier group/);
     expect(air.prove).toContain("premium traveller and as the standard traveller");
     expect(air.prove).toContain("The Decision card names the policy that applied.");
-    expect(GUIDE_OVERRIDES.evaluate.prove).not.toMatch(/PingOne/);
+    expect(GUIDE_OVERRIDES.evaluate.prove).toMatch(/PingOne group/);
     const base = guideStep(DEMO_GUIDE.find((g) => g.id === "evaluate"), { cast: { castGroup: "premium-tier", castAsset: "account" }, prompts: [] });
     expect(base.prove).toMatch(/With a PingOne sign-in the tier is your PingOne group: flip your user in or out of the premium-tier group/);
     expect(base.prove).toContain("premium customer and as the standard customer");
