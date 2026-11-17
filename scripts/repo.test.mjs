@@ -132,6 +132,8 @@ test('step 2: the app CSS follows the CSS standard (tokens only, no theme media 
   const nonDef = css.split('\n').filter((l) => !/^\s*--[a-z-]+:/.test(l)).join('\n');
   assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/.test(nonDef), 'no colour literal outside a token definition');
   assert.ok(!/prefers-color-scheme/.test(css)); assert.ok(!/!important/.test(css)); assert.ok(!/font-style:\s*italic/.test(css)); assert.ok(!/purple|violet/i.test(css));
+  // Auto theme on a dark system: the shared dark tokens would make --accent-soft a Ping-red tint next to the Appfire blue accent (red means an error here).
+  assert.match(css, /:root:not\(\[data-theme="light"\]\)\s*\{[^}]*--accent-soft:\s*color-mix\(in srgb, var\(--accent\)/, 'the tint is derived from the Appfire accent in the Auto theme');
   const widths = [...css.matchAll(/\((?:max|min)-width:\s*(\d+)px\)/g)].map((m) => Number(m[1]));
   assert.ok(widths.length > 0 && widths.every((n) => n === 600 || n === 900), widths.join());
   for (const sel of css.split('{').map((b) => b.split('}').pop().trim()).filter((x) => x && !x.startsWith('@') && !x.startsWith('/*'))) {
