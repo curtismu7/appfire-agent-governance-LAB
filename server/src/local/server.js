@@ -29,9 +29,11 @@ export function validateInit(c) {
   if (typeof c.hitlSecret !== 'string' || !/^[0-9a-f]{64}$/.test(c.hitlSecret)) return { ok: false };
   const skew = c.clockSkewSeconds === undefined ? 60 : c.clockSkewSeconds;
   if (!Number.isInteger(skew) || skew < 0 || skew > 300) return { ok: false };
+  // Phase C: a boolean only (no URL, no secret). Absent means false; anything else that is not a boolean makes the init invalid.
+  if (c.authorize !== undefined && typeof c.authorize !== 'boolean') return { ok: false };
   return {
     ok: true,
-    config: { issuer: c.issuer, audience: c.audience, allowedActors: [...c.allowedActors], tierGroup: c.tierGroup, tierGroupAirline: c.tierGroupAirline ?? DEFAULT_AIRLINE_TIER_GROUP, hitlSecret: c.hitlSecret, clockSkewSeconds: skew },
+    config: { issuer: c.issuer, audience: c.audience, allowedActors: [...c.allowedActors], tierGroup: c.tierGroup, tierGroupAirline: c.tierGroupAirline ?? DEFAULT_AIRLINE_TIER_GROUP, hitlSecret: c.hitlSecret, clockSkewSeconds: skew, authorize: c.authorize === true },
     issuerHost: loopback ? null : u.hostname.toLowerCase(),
   };
 }
@@ -43,12 +45,12 @@ const json = (res, status, body, headers = {}) => {
 };
 const isJsonType = (req) => String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() === 'application/json';
 
-// options: { config, now, fetchImpl, port, jwks: { ... key source timing }, bodyDeadlineMs (a request body that has not arrived by then is dropped) }
-export function startLocalServer({ config, now = Date.now, fetchImpl, port = 0, jwks = {}, bodyDeadlineMs = 10_000 }) {
+// options: { config, now, fetchImpl, port, jwks: { ... key source timing }, bodyDeadlineMs (a request body that has not arrived by then is dropped), authorize (the broker's ask; used only when config.authorize is true) }
+export function startLocalServer({ config, now = Date.now, fetchImpl, port = 0, jwks = {}, bodyDeadlineMs = 10_000, authorize = undefined }) {
   const keySource = createKeySource({ issuer: config.issuer, now, ...(fetchImpl ? { fetchImpl } : {}), ...jwks });
   const verifier = createVerifier({ issuer: config.issuer, audience: config.audience, allowedActors: config.allowedActors, skewSeconds: config.clockSkewSeconds ?? 60, keySource, now });
   const hitl = createHitl({ now });
-  const mcp = createMcp({ config, verifier, hitl, now });
+  const mcp = createMcp({ config, verifier, hitl, now, authorize });
   let inFlight = 0;
 
   const authHeaderOf = (req) => {

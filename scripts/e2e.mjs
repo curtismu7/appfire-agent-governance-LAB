@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { AGENT_CLIENT_SECRET, CLIENT_ID, CLIENT_SECRET, DEMO_PASSWORD, DEMO_USERNAME, FAKE_TOKEN, USER_CLIENT_SECRET, fullSettingsFor, settingsFor, startFakePingOne } from '../server/test/fakePingone.js';
+import { AGENT_CLIENT_SECRET, CLIENT_ID, CLIENT_SECRET, DEMO_PASSWORD, DEMO_USERNAME, FAKE_TOKEN, USER_CLIENT_SECRET, USER_SUB, authorizeSettings, fullSettingsFor, settingsFor, startFakePingOne } from '../server/test/fakePingone.js';
 import { TRUSTED_HEADERS } from '../server/src/mcpClient.js';
 import { REAL_KEYS } from '../server/src/settings.js';
 import { startFakeGateway } from '../server/test/fakeGateway.js';
@@ -26,7 +26,7 @@ let failures = 0; let checks = 0;
 const check = (ok, what) => { checks += 1; console.log(`${ok ? 'PASS' : 'FAIL'}  ${what}`); if (!ok) failures += 1; };
 
 const port = Number(process.env.E2E_PORT) || 7830;
-if (port < 7814 || port > 7835) { console.error('E2E_PORT must be inside 7814-7835 (the live, hosted, full-Real and local-only instances take the next four ports)'); process.exit(2); }
+if (port < 7814 || port > 7834) { console.error('E2E_PORT must be inside 7814-7834 (the live, hosted, full-Real, local-only and PingOne Authorize instances take the next five ports)'); process.exit(2); }
 const base = `http://127.0.0.1:${port}`;
 if (!fs.existsSync(path.join(root, 'web', 'dist', 'index.html'))) { console.error('Run `npm run build` first.'); process.exit(2); }
 // The Mock instance has no PingOne settings (an empty settings file, like a fresh clone or CI with no .env) and no IDP pin, so Real is disabled by
@@ -177,6 +177,23 @@ let soloUp = false;
 for (let i = 0; i < 160 && !soloUp; i++) { try { soloUp = (await fetch(`${soloBase}/api/health`)).ok; } catch { await sleep(250); } }
 if (!soloUp) { server.kill(); liveServer.kill(); hostedServer.kill(); fullServer.kill(); soloServer.kill(); console.error('local-only server did not start'); process.exit(2); }
 
+// PingOne Authorize decides the airline booking (phase C, owner decision 2026-11-17): a sixth instance with the local-only settings PLUS the three AAG_AUTHORIZE_* names, its
+// own fake PingOne that also serves a fake decision endpoint (fake.authorize: setMode, seen). AAG_PROVIDER=local, no gateway. The fake proves only the lab's reading of an answer;
+// the real endpoint is UNVERIFIED until the owner's run (scripts/owner/authorize-probe.mjs).
+const authPort = port + 5;
+const authBase = `http://127.0.0.1:${authPort}`;
+const authP1 = await startFakePingOne({ authorize: true });
+const authSettings = { ...settingsFor(), ...fullSettingsFor(null, { AAG_PROVIDER: 'local' }), ...authorizeSettings() };
+for (const k of ['AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE']) delete authSettings[k];
+const authFile = path.join(settingsDir, 'authorize.env');
+fs.writeFileSync(authFile, `${Object.entries(authSettings).map(([k, v]) => `${k}=${v}`).join('\n')}\n`, { mode: 0o600 });
+const authEnv = { ...process.env, PORT: String(authPort), ALLOW_MOCK_SIGNIN: '1', AAG_ENV_FILE: authFile, AAG_LIVE_TEST_BASE: authP1.base };
+for (const k of ['CALAB_BIND', 'AAG_LAB_MODE', 'IDP', 'AAG_ALLOW_LIVE', 'AAG_LIVE_FROM_ENV', ...REAL_KEYS]) delete authEnv[k];
+const authServer = spawn(process.execPath, ['server/src/index.js'], { cwd: root, env: authEnv, stdio: 'inherit' });
+let authUp = false;
+for (let i = 0; i < 160 && !authUp; i++) { try { authUp = (await fetch(`${authBase}/api/health`)).ok; } catch { await sleep(250); } }
+if (!authUp) { server.kill(); liveServer.kill(); hostedServer.kill(); fullServer.kill(); soloServer.kill(); authServer.kill(); console.error('PingOne Authorize server did not start'); process.exit(2); }
+
 // The delegated token for the tools resource, tampered on its way out of the fake PingOne (one character of the signature, same length), when armed. The fake runs in
 // THIS process, so the response bytes are changed where the fake writes them; nothing in the lab or the fake knows. Used for the "a refused token is a real 401" check.
 let tamperTools = false;
@@ -260,6 +277,7 @@ try {
       check((await t('nav-page-consent').count()) === 1, `${tag}: UC1 brought in the Consent and step-up page`);
       await pick('UC7'); await t('run').click(); await t('result').waitFor();
       check((await t('outcome').innerText()) === 'PERMIT' && (await t('decision-word').innerText()) === 'ALLOWED' && (await t('risk-strip').locator('li').count()) === 5, `${tag}: the domestic $380 booking is PERMIT, the card says ALLOWED, and the strip has five rungs (the airline pack)`);
+      check((await t('actor-authorize').count()) === 1 && !(await t('actor-authorize').innerText()).includes('P1AZ') && !(await t('evidence-column').innerText()).includes('PingOne Authorize (P1AZ)'), `${tag}: a booking the lab's own fare rule decided draws its decision on a lane named plainly Authorize, never PingOne Authorize (P1AZ)`);
       await pick('UC8'); await t('run').click(); await t('result').waitFor();
       check((await t('outcome').innerText()) === 'CONSTRAINED' && (await t('decision-word').innerText()) === 'CONSTRAINED' && (await t('decision-seat').innerText()) === 'business asked, economy booked' && (await t('mp-deny').count()) === 0, `${tag}: the same $380, international, is CONSTRAINED: business asked, economy booked, and no phone opens`);
       check((await page.locator('[data-testid="risk-strip"] [aria-current="step"]').getAttribute('data-testid')) === 'risk-2' && (await t('risk-strip').getAttribute('aria-label')).includes('five controls'), `${tag}: the five-rung strip lights rung two for CONSTRAINED and says five in its label`);
@@ -324,10 +342,19 @@ try {
       for (const dn of ['delegation-chain', 'gateway-refusals']) {
         await t(`dg-${dn}`).click(); await page.locator('.react-flow__node').first().waitFor(); await sleep(600);
         const o = await page.evaluate(overlapScript);
-        // The delegation chain has a seventh, dashed step: HIVE, represented and never called.
-        const want = dn === 'delegation-chain' ? 7 : 6;
+        // The delegation chain has nine arrows (the tool server and its path to PingOne Authorize are the last two before HIVE's dashed one) and six for the refusals.
+        const want = dn === 'delegation-chain' ? 9 : 6;
         check(o.overlaps === 0 && o.labels === want, `${tag}: ${dn} has ${o.labels} labels (want ${want}) and ${o.overlaps} overlaps`);
         if (dn === 'delegation-chain') check((await page.locator('.dnode[data-represented="true"]').count()) === 1 && (await page.locator('.dedge--dashed').count()) === 1, `${tag}: HIVE is one dashed box and one dashed arrow`);
+        // P1AZ is visible (owner request): the Authorize node says PingOne Authorize (P1AZ) in both diagrams, and the delegation chain draws the lab's tool server.
+        const nodeTexts = (await page.locator('.dnode').allInnerTexts()).map((x) => x.replace(/\s+/g, ' '));
+        check(nodeTexts.some((x) => x.includes('PingOne Authorize (P1AZ)')) && !nodeTexts.some((x) => /^Authorize( \(policy decision\))?$/.test(x.trim())), `${tag}: ${dn} draws the node "PingOne Authorize (P1AZ)"`);
+        if (dn === 'delegation-chain') {
+          const edgeTexts = (await page.getByTestId('edge-label').allInnerTexts()).join(' | ');
+          // an arrow is labelled with its step's title (number first), so the two new arrows read "7. Lab tool server" and "8. PingOne Authorize (P1AZ): booking decision"
+          check(nodeTexts.some((x) => x.includes('Lab tool server (own tools, local)')) && edgeTexts.includes('7. Lab tool server') && edgeTexts.includes('8. PingOne Authorize (P1AZ): booking decision') && edgeTexts.includes('9. HIVE (represented, not called)'), `${tag}: the delegation chain draws the lab tool server and its path to PingOne Authorize, then HIVE last`);
+          check((await page.locator('.dedge--dashed').count()) === 1, `${tag}: the new arrows are solid (HIVE's stays the one dashed arrow)`);
+        }
         check((await overflow()) <= 0, `${tag}: the diagram page does not scroll sideways`);
       }
       check(requests.slice(before).some((u) => u.includes('/api/diagram?') && u.includes('name=gateway-refusals')), `${tag}: the diagram was loaded by name from the server`);
@@ -1037,6 +1064,10 @@ try {
     check(run?.outcome === 'REAL_PERMIT' && run.booking?.flight === 'LK 214' && run.booking.fare === 380 && run.booking.asked === 'business' && run.booking.booked === 'business' && !run.constrained, `${tag}: the Denver booking is REAL_PERMIT, booked business as asked (${JSON.stringify(run?.booking)})`);
     check(lastEx2()?.scope === 'flights:book' && !lastEx2().audience, `${tag}: exchange 2 asked for the single scope flights:book`);
     check((await t('decision-word').innerText()) === 'ALLOWED' && (await t('risk-strip').locator('li').count()) === 5 && (await t('risk-1').getAttribute('aria-current')) === 'step' && (await textOf('decision-seat')).includes('business asked, business booked'), `${tag}: the card says ALLOWED on the first of five rungs, business asked, business booked`);
+    // PingOne Authorize settings absent: the lab's own rule answers and says so, and the data carries no Authorize claim (phase C)
+    const offDh = (run?.hops || []).find((h) => h.kind === 'authorize-decision' && h.source === 'real');
+    check(run?.decidedBy === 'lab-policy-local' && offDh?.decidedBy === 'lab-policy-local' && run.authorize === undefined && offDh.authorize === undefined && offDh.to !== 'authorize' && (await textOf('decision-policy')).includes(BY) && !(await page.locator('body').innerText()).includes('PingOne Authorize decided'), `${tag}: with the Authorize settings absent the Denver booking is decided by the lab policy (data: decidedBy lab-policy-local, no authorize field, never "PingOne Authorize decided")`);
+    check((await t('actor-authorize').count()) === 0, `${tag}: and its Sequence has no Authorize lane`);
     check(/^Booked: a business seat on LK 214 from ORD to DEN, confirmation LKR-[0-9A-F]{6}/.test(await t('turn-answer-text').last().innerText()) && !/\$|fare|price/i.test(await t('turn-answer-text').last().innerText()), `${tag}: the reply is built from the tool server's answer and names no price`);
     const sent = JSON.stringify(bt?.request || {});
     check(sent.includes('LK 214') && sent.includes('business') && !/"(fare|price|amount|international|confirmation)"/.test(sent), `${tag}: the booking call carried only the flight and the cabin, never a fare, price, amount or international flag`);
@@ -1159,6 +1190,126 @@ try {
     run = await runIt();
     check(run?.realGate?.real === false && run.mode === 'mock' && /airline and software verticals only|SE gateway is not set up/.test(run.realGate?.reason || '') && (run.hops || []).every((h) => h.provider === undefined), `${tag}: banking, healthcare and retail say the SE gateway is not served here and run on the lab's own steps (${run?.realGate?.reason})`);
     await walk(page, `${tag}: a banking run with no SE gateway`);
+    check(external.length === 0, `${tag}: the browser made no request to another origin (${external.length})`);
+    check(errors.length === 0, `${tag}: no unexpected console error (${errors.slice(0, 2).join(' | ')})`);
+    await ctx.close();
+  }
+
+  // ---- PingOne Authorize decides the airline booking (phase C, owner decision 2026-11-17): the sixth instance, a fake decision endpoint on loopback --------------------------
+  // With the three AAG_AUTHORIZE_* names set the tool server asks PingOne Authorize and applies the statement code. The page says "PingOne Authorize decided" only then; a silent
+  // Authorize is NO DECISION (nothing booked, the lab's own rule NOT used). The fake proves the lab's reading of an answer, not the real endpoint (UNVERIFIED until the owner's probe).
+  {
+    const tag = 'authorize-on';
+    const az = authP1.authorize;
+    az.reset(); az.setMode('ok');
+    await fetch(`${authBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: authBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await ctx.newPage();
+    const external = []; const errors = []; const approvalStarts = [];
+    page.on('request', (r) => { if (!r.url().startsWith(authBase) && !/^(data|blob):/.test(r.url())) external.push(r.url()); if (r.method() === 'POST' && r.url().endsWith('/api/approval/start')) approvalStarts.push(JSON.parse(r.postData() || '{}')); });
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501|503)/.test(m.text())) errors.push(m.text()); });
+    const t = (id) => page.getByTestId(id);
+    const watch = watchRuns(page);
+    const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
+    const runIt = async () => {
+      const n = watch.runs.length;
+      await t('run').click();
+      for (let i = 0; i < 400 && !watch.runs.slice(n).some(Boolean); i++) {
+        if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        await sleep(100);
+      }
+      const run = await watch.next(n);
+      await sleep(400);
+      return run;
+    };
+    const runUc = async (id) => { await pick(id); return runIt(); };
+    const textOf = async (id) => (await t(id).innerText()).replace(/\s+/g, ' ');
+    const idsShown = () => page.evaluate(() => { const re = /\bUC[-\w.]*\d\w*/; const hit = []; for (const e of document.body.querySelectorAll('*')) { const r = e.getBoundingClientRect(); if (!r.width && !r.height) continue; const own = [...e.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent).join(' '); for (const v of [own, e.getAttribute('title'), e.getAttribute('aria-label'), e.getAttribute('placeholder')]) if (v && re.test(v)) hit.push(v.trim().slice(0, 60)); } return hit.slice(0, 3); });
+    const cardWords = async (label) => { await walk(page, label); const ids = await idsShown(); check(ids.length === 0, `${label}: no use case id is visible (${ids.join(' | ')})`); };
+    const decisionHop = (run) => (run?.hops || []).find((h) => h.kind === 'authorize-decision' && h.source === 'real');
+    const AZ_BY = 'PingOne Authorize (policy Larkspur Air Booking Authorization)';
+    // PingOne Authorize returns PERMIT with a statement; `read` is what the lab did with the code (its own word is never put in Authorize's mouth)
+    const LINE = (code, read) => `${AZ_BY} returned PERMIT with the statement ${code}; the lab read that as ${read} and applied it`;
+    const NOT = (x) => !/\b(ALLOWED|DENIED|ESCALATED|CONSTRAINED)\b/.test(x);
+    const calls = () => az.seen.length;
+    const expectParams = (fare, intl, cabin, approval) => ({ AirLabMarker: 'larkspur-air', ToolName: 'book_airline_flight', UserId: USER_SUB, AirFare: fare, AirIsInternational: intl, AirCabinAsked: cabin, AirApproval: approval });
+
+    await page.goto(`${authBase}/`);
+    await t('uc-UC1').waitFor();
+    await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
+    const info = await (await fetch(`${authBase}/api/info`, { headers: { 'x-workspace': 'w-eeeeeeeeeeeeeeee' } })).json();
+    check(info.provider?.setting === 'local' && info.provider?.gateway === false && info.provider?.local?.state === 'ready' && info.provider?.authorize === true, `${tag}: Real is configured with the lab's own provider and PingOne Authorize is on (data: provider.authorize)`);
+
+    // Denver: $380 domestic, asked in business: PingOne Authorize answers permit, the lab books as asked
+    let run = await runUc('UC7');
+    let dh = decisionHop(run);
+    check(run?.outcome === 'REAL_PERMIT' && run.decidedBy === 'pingone-authorize' && dh?.decidedBy === 'pingone-authorize' && dh.to === 'authorize' && dh.from === 'toolserver' && dh.authorize?.code === 'airline-permit-as-asked' && run.authorize?.asked === true && run.authorize.answered === true && run.authorize.code === 'airline-permit-as-asked' && run.booking?.booked === 'business', `${tag}: the Denver booking is REAL_PERMIT and the data says PingOne Authorize decided it (code airline-permit-as-asked, hop drawn to the authorize lane)`);
+    check(calls() === 1 && JSON.stringify(az.seen[0].parameters) === JSON.stringify(expectParams('380', 'false', 'business', 'none')) && az.seen[0].bearer === true, `${tag}: the fake decision endpoint saw exactly ONE call with exactly the seven canonical parameters (${JSON.stringify(az.seen[0]?.parameters)})`);
+    check((await t('decision-word').innerText()) === 'ALLOWED' && (await textOf('decision-policy')).includes(LINE('airline-permit-as-asked', 'book as asked')) && !(await textOf('decision-policy')).includes('not PingOne Authorize'), `${tag}: the card says ALLOWED and its policy row is the line "${LINE('airline-permit-as-asked', 'book as asked')}"`);
+    check(dh?.decision?.by === AZ_BY && dh.decision.basis === 'observed' && !/checked/i.test(JSON.stringify(dh.decision)) && dh.decision.line === LINE('airline-permit-as-asked', 'book as asked'), `${tag}: the decision hop is observed, never "checked", by "${AZ_BY}"`);
+    check((await t('actor-authorize').count()) === 1 && (await t('actor-authorize').innerText()).includes('PingOne Authorize (P1AZ)') && (await t(`row-${dh.n}`).locator('.sq-msg').count()) === 1, `${tag}: the Sequence has the lane "PingOne Authorize (P1AZ)" and the decision is an arrow to it`);
+    await t(`row-${dh.n}`).click(); await t('step-detail').waitFor();
+    const detail = await textOf('step-detail');
+    check(detail.includes('Bearer (worker token, not shown)') && ['AirLabMarker', 'ToolName', 'UserId', 'AirFare', 'AirIsInternational', 'AirCabinAsked', 'AirApproval', 'larkspur-air', 'book_airline_flight'].every((x) => detail.includes(x)) && detail.includes('airline-permit-as-asked') && detail.includes('Decided by') && detail.includes(AZ_BY), `${tag}: the decision step shows the raw request (seven parameters, "Bearer (worker token, not shown)"), the raw answer with the statement code, and "Decided by"`);
+    check(!JSON.stringify(run).includes(authorizeSettings().AAG_AUTHORIZE_CLIENT_SECRET) && !(await page.content()).includes(authorizeSettings().AAG_AUTHORIZE_CLIENT_SECRET) && !/Bearer eyJ/.test(JSON.stringify(dh.request || {})), `${tag}: the Authorize client secret and the worker bearer are in no run, no page and no request pane`);
+    await cardWords(`${tag}: the Denver booking decided by PingOne Authorize, decision step open`);
+
+    // A run that does NOT ask Authorize (a read): the lab's own rule, never credited to Authorize, and the fake saw nothing
+    const before = calls();
+    run = await runUc('UC1');
+    const rd = decisionHop(run);
+    check(run?.outcome === 'REAL_PERMIT' && run.decidedBy === 'lab-policy-local' && rd?.decidedBy === 'lab-policy-local' && rd.authorize === undefined && rd.to !== 'authorize' && calls() === before && !(await page.locator('body').innerText()).includes('PingOne Authorize decided'), `${tag}: a read does not ask PingOne Authorize: decidedBy lab-policy-local, no Authorize call, never "PingOne Authorize decided"`);
+
+    // Toronto: $380 international: Authorize answers the narrowing statement and the lab applies it
+    run = await runUc('UC8');
+    dh = decisionHop(run);
+    check(run?.outcome === 'REAL_CONSTRAINED' && run.decidedBy === 'pingone-authorize' && run.constrained?.asked === 'business' && run.constrained.granted === 'economy' && run.constrained.by === AZ_BY && run.constrained.because?.join() === 'international' && run.booking?.booked === 'economy' && dh?.authorize?.code === 'airline-economy-intl', `${tag}: the Toronto booking is REAL_CONSTRAINED by PingOne Authorize (airline-economy-intl): business narrowed to economy because it is international`);
+    check((await t('decision-word').innerText()) === 'CONSTRAINED' && (await textOf('decision-policy')).includes(LINE('airline-economy-intl', 'economy only')) && (await textOf('decision-seat')).includes('business asked, economy booked'), `${tag}: the card says CONSTRAINED and its policy row says "returned PERMIT with the statement airline-economy-intl; the lab read that as economy only and applied it"`);
+    check(az.seen[az.seen.length - 1].parameters.AirIsInternational === 'true' && az.seen[az.seen.length - 1].parameters.AirApproval === 'none', `${tag}: the fake saw AirIsInternational true and AirApproval none`);
+    await cardWords(`${tag}: the Toronto booking decided by PingOne Authorize`);
+
+    // Paris: $2,400: Authorize says a person must approve (428), the phone approves on the lab's own approval service, the retry carries the receipt and Authorize answers approved
+    const start = watch.runs.length;
+    await pick('UC6');
+    await t('run').click();
+    await t('mp-approve').waitFor({ timeout: 30000 });
+    const held = await watch.next(start);
+    check(held?.outcome === 'REAL_HOLD' && held.decidedBy === 'pingone-authorize' && decisionHop(held)?.authorize?.code === 'airline-approval-required' && (await t('decision-word').innerText()) === 'ESCALATED' && (await textOf('decision-policy')).includes(LINE('airline-approval-required', 'hold for a person to approve')), `${tag}: the Paris booking is held for a person because PingOne Authorize answered airline-approval-required (the approval itself runs on the lab's own approval service)`);
+    await t('mp-approve').click();
+    const retried = await watch.next(start + 1);
+    await sleep(500);
+    const parisCalls = az.seen.filter((x) => x.parameters.AirFare === '2400').map((x) => x.parameters.AirApproval);
+    check(retried?.outcome === 'REAL_PERMIT' && retried.decidedBy === 'pingone-authorize' && retried.booking?.booked === 'business' && !retried.constrained && decisionHop(retried)?.authorize?.code === 'airline-approved-as-asked', `${tag}: after the phone approves, the retry books business as asked, decided by PingOne Authorize (airline-approved-as-asked)`);
+    check(parisCalls.join() === 'none,verified', `${tag}: the fake saw AirApproval none, then verified (${parisCalls.join()})`);
+    await cardWords(`${tag}: after the approval`);
+
+    // PingOne Authorize silent: NO DECISION, nothing booked, the lab's own rule NOT used (the same Denver booking its own rule would permit)
+    for (const [mode, words] of [['timeout', 'it did not reply in time'], ['only-unmatched', 'its answer said no airline booking rule matched']]) {
+      az.setMode(mode);
+      run = await runUc('UC7');
+      dh = decisionHop(run);
+      const word = await t('decision-word').innerText();
+      const card = await textOf('decision-card');
+      check(run?.outcome === 'REAL_NO_DECISION' && run.decidedBy === 'none' && dh?.decidedBy === 'none' && dh.verdict === 'error' && dh.to === 'toolserver' && run.authorize?.answered === false && !run.constrained && !run.booking?.booked, `${tag}: with the endpoint in "${mode}" the run is REAL_NO_DECISION, decidedBy none, nothing booked, no narrowing`);
+      check(word === 'NO DECISION' && card.includes(`PingOne Authorize gave no decision: ${words}`) && NOT(card.replace(/NO DECISION/g, '')) && card.includes('did not use its own rule instead'), `${tag}: the card says NO DECISION with the reason "${words}" and none of ALLOWED, DENIED, ESCALATED or CONSTRAINED`);
+      // the chat keeps the earlier turns (the held Paris booking says "PingOne Authorize decided that a person must approve"), so only this run's evidence and this run's reply are read
+      check((await t('actor-authorize').count()) === 0 && !(await t('evidence-column').innerText()).includes('PingOne Authorize decided') && !(await t('turn-answer-text').last().innerText()).includes('PingOne Authorize decided'), `${tag}: nothing is drawn on the Authorize lane and this run's evidence and reply never say PingOne Authorize decided`);
+      check(!(JSON.stringify((run?.hops || []).filter((h) => h.source === 'real' && h.kind === 'tool-dispatched'))).includes('confirmation'), `${tag}: no booking confirmation exists in the run (the lab did not substitute its own rule)`);
+      await cardWords(`${tag}: a no-decision booking (${mode})`);
+    }
+    az.setMode('ok');
+    run = await runUc('UC7');
+    check(run?.outcome === 'REAL_PERMIT' && run.decidedBy === 'pingone-authorize', `${tag}: with the endpoint back to normal the next booking is decided by PingOne Authorize again`);
+
+    // The Diagram page: P1AZ is drawn, and the step text says the lab's own policy answers when the settings are absent
+    await t('nav-diagram').click(); await t('dg-delegation-chain').click(); await page.locator('.react-flow__node').first().waitFor(); await sleep(600);
+    const nodes = (await page.locator('.dnode').allInnerTexts()).map((x) => x.replace(/\s+/g, ' ')).join(' | ');
+    check(nodes.includes('PingOne Authorize (P1AZ)') && nodes.includes('Lab tool server (own tools, local)'), `${tag}: the Diagram page draws "PingOne Authorize (P1AZ)" and "Lab tool server (own tools, local)"`);
+    const dgs = await (await fetch(`${authBase}/api/diagram?name=delegation-chain`, { headers: { 'x-workspace': 'w-eeeeeeeeeeeeeeee' } })).json();
+    const steps = JSON.stringify(dgs).replace(/\\"/g, '"');
+    check(steps.includes('PingOne Authorize (P1AZ): booking decision') && steps.includes("Without them, or in the hosted build, the lab's own policy answers and the page says so."), `${tag}: the diagram's step text says the lab's own policy answers when the Authorize settings are absent`);
+    await walk(page, `${tag}: the Diagram page`);
     check(external.length === 0, `${tag}: the browser made no request to another origin (${external.length})`);
     check(errors.length === 0, `${tag}: no unexpected console error (${errors.slice(0, 2).join(' | ')})`);
     await ctx.close();
@@ -1327,6 +1478,6 @@ try {
   const deploySh = fs.readFileSync(path.join(root, 'deploy', 'k8s', 'deploy.sh'), 'utf8'); const imageYml = fs.readFileSync(path.join(root, '.github', 'workflows', 'image.yml'), 'utf8');
   check(/banner">Hosted copy\. HIVE/.test(hostedHtml) && deploySh.includes('banner">Hosted copy\\. HIVE') && imageYml.includes('banner">Hosted copy\\. HIVE'), 'hosted: the served HTML opens its banner with the text deploy.sh and image.yml grep for');
   console.log(`INFO  the word scan read ${wordsRead} strings in all`);
-} finally { if (browser) await browser.close(); server.kill(); liveServer.kill(); hostedServer.kill(); fullServer.kill(); soloServer.kill(); await fake.close(); await fullP1.close(); await soloP1.close(); await fullGw.close(); fs.rmSync(settingsDir, { recursive: true, force: true }); fs.rmSync(noEnvDir, { recursive: true, force: true }); }
+} finally { if (browser) await browser.close(); server.kill(); liveServer.kill(); hostedServer.kill(); fullServer.kill(); soloServer.kill(); authServer.kill(); await fake.close(); await fullP1.close(); await soloP1.close(); await authP1.close(); await fullGw.close(); fs.rmSync(settingsDir, { recursive: true, force: true }); fs.rmSync(noEnvDir, { recursive: true, force: true }); }
 console.log(`\n${checks - failures} of ${checks} checks passed`);
 process.exit(failures ? 1 : 0);

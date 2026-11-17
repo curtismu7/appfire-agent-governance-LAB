@@ -137,7 +137,7 @@ test('the real child refuses what it should: an unknown actor, a wrong audience 
 test('/api/info says the local tool server is ready, with no url, port, secret or token', async () => {
   await withChild(async (url, { local }) => {
     const info = await (await get(url, '/api/info')).json();
-    assert.deepEqual(info.provider, { setting: 'auto', hosted: false, gateway: false, toolsSe: false, local: { state: 'ready', tools: 16 } });
+    assert.deepEqual(info.provider, { setting: 'auto', hosted: false, gateway: false, toolsSe: false, authorize: false, local: { state: 'ready', tools: 16 } });
     assert.ok(!/\d{4,5}|127\.0\.0\.1|secret|token/i.test(JSON.stringify(info.provider)), 'no port, address, secret or token in the provider data');
     const text = JSON.stringify(info); assert.ok(!text.includes(`:${new URL(local.mcpUrl()).port}`) && !text.includes(local.hitl().secret), 'neither the child\'s port nor its secret is in /api/info');
   });

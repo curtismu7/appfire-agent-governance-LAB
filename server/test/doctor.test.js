@@ -131,3 +131,22 @@ test('provider (owner 2026-11-16): the doctor passes with the setting named and 
     assert.ok(!(await runChecks({ env: { AAG_ENV_FILE: f } })).some((c) => c.level === 'fail'), 'a missing gateway is not a failure');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+// PingOne Authorize (2026-11-17): names only, never a value. All three set pass and name the API host; none is information; some are information naming the missing NAMES.
+test('authorize: the doctor passes with all three (naming the API host only), says information with none and names the missing names when partial; no value is ever printed; it is never a failure', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cal-doc-az-'));
+  const f = path.join(dir, '.env');
+  try {
+    const at = async (extra) => { fs.writeFileSync(f, `${Object.entries(fullSettingsFor(null, extra)).map(([k, v]) => `${k}=${v}`).join('\n')}\n`, { mode: 0o600 }); const c = await runChecks({ env: { AAG_ENV_FILE: f } }); assert.ok(!c.some((x) => x.level === 'fail'), 'never a failure'); return { check: c.find((x) => x.id === 'authorize'), all: c }; };
+    const secret = 'worker-secret-value-0123456789'; const id = 'e4e4e4e4-5656-4787-8989-b0b0b0b0b0b0'; const client = 'worker-client-id-abcdef';
+    const none = (await at({})).check; assert.equal(none.level, 'info'); assert.match(none.detail, /not set \(AAG_AUTHORIZE_ENDPOINT_ID, AAG_AUTHORIZE_CLIENT_ID, AAG_AUTHORIZE_CLIENT_SECRET\); the lab's own fare rule answers and says so$/);
+    const all = await at({ AAG_AUTHORIZE_ENDPOINT_ID: id, AAG_AUTHORIZE_CLIENT_ID: client, AAG_AUTHORIZE_CLIENT_SECRET: secret });
+    assert.equal(all.check.level, 'pass'); assert.match(all.check.detail, /calls https:\/\/api\.pingone\.com \(one decision endpoint, a worker app's token from https:\/\/auth\.pingone\.com\) and the tool server never holds the secret$/);
+    for (const v of [secret, id, client]) assert.ok(!JSON.stringify(all.all).includes(v), 'a value was printed');
+    const part = await at({ AAG_AUTHORIZE_CLIENT_ID: client });
+    assert.equal(part.check.level, 'info'); assert.match(part.check.detail, /but not AAG_AUTHORIZE_ENDPOINT_ID, AAG_AUTHORIZE_CLIENT_SECRET, so nothing is asked/); assert.ok(!JSON.stringify(part.all).includes(client));
+    const bad = await at({ AAG_AUTHORIZE_ENDPOINT_ID: 'not-a-uuid', AAG_AUTHORIZE_CLIENT_ID: client, AAG_AUTHORIZE_CLIENT_SECRET: secret });
+    assert.equal(bad.check.level, 'info'); assert.match(bad.check.detail, /no valid AAG_AUTHORIZE_ENDPOINT_ID \(a UUID\)/); assert.ok(!JSON.stringify(bad.all).includes('not-a-uuid') && !JSON.stringify(bad.all).includes(secret));
+    const eu = await at({ PINGONE_REGION: 'eu', AAG_AUTHORIZE_ENDPOINT_ID: id, AAG_AUTHORIZE_CLIENT_ID: client, AAG_AUTHORIZE_CLIENT_SECRET: secret }); assert.match(eu.check.detail, /api\.pingone\.eu/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

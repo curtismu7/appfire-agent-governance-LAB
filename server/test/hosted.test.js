@@ -159,7 +159,7 @@ test('hosted forks nothing and reaches nothing: /api/info says the local tool se
   const providers = createProviders({ setting: 'local', real: { configured: () => true, gateway: () => null, toolsSeUrl: () => 'https://t.example/mcp' }, local, hosted: true });
   await withServer(async (url) => {
     const info = await (await get(url, '/api/info')).json();
-    assert.deepEqual(info.provider, { setting: 'auto', hosted: true, gateway: false, toolsSe: false, local: { state: 'hosted', tools: 0 } });
+    assert.deepEqual(info.provider, { setting: 'auto', hosted: true, gateway: false, toolsSe: false, authorize: false, local: { state: 'hosted', tools: 0 } });
     assert.equal((await post(url, '/api/mode', { source: 'real' }, INGRESS)).status, 409, 'Real stays refused in the hosted build');
   }, { env: HOSTED, bind: '0.0.0.0', providers, local });
   assert.equal(forks, 0);

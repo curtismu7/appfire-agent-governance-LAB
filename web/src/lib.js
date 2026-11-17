@@ -50,7 +50,7 @@ export function outcomeState(outcome) {
   if (o.startsWith("DENY") || o === "PERMIT_THEN_DENY") return "bad";
   if (o === "STEP_UP" || o === "HITL_REQUIRED" || o === "CIBA") return "warn";
   if (o === "PERMIT" || o === "DELEGATE_AND_EXECUTE" || o === "LIVE_OK" || o === "REAL_PERMIT") return "ok";
-  if (o === "REAL_HOLD") return "warn";
+  if (o === "REAL_HOLD" || o === "REAL_NO_DECISION") return "warn"; // no decision is neither a pass nor a refusal
   if (o.startsWith("REAL_")) return "bad";
   if (o.startsWith("LIVE_")) return "bad";
   return "info";

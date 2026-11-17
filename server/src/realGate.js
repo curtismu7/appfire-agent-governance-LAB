@@ -46,7 +46,14 @@ const GATEWAY_LOCAL_ONLY = 'AAG_PROVIDER=local is set and the local tool server 
 // { real: true, tool, capability } or { real: false, reason } (fixed words; the reason names the part that keeps it on the lab's own steps).
 // opts.a2a: the AAG_A2A_* settings are complete and the vertical is A2A_VERTICAL; opts.a2aWhy: the fixed words saying why not, when they are not.
 // opts.tools / opts.gateway / opts.setting: what providers.snapshot() says is available (provider.js); the defaults say nothing is.
-export function realGate(uc, cast, { a2a = false, a2aWhy = null, tools = { se: false, local: false }, gateway = false, gatewayProblem = null, setting = 'auto' } = {}) {
+export function realGate(uc, cast, opts = {}) {
+  const g = realGateBase(uc, cast, opts);
+  // authorize: PingOne Authorize is set up but this booking is not sent to it (it stays on the lab's own steps). Said in the reason, so the page never leaves the owner believing
+  // PingOne Authorize decides it.
+  if (!g.real && opts?.authorizeOn && cast?.castFareRule && uc?.primaryTool && toolFor(cast, uc.primaryTool) === 'book_airline_flight') return { ...g, reason: `${g.reason}. PingOne Authorize is set up here, but this run is not sent to it: the lab's own fare rule decides it` };
+  return g;
+}
+function realGateBase(uc, cast, { a2a = false, a2aWhy = null, tools = { se: false, local: false }, gateway = false, gatewayProblem = null, setting = 'auto' } = {}) {
   if (!isFlow(uc)) return { real: false, reason: 'it is a guided page: the lab shows it and does not compute it' };
   // The pack's tools are served by a tool server, not the SE gateway (castToolServer, software): the capability decides which provider can answer.
   const capability = cast && Object.hasOwn(cast, 'castToolServer') ? 'tools' : 'gateway';

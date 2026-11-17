@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { APP_ENV_FILE, LIVE_KEYS, SETTINGS_KEYS, applySharedSettings, missingLiveSettings, readLiveSettings, readSharedSettings, settingsPath } from '../src/settings.js';
+import { APP_ENV_FILE, AUTHORIZE_KEYS, LIVE_KEYS, SETTINGS_KEYS, applySharedSettings, missingLiveSettings, readLiveSettings, readSharedSettings, settingsPath } from '../src/settings.js';
 import { modeFrom, modeOf, openingMode } from '../src/config.js';
 
 const withFile = (text, fn) => {
@@ -147,4 +147,29 @@ test('.env.example: the gateway trio is under its own optional heading and the p
   assert.match(ex, /Optional: the SE Agent Gateway \(banking, healthcare, retail\)/);
   for (const k of PROVIDER_KEYS) assert.match(ex, new RegExp(`^# ?${k}=`, 'm'), `${k} is commented out`);
   assert.ok(!/AAG_TOOLS_SE_URL=https?:\/\/(?!\s*$)[^\s]*\.(se|ping)/i.test(ex), 'no real host');
+});
+
+// PingOne Authorize decides the airline booking (2026-11-17): three optional names, all together or none, the secret write-only.
+test('Authorize settings: AUTHORIZE_KEYS is exact, optional, a Real key, never required and never makes full Real wanted; a placeholder counts as unset', async () => {
+  const { OPTIONAL_KEYS, REAL_KEYS, FULL_REQUIRED, fullWanted, missingAuthorize } = await import('../src/settings.js');
+  assert.deepEqual(AUTHORIZE_KEYS, ['AAG_AUTHORIZE_ENDPOINT_ID', 'AAG_AUTHORIZE_CLIENT_ID', 'AAG_AUTHORIZE_CLIENT_SECRET']);
+  for (const k of AUTHORIZE_KEYS) { assert.ok(OPTIONAL_KEYS.includes(k), k); assert.ok(REAL_KEYS.includes(k), k); assert.ok(!FULL_REQUIRED.includes(k), k); }
+  assert.equal(new Set(REAL_KEYS).size, REAL_KEYS.length);
+  assert.equal(fullWanted({ AAG_AUTHORIZE_ENDPOINT_ID: 'e4e4e4e4-5656-4787-8989-b0b0b0b0b0b0', AAG_AUTHORIZE_CLIENT_ID: 'x', AAG_AUTHORIZE_CLIENT_SECRET: 'y' }), false, 'the Authorize names alone never make full Real the target');
+  assert.deepEqual(missingAuthorize({}), AUTHORIZE_KEYS); assert.deepEqual(missingAuthorize({ AAG_AUTHORIZE_CLIENT_ID: 'real-looking' }), ['AAG_AUTHORIZE_ENDPOINT_ID', 'AAG_AUTHORIZE_CLIENT_SECRET']);
+  assert.deepEqual(missingAuthorize({ AAG_AUTHORIZE_ENDPOINT_ID: '00000000-0000-0000-0000-000000000000', AAG_AUTHORIZE_CLIENT_ID: '00000000-0000-0000-0000-000000000000', AAG_AUTHORIZE_CLIENT_SECRET: 'replace-me' }), AUTHORIZE_KEYS, 'placeholders are unset');
+});
+
+test('Authorize settings: read from the app\'s .env like the other Real names, taken from the container environment once and deleted; .env.example lists them commented out with placeholders only', () => {
+  withFile('AAG_AUTHORIZE_ENDPOINT_ID=e4e4e4e4-5656-4787-8989-b0b0b0b0b0b0\nAAG_AUTHORIZE_CLIENT_ID=a-worker-id\nAAG_AUTHORIZE_CLIENT_SECRET=a-worker-value\nOTHER=1\n', (f) => {
+    assert.deepEqual(Object.keys(readLiveSettings(f)).sort(), [...AUTHORIZE_KEYS].sort());
+    assert.deepEqual(Object.keys(readSharedSettings(f)), [], 'never into the process environment');
+  });
+  const env = { AAG_LIVE_FROM_ENV: '1', AAG_AUTHORIZE_ENDPOINT_ID: 'e4e4e4e4-5656-4787-8989-b0b0b0b0b0b0', AAG_AUTHORIZE_CLIENT_ID: 'a-worker-id', AAG_AUTHORIZE_CLIENT_SECRET: 'a-worker-value', OTHER: 'x' };
+  const taken = takeLiveSettingsFromEnv(env);
+  assert.deepEqual(Object.keys(taken).sort(), [...AUTHORIZE_KEYS].sort()); assert.deepEqual(Object.keys(env).sort(), ['AAG_LIVE_FROM_ENV', 'OTHER'], 'deleted from the environment');
+  const ex = fs.readFileSync(path.join(REPO_ROOT, '.env.example'), 'utf8');
+  for (const k of AUTHORIZE_KEYS) assert.match(ex, new RegExp(`^# ${k}=`, 'm'), `${k} is commented out`);
+  assert.match(ex, /^# AAG_AUTHORIZE_ENDPOINT_ID=00000000-0000-0000-0000-000000000000$/m); assert.match(ex, /^# AAG_AUTHORIZE_CLIENT_SECRET=replace-me$/m);
+  assert.match(ex, /All three together turn it on/);
 });

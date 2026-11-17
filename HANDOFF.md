@@ -52,6 +52,11 @@ Standalone Ping demo for Appfire's Agentic AI evaluation (the customer's brief):
 - The deck (`deck/build2.py`) is rebuilt later from real screenshots of the airline default; the old banking shots stay as history.
 - Verification: `npm test -w server`, `npm test -w web`, `node --test scripts/*.test.mjs`, `npm run build`, `npm run e2e`. `server/test/docker-live.test.js` binds 7820/7821, which OrbStack holds on the owner's Mac (those two tests fail there; run a copy on free ports to prove them). In a full-suite run on that Mac the other docker-live tests can also fail from port clashes with parallel files; re-run the file alone. Its first two tests also failed on unmodified main (e0633ae) when run here, so they are not an airline regression.
 
+## PingOne Authorize decides the airline booking (2026-11-17, branch `feat/airline-authorize`, built from `docs/design-authorize-lab.md`)
+- With `AAG_AUTHORIZE_ENDPOINT_ID`, `AAG_AUTHORIZE_CLIENT_ID` and `AAG_AUTHORIZE_CLIENT_SECRET` all set, the local tool server gets the booking decision from the owner's PingOne Authorize policy (the parent process makes the call, the tool server never holds the secret); with them absent the lab's own fare rule answers and says so. Configured and silent is NO DECISION, never a fallback. The page says `PingOne Authorize decided` only when the data (`decidedBy: pingone-authorize`) says so.
+- Owner steps: `docs/owner-steps.md` section 4 (a worker app, the three names, `node scripts/owner/authorize-probe.mjs` then `--run`, recreate the container, the live checks). Nothing here was run against a tenant. Test calls show in the endpoint's recent decisions list.
+- A regenerated policy import file is a separate task (skill `p1az-import-generator`); `docs/design-authorize-lab.md` section G.3 is the contract it must keep.
+
 ## Suggested next steps
 1. Owner: flip the P1AZ consent rule to mint HITL challenges for `create_transfer`, then re-test the Real loop: UC8 → 428 challenge → phone → `POST /api/approval/decide` → retry with `approvalId` → REAL_PERMIT.
 2. Upstream TopMenu adaptations to shared canonical + family re-pin.

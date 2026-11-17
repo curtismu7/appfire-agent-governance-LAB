@@ -72,7 +72,7 @@ export default function MovieReel({ hops = [], selected = null, onSelect }) {
       <ol className="rl" data-density={density} aria-label="Movie reel, click a frame">
         {shown.map((h) => {
           const on = h.n === selected;
-          const lane = actorOf(h.to);
+          const lane = actorOf(h.to, hops);
           return (
             <li key={h.n}>
               <button type="button" className="rl-f" ref={(el) => { frames.current[h.n] = el; }} style={{ "--lane": laneVar(h.to) }}

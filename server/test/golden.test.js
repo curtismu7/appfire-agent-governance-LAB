@@ -28,3 +28,32 @@ test('golden: a fresh run of banking, healthcare, retail and software is byte-id
   assert.equal(r.status, 0, `the four packs changed (vertical/use case/persona):\n${moved.join('\n') || out}`);
   assert.match(out, /golden ok: 696 runs, 348 default-persona runs, 8 steered, 696 web/);
 });
+
+// design-authorize-lab.md E.3: the one intended diagram change (P1AZ) is undone EXACTLY, so the four older packs stay byte-identical, and nothing else is hidden by it.
+test('undoIntendedDiagram: restores exactly the P1AZ label, the lab tool server node, edges 7 and 8 and their two steps; an extra node, a changed label or an extra edge is NOT undone', async () => {
+  const { undoIntendedDiagram } = await import('../../scripts/golden-capture.mjs');
+  const { buildDiagram } = await import('../src/diagramData.js');
+  const { VERTICALS } = await import('../src/cast.js');
+  const answer = (name, v = 'banking') => ({ names: ['delegation-chain', 'gateway-refusals'], diagram: buildDiagram(VERTICALS[v], name) });
+  const chain = answer('delegation-chain'); const refusals = answer('gateway-refusals');
+  const u = undoIntendedDiagram('delegation-chain', chain);
+  assert.equal(u.value.diagram.nodes.find((n) => n.id === 'az').label, 'Authorize (policy decision)');
+  assert.deepEqual([u.value.diagram.nodes.length, u.value.diagram.edges.length, u.value.diagram.steps.length], [7, 7, 7], 'seven nodes, seven edges, seven steps: the four-pack diagram');
+  assert.ok(!JSON.stringify(u.value).includes('P1AZ') && !u.value.diagram.nodes.some((n) => n.id === 'ts') && !u.value.diagram.edges.some((e) => e.n >= 7) && !u.value.diagram.steps.some((s) => s.edge >= 7));
+  assert.equal(u.value.diagram.steps.at(-1).dashed, true, 'HIVE is last again');
+  assert.equal(u.notes.length, 6); assert.deepEqual(chain, answer('delegation-chain'), 'the input is never changed');
+  const r = undoIntendedDiagram('gateway-refusals', refusals);
+  assert.equal(r.value.diagram.nodes.find((n) => n.id === 'az').label, 'Authorize'); assert.equal(r.notes.length, 1);
+  assert.deepEqual(r.value.diagram.nodes.map((n) => n.id), refusals.diagram.nodes.map((n) => n.id));
+  // teeth: one extra, unlisted node; a changed unlisted label; an extra edge or step; a changed ts label; an az label that is not the intended one
+  const mutate = (fn, name = 'delegation-chain') => { const a = answer(name); fn(a.diagram); return JSON.stringify(undoIntendedDiagram(name, a).value); };
+  const clean = JSON.stringify(u.value);
+  assert.notEqual(mutate((d) => d.nodes.push({ id: 'extra', label: 'Unlisted', kind: 'tool', x: 5, y: 5 })), clean, 'an extra node survives the undo');
+  assert.notEqual(mutate((d) => { d.nodes.find((n) => n.id === 'mcp').label = 'Changed'; }), clean, 'a changed unlisted label survives');
+  assert.notEqual(mutate((d) => d.edges.push({ n: 9, source: 'bff', target: 'ts', label: 'surprise' })), clean, 'an extra edge n 9 survives');
+  assert.notEqual(mutate((d) => d.steps.push({ from: 'a', to: 'b', label: 'x', say: 'y', hop: 'z', edge: 9, dashed: false })), clean, 'an extra step survives');
+  assert.notEqual(mutate((d) => { d.nodes.find((n) => n.id === 'ts').label = 'Another label'; }), clean, 'a changed ts label is not a listed change');
+  assert.notEqual(mutate((d) => { d.nodes.find((n) => n.id === 'az').label = 'Something else'; }), clean, 'an az label that is not the intended one is not undone');
+  assert.notEqual(mutate((d) => { d.edges.find((e) => e.n === 8).label = 'changed'; }), clean, 'a changed new edge label is not undone');
+  assert.notEqual(mutate((d) => { d.steps.find((s) => s.edge === 8).say = 'changed'; }), clean, 'a step whose text is changed is still undone only by its listed keys; the rest is compared');
+});

@@ -178,7 +178,7 @@ export default function SequenceView({ hops = [], selected = null, onSelect }) {
       <div className="sq-stage">
         <div className="sq-actors" role="group" aria-label="Actors, click one for its details">
           {cast.map((id) => {
-            const a = actorOf(id);
+            const a = actorOf(id, hops);
             const st = actorState(id);
             return (
               <button type="button" key={id} className="sq-actor" data-state={st} style={{ "--lane": laneVar(id) }} aria-pressed={actor === id}
@@ -204,7 +204,7 @@ export default function SequenceView({ hops = [], selected = null, onSelect }) {
             </defs>
             {cast.map((id) => {
               const x = colX(id);
-              const a = actorOf(id);
+              const a = actorOf(id, hops);
               const box = (y, h, ty, small, where) => (
                 <g role="button" tabIndex={-1} className="sq-lbtn" aria-label={`${a.label} actor details (${where})`} onClick={() => openActor(id)} onKeyDown={(e) => actorKey(e, id)}>
                   <rect className="sq-lbox" x={x - laneBox / 2} y={y} width={laneBox} height={h} rx="7" />
@@ -228,7 +228,7 @@ export default function SequenceView({ hops = [], selected = null, onSelect }) {
                 ref: (el) => { rowRefs.current[h.n] = el; },
                 className: "sq-row", "data-on": on ? "true" : undefined, "data-pending": pending ? "true" : undefined, "data-verdict": h.verdict || "ok",
                 role: "button", tabIndex: h.n === tabN ? 0 : -1, "aria-current": on ? "step" : undefined,
-                "aria-label": `Step ${label}, ${actorOf(h.from).label} to ${actorOf(h.to).label}${pending ? ", not revealed yet" : ""}`,
+                "aria-label": `Step ${label}, ${actorOf(h.from, hops).label} to ${actorOf(h.to, hops).label}${pending ? ", not revealed yet" : ""}`,
                 "data-testid": `row-${h.n}`,
                 onClick: () => onSelect?.(h.n), onKeyDown: (e) => onRowKey(e, h.n),
               };

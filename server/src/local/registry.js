@@ -33,3 +33,18 @@ export const BANDS = [
 ];
 export const SCANNER_REPOS = ['platform', 'billing', 'mobile'];
 export const BLOCKED_TERMS = ['bitcoin', 'crypto'];
+
+// PingOne Authorize (phase C, design-authorize-lab.md B.1): the nine answers the parent may send back over IPC, and the words for a "no decision". The parent keeps its own
+// copy in server/src/authorize.js (CODES, REASON_WORDS) and a parity test pins the two equal. `because` is what the tool server applies for a narrowing, derived from the code.
+export const AUTHORIZE_CODES = Object.freeze({
+  'airline-permit-as-asked': Object.freeze({ outcome: 'permit', because: Object.freeze([]) }),
+  'airline-economy-intl': Object.freeze({ outcome: 'narrow', because: Object.freeze(['international']) }),
+  'airline-economy-over-limit': Object.freeze({ outcome: 'narrow', because: Object.freeze(['over-limit']) }),
+  'airline-economy-intl-over-limit': Object.freeze({ outcome: 'narrow', because: Object.freeze(['international', 'over-limit']) }),
+  'airline-approval-required': Object.freeze({ outcome: 'approval', because: Object.freeze([]) }),
+  'airline-approved-as-asked': Object.freeze({ outcome: 'approved', because: Object.freeze([]) }),
+  'airline-second-factor-required': Object.freeze({ outcome: 'second_factor', because: Object.freeze([]) }),
+  'airline-booking-refused': Object.freeze({ outcome: 'deny', because: Object.freeze([]) }),
+});
+export const AUTHORIZE_REASONS = Object.freeze(['not_applicable', 'indeterminate', 'no_airline_code', 'only_unmatched', 'ambiguous', 'unrecognised', 'malformed', 'rate_limited',
+  'refused_credential', 'endpoint', 'server_error', 'unreachable', 'timeout', 'busy', 'unavailable']);

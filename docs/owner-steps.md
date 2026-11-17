@@ -88,3 +88,53 @@ Still on the lab's own steps for the airline: the phone-approval claim (UC22), t
 (UC48), the attacks, the agent-to-agent steps, the weather and news tools, and every use case that calls no tool.
 
 What stays on the lab's own steps is listed in the README ("Real on two providers"). The tool data is invented and says so; a local refusal says nothing about PingOne Authorize.
+
+## 4. PingOne Authorize decides the airline booking (optional)
+
+Run this only after section 3 works. It is optional: with the three names below absent, the lab's own fare rule decides the booking and the page says `lab policy (local), not PingOne Authorize`, exactly as before.
+The policy "Larkspur Air Booking Authorization" and its decision endpoint "Larkspur Air Booking" ("Use latest") are already published in your shared PingOne Authorize tree; this lab does not create, import or
+edit any policy (a regenerated import file is a separate task and must keep the contract in `docs/design-authorize-lab.md` section G.3). Nothing below has been run against your tenant by an agent: the tests use fakes.
+
+1. **A worker app for the lab.** In the PingOne console create a dedicated WORKER-type application (never the sign-in app or the agent app) and note its client id and secret. Give it only the permission the
+   decision endpoint needs: the documented `authz:authorize:decisionendpoint` permission, through a custom role if the console allows it. What you measured: the decision API accepted the worker token while the same app held
+   Environment Admin; the least-privilege custom role is UNVERIFIED. It matters because the secret sits in the lab's `.env` and its container, and Environment Admin lets anyone who holds it administer the whole environment.
+2. **Three names in the lab's own `.env`** (a shell variable is not read on a host run; all three or none, a partial set is reported by `npm run doctor` and Authorize stays off):
+
+   ```
+   AAG_AUTHORIZE_ENDPOINT_ID=<the decision endpoint "Larkspur Air Booking">
+   AAG_AUTHORIZE_CLIENT_ID=<the worker app's client id>
+   AAG_AUTHORIZE_CLIENT_SECRET=<the worker app's secret>
+   ```
+
+   The environment id and the region come from `PINGONE_ENVIRONMENT_ID` and `PINGONE_REGION` already in the file. The secret is write-only: the lab never returns, logs or shows it, and only the lab's server process
+   holds it (the tool server never does). Docker passes the three names by `${NAME:-}` substitution like the others.
+3. **Probe the endpoint before the lab uses it.** From the repo root:
+
+   ```
+   node scripts/owner/authorize-probe.mjs                          # dry run: prints what it would call, sends nothing
+   node scripts/owner/authorize-probe.mjs --run                    # 21 rows, 1.2 s apart, decision calls only
+   node scripts/owner/authorize-probe.mjs --run --record ~/authorize-probe-answers   # also saves the raw answers (a folder OUTSIDE any git repository)
+   ```
+
+   Read the table: every row must say PASS (the Larkspur rows 1 to 13 each name exactly one of the policy's codes; rows 14 to 19 must name none; rows 20 and 21 show the engine reads `True` as true and `maybe` as false, which is
+   why the lab always sends exactly `true` or `false`). A row that says NOTE (the tool-name row is an assumption) is for you to read, not a failure. The first narrowing row's statements are printed once so you can see what a
+   statement really holds. Exit 0 all passed, 1 a row failed, 2 it refused to start (a name is missing, or the record folder is inside a repository), 3 it could not finish (unreachable, the credential was refused, or the
+   endpoint kept rate limiting). The probe sends only the lab's seven parameters (never the shared `Amount`, `DecisionContext` or `ActClientId`) and never prints the secret, the token or a full endpoint id. Every call appears
+   in the endpoint's "recent decisions" list.
+4. **Recreate the container** so it reads the new names: `HOST_PORT=5603 docker compose up --build -d`.
+5. **Live checks, in this order.**
+   - Denver: ALLOWED, and the Decision card's policy row reads `PingOne Authorize (policy Larkspur Air Booking Authorization) returned PERMIT with the statement airline-permit-as-asked; the lab read that as book as asked and applied it`.
+   - Toronto: CONSTRAINED, economy booked, the policy row says `returned PERMIT with the statement airline-economy-intl; the lab read that as economy only and applied it` (PingOne Authorize returns PERMIT and a statement; CONSTRAINED is the lab's word for what it does with that statement, and the narrowing reason names the code's cause, never a dollar figure); open the decision step and read the raw request (the seven parameters; the bearer line says
+     `Bearer (worker token, not shown)`) and the raw answer.
+   - Paris: held for a person; approve on the lab phone (the approval itself runs on the lab's own approval service, not in PingOne Authorize); the retry books business as asked.
+   - Break the secret on purpose once (or stop the endpoint): the Decision card says NO DECISION with the reason, nothing is booked, and nothing says ALLOWED, DENIED or ESCALATED. The lab does not use its own rule instead.
+   - Remove the three names, recreate the container: the same runs say `lab policy (local), not PingOne Authorize` again.
+6. **The pictures.** The Diagram page shows the node `PingOne Authorize (P1AZ)` and the new node `Lab tool server (own tools, local)` with a solid arrow to it; the Sequence shows a lane `PingOne Authorize (P1AZ)` on a
+   booking PingOne Authorize decided (and on a run an SE gateway answered). A booking the lab's own rule decided draws no booking decision on a PingOne Authorize lane from the tool server; an airline run that stays on the lab's own steps still draws the generic lane, named plainly `Authorize`, and its card says the decision is the lab's own rule. The banking, healthcare and retail runs through the SE gateway look as before apart from the lane name.
+7. **Partial or unusable settings.** If only some of the three `AAG_AUTHORIZE_*` names are set, the booking runs on the lab's own rule and its decision line says the PingOne Authorize settings are incomplete, so it was not asked; the doctor names the missing one. If the lab's tool server is not running, the airline booking stays on the lab's own steps and the reason says PingOne Authorize is set up but not asked. The reader ignores statements with no string code and every code that is not an `airline-` code of the lab's; an `airline-` code it does not know (a later policy edit) is a NO DECISION on purpose (fail closed).
+
+UNVERIFIED until your run (the lab's tests prove only its own reading, against its own fake decision endpoint): the content of the real statements' payloads (the lab reads the code and never depends on a payload; the probe
+prints what one holds); that `airline-second-factor-required` and `airline-booking-refused` come back for the inputs you expect (the lab never sends one: its inputs cannot produce them, so the probe does not ask); that a
+least-privilege role works; that your endpoint's rate limit allows the lab's pace (it asks at most once per 1.1 s and retries a 429 once after 1.5 s); that a later edit of a limit in the console is picked up on the next booking
+(the endpoint is "Use latest": the lab shows the code it gets and applies the narrowing the code names; the limit it displays stays its own `FARE_RULE` until it is edited there); and that the `ToolName` parameter is part of
+the policy's gate. The numbers stay LAB-INVENTED.

@@ -7,7 +7,7 @@ import { actorOf, laneVar, touches, txt } from "./lanes";
 // open and goes back to whatever opened it (tile or lifeline box) on close.
 export default function ActorCard({ actorId, hops = [], onSelect, onClose }) {
   if (!actorId) return null;
-  const a = actorOf(actorId);
+  const a = actorOf(actorId, hops);
   const mine = hops.filter((h) => touches(h, actorId));
   const received = mine.filter((h) => h.to === actorId && h.from !== actorId);
   const right = typeof window !== "undefined" ? Math.max(8, window.innerWidth - 336) : null;

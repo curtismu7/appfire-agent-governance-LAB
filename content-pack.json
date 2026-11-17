@@ -50,7 +50,7 @@
     {
       "id": "constrained-booking",
       "term": "Constrained booking",
-      "definition": "A permitted call whose arguments the rule narrows (here the cabin, business to economy). The outcome word CONSTRAINED is the lab's own: the lab's fare rule decides it, not a PingOne Authorize outcome. The two fare limits and the international flag are lab-invented. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
+      "definition": "A permitted call whose arguments the rule narrows (here the cabin, business to economy). The outcome word CONSTRAINED is the lab's own. With the PingOne Authorize settings set, PingOne Authorize decides the booking and the lab applies its answer; otherwise the lab's fare rule decides it, and the page says it is not a PingOne Authorize outcome. The two fare limits and the international flag are lab-invented. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
         "allowed with a limit",
         "narrowed booking"

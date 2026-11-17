@@ -11,7 +11,7 @@ export const ACTORS = {
   pingone: { label: "PingOne", initials: "P1", lane: "idp", role: "PingOne, the identity provider. It signs the user in (pi.flow), then issues the agent's token and runs both RFC 8693 token exchanges (the first stamps act = the agent).", sees: "credentials at sign-in (the password goes to it once) and every token it issues", never: "what the tool returns" },
   "mcp-as": { label: "MCP auth server", initials: "MA", lane: "mcp-as", role: "The authorization server in front of the MCP server.", sees: "the grant it redeems", never: "the user's password" },
   gateway: { label: "Gateway", initials: "GW", lane: "gateway", role: "Checks every call before a tool sees it: signature, audience, expiry, act, scope and edge policy.", sees: "the delegated token and the tool call", never: "the user password or the agent secret" },
-  authorize: { label: "Authorize", initials: "AZ", lane: "authorize", role: "The policy decision point. It answers PERMIT, DENY or a step-up for each call.", sees: "subject, actor, action and context", never: "the token itself" },
+  authorize: { label: "Authorize", initials: "AZ", lane: "authorize", role: "The policy decision point. It answers PERMIT, DENY or a step-up for each call. In this run the decision drawn here is the lab's own rule, not a PingOne Authorize answer.", sees: "subject, actor, action and context", never: "the token itself" },
   toolserver: { label: "Tool server", initials: "TS", lane: "mcp", role: "The tool server this lab ships (or an SE-hosted copy of it). It checks the delegated token itself, applies its own rules and runs the tool; no gateway sits in front of it in this path.", sees: "the delegated token and the tool call", never: "the user token, the user password or the agent secret" },
   mcp: { label: "MCP tool", initials: "MC", lane: "mcp", role: "The MCP server that runs the tool. It checks the bearer again instead of trusting the gateway.", sees: "the tool call and the delegated token", never: "the user token or the agent secret" },
   a2a: { label: "A2A agent", initials: "A2", lane: "a2a", role: "A second agent reached over the agent-to-agent protocol.", sees: "the nested-act token and the message", never: "the first agent's own key" },
@@ -25,9 +25,14 @@ export const ACTORS = {
   database: { label: "Database", initials: "DB", lane: "database", role: "The back end's own data store. Only the API talks to it.", sees: "the API's queries", never: "any token" },
 };
 
-export function actorOf(id) {
+// The Authorize lane is called PingOne Authorize (P1AZ) only in a run where PingOne Authorize was really in the path: a hop the lab's own tool server credits to it
+// (`decidedBy`), or a hop the SE gateway answered (`provider` "se": the gateway asks PingOne Authorize). A run whose Authorize decision is the lab's own rule keeps the neutral name.
+const P1AZ_ACTOR = { label: "PingOne Authorize (P1AZ)", role: "PingOne Authorize, the policy decision point. It answers PERMIT, DENY or a step-up for each call. On the SE gateway runs the gateway asks it; on an airline booking the lab's tool server asks it directly, when the lab's Authorize settings are set, and applies the answer.", sees: "the attributes the caller sends (for an airline booking: the user id, the fare, whether the trip is international, the cabin asked and the approval state)" };
+export const askedP1az = (hops) => (hops || []).some((h) => h && (h.from === "authorize" || h.to === "authorize") && (h.decidedBy === "pingone-authorize" || (h.provider === "se" && h.verdict !== "skip")));
+
+export function actorOf(id, hops) {
   const a = Object.hasOwn(ACTORS, id) ? ACTORS[id] : null;
-  if (a) return { id, ...a };
+  if (a) return { id, ...a, ...(id === "authorize" && askedP1az(hops) ? P1AZ_ACTOR : {}) };
   const label = String(id || "?");
   return { id: label, label, initials: label.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "?", lane: "neutral", role: "An actor this lab does not describe.", sees: "not described", never: "not described" };
 }

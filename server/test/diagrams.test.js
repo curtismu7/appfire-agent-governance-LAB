@@ -65,3 +65,35 @@ test('HIVE is drawn in the delegation chain as a dashed, represented-not-called 
   assert.equal(d.groups.appfire.label, 'Appfire (represented, not called)');
   assert.ok(!buildDiagram(VERTICALS.banking, 'gateway-refusals').steps.some((s) => s.dashed));
 });
+
+// PingOne Authorize (P1AZ) on the diagrams (design-authorize-lab.md D.5): the exact strings. Nothing else in either diagram changed.
+test('P1AZ is drawn: the Authorize node is named PingOne Authorize (P1AZ) in both diagrams, and the delegation chain has the lab tool server path to it, solid, with HIVE still last and the only dashed step', () => {
+  const d = rawDiagram('delegation-chain');
+  assert.equal(d.nodes.find((n) => n.id === 'az').label, 'PingOne Authorize (P1AZ)');
+  const { x, y, ...ts } = d.nodes.at(-1);
+  assert.deepEqual(ts, { id: 'ts', label: 'Lab tool server (own tools, local)', group: 'tool' }, 'the node is appended last (its position is layout, not pinned here)'); assert.ok(Number.isFinite(x) && Number.isFinite(y));
+  assert.equal(d.nodes.length, 8); assert.equal(d.edges.length, 9);
+  assert.deepEqual(d.edges.slice(7), [
+    { source: 'bff', target: 'ts', label: "tool call with the delegated token (lab's own tools)" },
+    { source: 'ts', target: 'az', label: 'booking decision request (PingOne Authorize)' },
+  ]);
+  assert.ok(d.edges.slice(7).every((e) => e.dashed === undefined), 'both new edges are solid: the arrow is a real call');
+  assert.equal(d.edges[6].dashed, true, 'the seven existing edges keep their indices and HIVE stays dashed');
+  assert.deepEqual(d.steps.slice(6, 8), [
+    { title: 'Lab tool server', what: "On the lab's own tools (the airline and software packs) the delegated token goes to the lab's tool server, which checks it itself. No gateway is in this path.", hop: 'gateway-check', edges: [7] },
+    { title: 'PingOne Authorize (P1AZ): booking decision', what: "With the Authorize settings set, the lab's own tool server asks PingOne Authorize about an airline booking (fare, international or not, cabin, approval state) and applies the answer: a real call, drawn solid. Without them, or in the hosted build, the lab's own policy answers and the page says so.", hop: 'authorize-decision', edges: [8] },
+  ]);
+  for (const s of d.steps.slice(6, 8)) assert.ok(s.what.length <= 300, `${s.title}: ${s.what.length} characters`);
+  assert.equal(d.steps.length, 9); assert.equal(d.steps.at(-1).title, 'HIVE (represented, not called)'); assert.deepEqual(d.steps.at(-1).edges, [6]);
+  assert.equal(d.steps.filter((s) => d.edges[s.edges[0]].dashed).length, 1, 'HIVE is the only dashed step');
+  assert.equal(d.steps[4].title, 'Authorize decision', 'the gateway Authorize step keeps its title');
+  assert.equal(d.steps[4].what, 'PERMIT, DENY, or an obligation (step-up, human approval, CIBA). The thresholds are the lab\'s own.');
+  assert.deepEqual(validateDiagram(d), []);
+  const g = rawDiagram('gateway-refusals');
+  assert.equal(g.nodes.find((n) => n.id === 'az').label, 'PingOne Authorize (P1AZ)'); assert.equal(g.nodes.filter((n) => /Authorize/.test(n.label)).length, 1);
+  for (const v of Object.keys(VERTICALS)) for (const n of ['delegation-chain', 'gateway-refusals']) assert.ok(!JSON.stringify(buildDiagram(VERTICALS[v], n)).includes('{{'), `${v} ${n}`);
+  // the built diagram: the new step walks edge 8 from the tool server to the Authorize node
+  const built = buildDiagram(VERTICALS.airline, 'delegation-chain');
+  const step = built.steps.find((s) => s.edge === 8); assert.deepEqual([step.from, step.to, step.dashed, step.hop], ['ts', 'az', false, 'authorize-decision']);
+  assert.ok(new Set(built.nodes.map((n) => `${n.x},${n.y}`)).size === built.nodes.length, 'no two nodes share a position');
+});

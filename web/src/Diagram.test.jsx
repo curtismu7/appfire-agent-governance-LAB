@@ -54,6 +54,34 @@ describe("Simulate, speed, Reset", () => {
     expect(screen.queryByTestId("diagram-hop")).toBeNull(); // the last run had no gateway-check hop
   });
 
+  test("the tool-server steps show a hop of your last run only when that hop is that step (a lab-policy or gateway run shows none under the PingOne Authorize title)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const diagram = { ...DIAGRAM.diagram,
+      nodes: [{ id: "bff", label: "App", kind: "people", x: 0, y: 0 }, { id: "ts", label: "Lab tool server", kind: "gate", x: 500, y: 0 }, { id: "az", label: "PingOne Authorize (P1AZ)", kind: "ping", x: 500, y: 300 }],
+      edges: [{ source: "bff", target: "ts", label: "call" }, { source: "ts", target: "az", label: "decision" }],
+      steps: [
+      { from: "bff", to: "ts", label: "Lab tool server", say: "The tool server checks the token.", hop: "gateway-check", edge: 0 },
+      { from: "ts", to: "az", label: "PingOne Authorize (P1AZ): booking decision", say: "The tool server asks PingOne Authorize.", hop: "authorize-decision", edge: 1 },
+    ] };
+    const hopOf = (extra) => ({ n: 4, kind: "authorize-decision", label: "Decision", verdict: "ok", ...extra });
+    const lastRun = (hops) => ({ run: { useCase: { id: "UC7" }, hops } });
+    const second = async (hops) => {
+      render(<PatternDiagram diagram={diagram} lastRun={lastRun(hops)} />);
+      fireEvent.change(screen.getByTestId("speed"), { target: { value: "800" } });
+      fireEvent.click(screen.getByTestId("simulate"));
+      await act(async () => { vi.advanceTimersByTime(850); });
+      expect(screen.getByTestId("diagram-now").textContent).toMatch(/Step 2: PingOne Authorize/);
+      const shown = screen.queryByTestId("diagram-hop");
+      cleanup();
+      return shown;
+    };
+    expect(await second([hopOf({ decidedBy: "lab-policy-local", capability: "tools", provider: "local" })])).toBeNull();
+    expect(await second([hopOf({ provider: "se", answeredBy: "Agent Gateway (SE)" })])).toBeNull();
+    expect(await second([hopOf({ decidedBy: "none", capability: "tools" })])).toBeNull();
+    const yes = await second([hopOf({ decidedBy: "pingone-authorize", capability: "tools", provider: "local" })]);
+    expect(yes).toBeTruthy();
+  });
+
   test("the speed control offers five step times and is locked while it plays", async () => {
     render(<PatternDiagram diagram={DIAGRAM.diagram} />);
     expect(screen.getByTestId("speed").querySelectorAll("option")).toHaveLength(5);

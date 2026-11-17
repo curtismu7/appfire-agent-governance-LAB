@@ -68,8 +68,31 @@ export function constrainedPolicy(run, azBody) {
   return { by: text(run?.constrained?.by) || FARE_BY, reason, decision: constrained ? "CONSTRAINED" : text(azBody?.decision) || "PERMIT" };
 }
 
-// Who a held booking's chat card names: the lab's fare rule on an airline booking, Authorize elsewhere.
-export const approverOf = (run) => (run?.fareRule && run?.booking ? "Fare rule" : "Authorize");
+// Who a held booking's chat card names: PingOne Authorize when the data says it decided (`run.decidedBy`, set by the server only from an Authorize answer), the lab's
+// fare rule on any other airline booking, Authorize elsewhere (the SE gateway runs).
+export const approverOf = (run) => (run?.decidedBy === "pingone-authorize" ? "PingOne Authorize" : run?.fareRule && run?.booking ? "Fare rule" : "Authorize");
+
+// The words after "PingOne Authorize gave no decision: ", by the reason enum the server sends in `run.authorize.reason`. A literal copy of the server's table
+// (design-authorize-lab.md C.2); a reason that is not in it is never shown as sent.
+export const NO_DECISION_WORDS = {
+  not_applicable: "no policy applied to this request",
+  indeterminate: "it could not evaluate the request",
+  no_airline_code: "its answer held no airline booking decision",
+  only_unmatched: "its answer said no airline booking rule matched",
+  ambiguous: "its answer held two different booking decisions",
+  unrecognised: "its answer was not one this lab recognises",
+  malformed: "its answer could not be read",
+  rate_limited: "it is rate limiting this lab",
+  refused_credential: "it refused the lab's worker credential",
+  endpoint: "its decision endpoint is not available",
+  server_error: "it answered with a server error",
+  unreachable: "it could not be reached",
+  timeout: "it did not reply in time",
+  busy: "the lab could not ask it",
+  unavailable: "the lab could not ask it",
+};
+export const noDecisionWords = (reason) => (typeof reason === "string" && Object.hasOwn(NO_DECISION_WORDS, reason) ? NO_DECISION_WORDS[reason] : "it gave no answer the lab could use");
+export const NO_DECISION_TAIL = "Nothing was booked, and the lab did not use its own rule instead.";
 
 // "Asked for, and what was booked": read from run.booking only (never scraped from hop bodies). null when the run has no booking.
 export function seatFields(run) {

@@ -42,7 +42,7 @@ test('step 3: no source reads a credential from process.env; the one credential 
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.js') && x !== 'credentials.js' && x !== 'mask.js')) {
     const code = fs.readFileSync(new URL(f, dir), 'utf8');
     assert.ok(!/process\.env\.[A-Z_]*(TOKEN|SECRET|PASSWORD|KEY)/.test(code), `${f}: no credential env var`);
-    assert.equal(/CLIENT_SECRET|clientSecret/.test(code), ['settings.js', 'live.js', 'real.js'].includes(f), `${f}: only settings.js, live.js and real.js touch a client secret`);
+    assert.equal(/CLIENT_SECRET|clientSecret/.test(code), ['settings.js', 'live.js', 'real.js', 'authorize.js'].includes(f), `${f}: only settings.js, live.js, real.js and authorize.js (the PingOne Authorize worker client) touch a client secret`);
   }
   const idx = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
   assert.ok(idx.indexOf('liveRefusal(') < idx.indexOf('guard.allowHost('), 'the netguard allows the PingOne host only after the live opt-in check');
@@ -67,4 +67,26 @@ test('the lab\'s own tool server: forked only by localServices.js, only when not
   const svc = fs.readFileSync(new URL('../src/localServices.js', import.meta.url), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
   assert.ok(!/process\.env|\.\.\.process|env: process/.test(svc), 'the child gets NODE_ENV and an optional CA path, never the parent environment');
   assert.ok(!/CLIENT_SECRET|clientSecret/.test(svc), 'localServices.js never names a client secret');
+});
+
+// PingOne Authorize (2026-11-17): the parent process makes the call and holds the secret; the child never does.
+test('Authorize wiring: index.js builds it once, never in the hosted build, hands it to real.js (evidence) and localServices (the IPC), and nothing in server/src/local names it', () => {
+  const idx = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+  assert.equal(idx.match(/createAuthorize\(/g).length, 1);
+  assert.ok(/const authorize = !hosted && realCfg\?\.authorize \? createAuthorize\(\{ config: realCfg\.authorize \}\) : null;/.test(idx), 'only when not hosted and all three settings are valid');
+  assert.ok(/createReal\(\{ config: realCfg, missing: missingFull\(liveSettings\), wanted, authorize \}\)/.test(idx), 'real.js gets the evidence reader');
+  assert.ok(/createLocalServices\(\{ config: real\.localConfig\(\), hosted, caCertsPath: caCerts, authorize \}\)/.test(idx), 'the IPC side gets the parent module');
+  assert.ok(idx.indexOf('createAuthorize(') > idx.indexOf('installNetguard()'), 'after the netguard');
+  const src = new URL('../src/', import.meta.url);
+  for (const f of fs.readdirSync(src).filter((x) => x.endsWith('.js') && x !== 'index.js')) {
+    const code = fs.readFileSync(new URL(f, src), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+    assert.ok(!/createAuthorize\(/.test(code.replace(/export function createAuthorize\(/, '')), `${f}: only index.js builds it`);
+  }
+  const local = new URL('../src/local/', import.meta.url);
+  for (const f of fs.readdirSync(local).filter((x) => x.endsWith('.js'))) {
+    const code = fs.readFileSync(new URL(f, local), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+    assert.ok(!/authorize\.js|decisionEndpoints|api\.pingone|decisionUrl|tokenUrl|AAG_AUTHORIZE|client_credentials/.test(code), `${f}: the child holds no URL, no setting name and no grant`);
+  }
+  const az = fs.readFileSync(new URL('../src/authorize.js', import.meta.url), 'utf8');
+  assert.ok(!/\bfetch\(/.test(az.replace(/globalThis\.fetch/g, '')), 'the only network call goes through the injected fetch');
 });
