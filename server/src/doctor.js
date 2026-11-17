@@ -16,6 +16,7 @@ import { KNOWN_STEPS, chainOf, runUseCase } from './flow.js';
 import { signMockJwt, verifyMockJwt } from './mockjwt.js';
 import { APP_ENV_FILE, DEFAULT_AGENT_SCOPE, fullWanted, liveSettingsFor, missingFull, settingsPath } from './settings.js';
 import { realConfig } from './real.js';
+import { providerSettingOf } from './provider.js';
 import { liveConfig } from './live.js';
 import { DIAGRAM_NAMES, buildDiagram } from './diagramData.js';
 
@@ -113,10 +114,14 @@ export async function runChecks({ env = process.env } = {}) {
   if (env.AAG_ALLOW_LIVE === '0') add('live', 'pass', 'Real is switched off (AAG_ALLOW_LIVE=0): this lab reaches no network');
   else if (wanted && full.problem) add('live', 'info', `full Real is not configured yet: ${missingFull(settings).length ? `missing ${missingFull(settings).join(', ')}` : full.problem}. Mock only, this lab reaches no network (the old PINGONE_CLIENT_* path is ignored)`);
   else if (wanted && refused) add('live', 'info', `full Real is configured but refused: ${refused}`);
-  else if (wanted) { liveOn = true; add('live', 'pass', `full Real is on: sign-in (pi.flow), agent token and two token exchanges (agent scope: ${full.agentScope === DEFAULT_AGENT_SCOPE ? 'the default' : 'set by AAG_AGENT_SCOPE'}) at ${new URL(full.base).origin}, MCP to ${new URL(full.gatewayUrl).origin}; the netguard allows those two hosts`); }
+  else if (wanted) { liveOn = true; add('live', 'pass', `full Real is on: sign-in (pi.flow), agent token and two token exchanges (agent scope: ${full.agentScope === DEFAULT_AGENT_SCOPE ? 'the default' : 'set by AAG_AGENT_SCOPE'}) at ${new URL(full.base).origin}${full.gateway ? `, MCP to ${new URL(full.gateway.url).origin}; the netguard allows those two hosts` : "; no SE gateway is set, so the software vertical uses the lab's own tool server on loopback; the netguard allows the PingOne host"}`); }
   else if (cfg.problem) add('live', 'pass', `Real is not configured (full Real needs ${missingFull(settings).join(', ')}): Mock only, this lab reaches no network`);
   else if (refused) add('live', 'info', `Real (identity provider only) is configured but refused: ${refused}`);
   else { liveOn = true; add('live', 'pass', `Real, identity provider only (the old worker client, until the full-Real settings exist; still missing ${missingFull(settings).join(', ')}): two calls, only to ${new URL(cfg.base).origin}; the netguard allows that one host`); }
+  // Provider selection (owner 2026-11-16): AAG_PROVIDER auto|se|local. An invalid value is a failure that names the setting, never the value.
+  const providerSetting = providerSettingOf(settings.AAG_PROVIDER);
+  add('provider', providerSetting ? 'pass' : 'fail', providerSetting ? `AAG_PROVIDER is ${providerSetting}: ${providerSetting === 'auto' ? 'an SE provider when its settings are present and a health probe passes, else the lab\'s own' : providerSetting === 'se' ? 'only an SE provider' : 'only the lab\'s own tool server'}; chosen once per run` : 'the app .env has no valid AAG_PROVIDER (auto, se or local)');
+  if (wanted && !full.problem) add('gateway', 'info', full.gateway ? 'SE gateway: set' : full.gatewayProblem ? `SE gateway: not usable (${full.gatewayProblem}); banking, healthcare and retail stay on the lab's own steps` : 'SE gateway: not set (banking, healthcare and retail stay on the lab\'s own steps)');
   add('tenant', 'pass', liveOn ? 'mock runs touch no tenant and no network; a Real run reaches only the hosts named above' : 'simulated only: no tenant, no credentials, no outbound network');
   return checks;
 }

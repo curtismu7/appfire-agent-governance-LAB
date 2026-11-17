@@ -3,10 +3,11 @@
 //
 //   MOCK path:  start() mints a lab challenge (a lab id, a mock phone answer decides it) — the same shape AI-DEMO2's
 //               /api/consent-mock-phone gives the phone component: start / status / decision, pending → approved | denied.
-//   REAL path:  start() records a REAL challenge the Agent Gateway minted (its 428 body carries challengeId);
-//               decide('approved') calls the SE HITL service's POST /challenges/:id/respond with the internal secret
-//               (write-only: held in settings, never sent to the page, never logged) and returns the receipt id, which
-//               real.js sends back on the retry as _hitl_challenge_id. The gateway verifies the receipt with the same
+//   REAL path:  start() records a REAL challenge the provider minted (its 428 body carries challengeId): the SE Agent Gateway, or the lab's own
+//               approval service ('local', same process tree, loopback only);
+//               decide('approved') calls that provider's POST /challenges/:id/respond with the internal secret
+//               (write-only: held in settings or made at start, never sent to the page, never logged) and returns the receipt id, which
+//               real.js sends back on the retry as _hitl_challenge_id. The provider verifies the receipt with the same
 //               service; a denied or failed verify stays refused (fail closed, never an implicit approval).
 //
 // The UI contract (what a reusable phone component needs): start() → { id, state: 'pending', tool, amount, description,
@@ -21,7 +22,8 @@ const CAP = 50; // per workspace; the oldest expired/decided session is dropped 
 const hex = (n) => randomBytes(n).toString('hex');
 const now = () => Date.now();
 
-export function createApprovals({ hitlUrl = '', hitlSecret = '', fetchImpl = (...a) => globalThis.fetch(...a) } = {}) {
+// hitl(provider): { url, secret } for 'se' (from the settings) or 'local' (from localServices.hitl()), or null when there is none.
+export function createApprovals({ hitl = () => null, fetchImpl = (...a) => globalThis.fetch(...a) } = {}) {
   // workspaces: Map<workspaceId, Map<sessionId, session>>
   const workspaces = new Map();
   let inFlight = 0;
@@ -43,13 +45,13 @@ export function createApprovals({ hitlUrl = '', hitlSecret = '', fetchImpl = (..
     createdAt: new Date(s.at).toISOString(), expiresAt: new Date(s.at + TTL_MS).toISOString(),
   });
 
-  // start({ workspace, kind: 'mock' | 'real', tool, amount, description, challengeId? })
+  // start({ workspace, kind: 'mock' | 'real', tool, amount, description, challengeId?, provider? })
   // kind 'real' REQUIRES a challengeId (the gateway minted it): without one there is nothing to approve and nothing
   // to retry — the callers refuse before this. kind 'mock' mints a lab-only challenge.
-  function start({ workspace, kind = 'mock', tool, amount = null, description = '', challengeId = null }) {
+  function start({ workspace, kind = 'mock', tool, amount = null, description = '', challengeId = null, provider = 'se' }) {
     if (kind === 'real' && !challengeId) throw new Error('a real approval needs the gateway challengeId');
     const id = hex(12);
-    const session = { id, kind, tool: String(tool ?? ''), amount, description: String(description ?? ''), challengeId: kind === 'real' ? String(challengeId) : null, state: 'pending', at: now(), workspace };
+    const session = { id, kind, tool: String(tool ?? ''), amount, description: String(description ?? ''), challengeId: kind === 'real' ? String(challengeId) : null, provider: provider === 'local' ? 'local' : 'se', state: 'pending', at: now(), workspace };
     storeOf(workspace).set(id, session);
     return view(session);
   }
@@ -70,21 +72,22 @@ export function createApprovals({ hitlUrl = '', hitlSecret = '', fetchImpl = (..
     if (s.state !== 'pending') return view(s);
     if (now() - s.at > TTL_MS) { s.state = 'expired'; return view(s); }
     if (s.kind === 'mock') { s.state = approved ? 'approved' : 'denied'; return view(s); }
-    // REAL: record the answer with the SE HITL service (the gateway's verify runs again on the retry).
-    if (!hitlUrl) { s.state = 'expired'; return { ...view(s), error: 'the HITL service is not configured' }; }
+    // REAL: record the answer with the provider's HITL service (the provider verifies the receipt again on the retry).
+    const h = hitl(s.provider);
+    if (!h?.url) { s.state = 'expired'; return { ...view(s), error: 'the HITL service is not configured' }; }
     inFlight += 1;
     try {
-      const r = await fetchImpl(`${hitlUrl.replace(/\/$/, '')}/challenges/${encodeURIComponent(s.challengeId)}/respond`, {
+      const r = await fetchImpl(`${h.url.replace(/\/$/, '')}/challenges/${encodeURIComponent(s.challengeId)}/respond`, {
         method: 'POST', redirect: 'error',
-        headers: { 'content-type': 'application/json', ...(hitlSecret ? { 'x-hitl-internal-secret': hitlSecret } : {}) },
-        body: JSON.stringify({ decision: approved ? 'approved' : 'denied', respondedBy: 'appfire-agent-governance-lab mock phone' }),
+        headers: { 'content-type': 'application/json', ...(h.secret ? { 'x-hitl-internal-secret': h.secret } : {}) },
+        body: JSON.stringify({ decision: approved ? 'approved' : 'denied', respondedBy: s.provider === 'local' ? 'appfire-agent-governance-lab phone' : 'appfire-agent-governance-lab mock phone' }),
         signal: AbortSignal.timeout(15000),
       });
       const body = await r.json().catch(() => ({}));
       if (r.ok && (body.status === 'approved' || body.decision === 'approved')) s.state = 'approved';
       else if (r.ok && (body.status === 'denied' || body.decision === 'denied')) s.state = 'denied';
       else s.state = 'expired';
-      if (r.ok) s.receipt = s.challengeId; // the id real.js echoes on the retry (the gateway re-verifies server-side)
+      if (r.ok) s.receipt = s.challengeId; // the id real.js echoes on the retry (the provider re-verifies server-side)
       else s.error = `the HITL service answered HTTP ${r.status}`;
       return { ...view(s), ...(s.error ? { error: s.error } : {}) };
     } catch {

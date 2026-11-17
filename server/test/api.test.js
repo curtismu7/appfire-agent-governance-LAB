@@ -401,7 +401,10 @@ test('rule 19: POST /api/mode switches source; Real is 409 while the live guards
     const bad = await post(url, '/api/mode', { source: 'sideways' }); assert.equal(bad.status, 400);
     const extra = await post(url, '/api/mode', { source: 'mock', extra: 1 }); assert.equal(extra.status, 400);
     const refused = await post(url, '/api/mode', { source: 'real' }); assert.equal(refused.status, 409);
-    assert.match((await refused.json()).message, /^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, .*AAG_GATEWAY_SCOPE in this app's \.env/, 'no settings: the 409 names the full-Real settings to fill in');
+    const refusedJson = await refused.json();
+    assert.match(refusedJson.message, /^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME in this app's \.env.*need a PingOne environment \(PINGONE_ENVIRONMENT_ID and the AAG_\* apps\)\.$/, 'no settings: the 409 names the full-Real settings to fill in (the gateway trio is optional) and says Real needs a PingOne environment');
+    assert.ok(!/PingFederate/.test(refusedJson.message), 'the refusal does not talk about PingFederate (the lab cannot tell who has it)');
+    assert.match((await (await get(url, '/api/info')).json()).real.note, /PingFederate is not wired into this lab yet\.$/, '/api/info keeps the PingFederate note');
     assert.equal((await (await get(url, '/api/info')).json()).source, 'mock', 'a refused switch changes nothing');
     const ok = await post(url, '/api/mode', { source: 'mock' }); assert.equal(ok.status, 200); assert.equal((await ok.json()).source, 'mock');
   });

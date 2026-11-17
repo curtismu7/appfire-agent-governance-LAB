@@ -17,7 +17,10 @@ test('no source file evals, uses vm or Function, builds a regular expression fro
     assert.ok(!/writeFile|appendFile|createWriteStream|mkdirSync|rmSync|unlinkSync/.test(code), `${f}: the server writes no file`);
     assert.ok(!/new RegExp\(/.test(code.replace(/new RegExp\(`\^0\{\$\{n\}\}\$`\)/, '')), `${f}: no regular expression is built from input`);
     assert.ok(!/process\.env\.MODE\b|env\.MODE\b/.test(code), `${f}: a bare MODE is never read`);
-    assert.ok(!/child_process|worker_threads|node:cluster/.test(code), `${f}: no child process or worker`);
+    // The lab's own tool server is forked by localServices.js and nowhere else, and only with `fork` (never spawn, exec or a shell).
+    if (f === 'localServices.js') {
+      assert.ok(/import \{ fork as nodeFork \} from 'node:child_process';/.test(code) && !/\b(spawn|spawnSync|exec|execSync|execFile|execFileSync)\b/.test(code) && !/worker_threads|node:cluster/.test(code), `${f}: only fork from node:child_process`);
+    } else assert.ok(!/child_process|worker_threads|node:cluster/.test(code), `${f}: no child process or worker`);
   }
 });
 
@@ -47,11 +50,21 @@ test('step 3: no source reads a credential from process.env; the one credential 
 });
 
 test('full Real: real.js and mcpClient.js never log and never read the environment; the password is a function argument only', () => {
-  for (const f of ['real.js', 'mcpClient.js', 'realGate.js']) {
+  for (const f of ['real.js', 'mcpClient.js', 'realGate.js', 'provider.js', 'localServices.js']) {
     const code = fs.readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8');
     assert.ok(!/console\./.test(code), `${f}: no console output`);
     assert.ok(!/process\.env/.test(code.replace(/^\s*\/\/.*$/gm, '')), `${f}: reads no environment variable`);
   }
   const real = fs.readFileSync(new URL('../src/real.js', import.meta.url), 'utf8');
   assert.ok(!/session\s*=\s*\{[^}]*password/.test(real) && !/sessions\.set\([^)]*password/.test(real), 'the session never holds the password');
+});
+
+test('the lab\'s own tool server: forked only by localServices.js, only when not hosted, with the parent\'s environment never passed on', () => {
+  const idx = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+  assert.ok(/!hosted && fullOn && real\.providerSetting\(\) !== 'se' \? createLocalServices\(/.test(idx), 'index.js builds the service only when not hosted, Real is on and the setting is not se');
+  assert.equal(idx.match(/createLocalServices\(/g).length, 1);
+  for (const f of fs.readdirSync(new URL('../src/', import.meta.url)).filter((x) => x.endsWith('.js') && x !== 'localServices.js')) assert.ok(!/createLocalServices/.test(fs.readFileSync(new URL(`../src/${f}`, import.meta.url), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n')) || f === 'index.js', `${f}: nothing but index.js builds the service`);
+  const svc = fs.readFileSync(new URL('../src/localServices.js', import.meta.url), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  assert.ok(!/process\.env|\.\.\.process|env: process/.test(svc), 'the child gets NODE_ENV and an optional CA path, never the parent environment');
+  assert.ok(!/CLIENT_SECRET|clientSecret/.test(svc), 'localServices.js never names a client secret');
 });

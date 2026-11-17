@@ -111,7 +111,7 @@ export default function RunPanel({ uc, vertical, verticals, persona, setPersona,
       {uc.live?.status === "needs-build" && <p className="muted">{noIds(uc.live.message)}</p>}
       {!personaUnused && <Inputs uc={uc} />}
       <div className="runbar">
-        {personaUnused && <p className="muted" data-testid="live-persona-note">{asSignedIn ? (uc.id === "UC21" ? "This run uses the person who signed in; the persona is not used. Your tier is your PingOne group: add or remove your user from the premium-tier group in PingOne, Sign out, and sign in again, then run this again." : "This run uses the person who signed in; the persona is not used.") : "This run reaches the identity provider only; the persona is not used."}</p>}
+        {personaUnused && <p className="muted" data-testid="live-persona-note">{asSignedIn ? (uc.id === "UC21" ? "This run uses the person who signed in; the persona is not used. Your tier is your PingOne group: add or remove your user from the premium-tier group in PingOne, Sign out, and sign in again, then run this again. If the tool stays not offered for a user who is in the group, PingOne may not be putting the groups claim into the token (unverified): the decision card says when it is missing." : "This run uses the person who signed in; the persona is not used.") : "This run reaches the identity provider only; the persona is not used."}</p>}
         {!personaUnused && (
           <label className="field">Persona <InventedTag />
             <select value={persona} onChange={(e) => setPersona(e.target.value)} data-testid="persona">

@@ -9,6 +9,12 @@ const ran = (run, kind) => (run?.hops || []).find((h) => h.kind === kind && h.ve
 const text = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
 // The lab's lowercase ids for who refused, in words an audience reads.
 const WHO = { authorize: "Agent Authorize", gateway: "the gateway", bff: "the BFF (the app's back end)" };
+
+// A run whose tool call was answered by the lab's own tool server (the data says so: `answeredBy` on its hops, a fixed string from the server). Such a
+// refusal is the lab's policy, not PingOne Authorize and not a gateway, and the card says so in the server's words.
+const viaTools = (run) => run?.kind === "real" && (run?.hops || []).some((h) => h?.capability === "tools");
+// A hold the tool server or the gateway answered with "needs a stronger authentication": the reply head says it (the server's fixed words).
+const stepUpHold = (run) => run?.outcome === "REAL_HOLD" && /step-up/i.test(String(run?.reply?.approval?.head || ""));
 const whoOf = (id) => (text(id) && Object.hasOwn(WHO, id) ? WHO[id] : text(id) || "the system that answered");
 
 // The delegated token is the one that names an agent in act; the first token naming none is the person's own.
@@ -24,12 +30,17 @@ function actors(run) {
 // The tool the model proposed; falls back to the action Authorize was asked about, then to the tool the MCP server ran.
 function toolOf(run) {
   const plan = bodyOf(ran(run, "llm-plan"))?.tool_calls?.[0]?.name;
-  return text(plan) || text(ran(run, "authorize-decision")?.request?.body?.action) || text(bodyOf(ran(run, "tool-dispatched"))?.result?.tool);
+  return text(plan) || text(ran(run, "authorize-decision")?.request?.body?.action) || text(ran(run, "authorize-decision")?.request?.tool) || text(bodyOf(ran(run, "tool-dispatched"))?.result?.tool);
 }
 
 // Who decided and why, as the lab's own words from the hop that said it (never a rewrite of the reason).
 function policyOf(run) {
   const az = ran(run, "authorize-decision");
+  // The tool server's own rule: who decided is the hop's own `decision.by` ("lab policy (local), not PingOne Authorize"), the rule is in the audit trail it sent.
+  if (az && viaTools(run) && text(az.decision?.by)) {
+    const rule = text(az.response?.["x-gw-audit-trail"]?.rule);
+    return { by: az.decision.by, reason: rule || text(az.note) || "the tool server's own rule", decision: text(az.decision?.outcome) };
+  }
   const azBody = bodyOf(az);
   if (az && text(azBody?.reason)) return { by: WHO.authorize, reason: azBody.reason, decision: azBody.decision };
   const gw = bodyOf(ran(run, "gateway-check"));
@@ -45,6 +56,8 @@ function verdictOf(outcome) {
   if (outcome === "PERMIT" || outcome === "DELEGATE_AND_EXECUTE" || outcome === "REAL_PERMIT") return "allowed";
   if (outcome.startsWith("DENY") || outcome === "PERMIT_THEN_DENY" || outcome === "REAL_DENY") return "denied";
   if (outcome === "STEP_UP" || outcome === "HITL_REQUIRED" || outcome === "CIBA" || outcome === "REAL_HOLD") return "escalated";
+  // The approval receipt a retry carried was refused by the tool server: a refusal, never a pass (owner 2026-11-16).
+  if (outcome === "REAL_RECEIPT_REJECTED") return "denied";
   return null;
 }
 
@@ -60,11 +73,11 @@ export const RISK_RUNGS = [
 // Which rung of the strip a run landed on; null when the run made no decision (guided, identity-provider-only, not completed).
 export function riskLevelOf(run) {
   const o = String(run?.outcome || "");
-  if (run?.kind === "guided" || run?.computed === false || run?.kind === "live") return null;
+  if (run?.kind === "guided" || (run?.computed === false && !viaTools(run)) || run?.kind === "live") return null;
   const v = verdictOf(o);
   if (v === "allowed") return 1;
   if (v === "denied") return 4;
-  if (v === "escalated") return o === "STEP_UP" ? 2 : 3;
+  if (v === "escalated") return o === "STEP_UP" || stepUpHold(run) ? 2 : 3;
   return null;
 }
 
@@ -83,7 +96,8 @@ const TONE = { allowed: "ok", denied: "bad", escalated: "warn" };
 export function decisionOf(run) {
   if (!run || typeof run !== "object") return null;
   const outcome = String(run.outcome || "");
-  if (run.kind === "guided" || run.computed === false) {
+  // A Real run is read, not computed (the server sends computed:false for it), but it does carry a decision: only a guided page and an unlabelled run say "guided".
+  if (run.kind === "guided" || (run.computed === false && !viaTools(run))) {
     return { verdict: "guided", word: "GUIDED", tone: "info", level: null, steer: null, reason: "A guided page: the lab shows the catalog's label and does not decide anything here.", fields: [] };
   }
   if (run.kind === "live") {
@@ -92,6 +106,33 @@ export function decisionOf(run) {
   const { person, agent } = actors(run);
   // The gateway did not list the tool for this token, so the agent never called it. For a tier use case that is the standard tier: not a refusal of a call
   // (there was none) but a tool the user is never offered.
+  if (outcome === "REAL_NOT_LISTED" && viaTools(run)) {
+    // The groups claim is UNVERIFIED in a real exchanged token: when the delegated token had none, the tool server could not tell the tier, so nothing here is a tier decision.
+    if (run.groupsClaim === "absent") {
+      return {
+        verdict: "not-offered", word: "NOT OFFERED", tone: "warn", level: null, steer: null,
+        reason: "The tool server did not offer the tool, but no tier decision can be read from that: the delegated token has no groups claim (UNVERIFIED that PingOne puts it there), so the tool server could not see the tier group. Check the groups attribute of the tools resource in PingOne.",
+        fields: [
+          { key: "agent", label: "Which agent acted", value: agent || NOT_REACHED },
+          { key: "principal", label: "On whose behalf", value: person || NOT_REACHED },
+          { key: "tool", label: "Which tool or resource", value: "not offered, so never called" },
+          { key: "policy", label: "Which policy applied", value: "the tool server: its tier rule could not be applied, the groups claim is ABSENT" },
+          { key: "decision", label: "Decision", value: "no tier decision (groups claim absent)" },
+        ],
+      };
+    }
+    return {
+      verdict: "not-offered", word: "NOT OFFERED", tone: "warn", level: null, steer: null,
+      reason: "The tool server did not offer the tool to this user, so the agent never called it. Its own rule (lab policy, not PingOne Authorize) decides which tools a user is offered.",
+      fields: [
+        { key: "agent", label: "Which agent acted", value: agent || NOT_REACHED },
+        { key: "principal", label: "On whose behalf", value: person || NOT_REACHED },
+        { key: "tool", label: "Which tool or resource", value: "not offered, so never called" },
+        { key: "policy", label: "Which policy applied", value: "the tool server: the tool is not in its tools/list for this token" },
+        { key: "decision", label: "Decision", value: outcome },
+      ],
+    };
+  }
   if (outcome === "REAL_NOT_LISTED") {
     return {
       verdict: "not-offered", word: "NOT OFFERED", tone: "warn", level: null, steer: null,
@@ -101,6 +142,20 @@ export function decisionOf(run) {
         { key: "principal", label: "On whose behalf", value: person || NOT_REACHED },
         { key: "tool", label: "Which tool or resource", value: "not offered, so never called" },
         { key: "policy", label: "Which policy applied", value: "the gateway: the tool is not in its tools/list for this token" },
+        { key: "decision", label: "Decision", value: outcome },
+      ],
+    };
+  }
+  // UC24's probe: the protected tool should have said 401 to a call with no token and did not. A finding, not a decision.
+  if (outcome === "REAL_NOT_REFUSED") {
+    return {
+      verdict: "finding", word: "FINDING", tone: "bad", level: null, steer: null,
+      reason: "The protected tool answered without a token. A call with no token should be refused.",
+      fields: [
+        { key: "agent", label: "Which agent acted", value: NOT_REACHED },
+        { key: "principal", label: "On whose behalf", value: NOT_REACHED },
+        { key: "tool", label: "Which tool or resource", value: toolOf(run) || NOT_REACHED },
+        { key: "policy", label: "Which policy applied", value: NOT_REACHED },
         { key: "decision", label: "Decision", value: outcome },
       ],
     };
@@ -118,10 +173,11 @@ export function decisionOf(run) {
     reason = `Allowed${why ? `: ${why}` : ""}. The tool ran.`;
   } else if (verdict === "denied") {
     word = WORD.denied; tone = TONE.denied;
-    reason = `Refused${refusedBy ? ` by ${refusedBy}` : ""}${why ? `: ${why}` : ""}. Nothing was dispatched to the tool.`;
+    reason = outcome === "REAL_RECEIPT_REJECTED" ? "The approval receipt was refused. Nothing was dispatched to the tool."
+      : `Refused${refusedBy ? ` by ${refusedBy}` : ""}${why ? `: ${why}` : ""}. Nothing was dispatched to the tool.`;
   } else if (verdict === "escalated") {
     word = WORD.escalated; tone = TONE.escalated;
-    const needs = outcome === "STEP_UP" ? "a second factor" : "a person";
+    const needs = outcome === "STEP_UP" || stepUpHold(run) ? "a second factor" : "a person";
     reason = `Held${why ? `: ${why}` : ""}. The write waits for ${held?.needs ? held.needs : needs}; it has not run.`;
   } else {
     word = "NOT COMPLETED"; tone = outcome.startsWith("REAL_") || outcome.startsWith("LIVE_") ? "bad" : "info";

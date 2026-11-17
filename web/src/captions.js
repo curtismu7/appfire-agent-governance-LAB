@@ -68,6 +68,22 @@ export const CAPTIONS = {
 };
 
 // Fallback for a kind with no entry (a new hop kind before its caption is written): say what the step is without inventing anything.
+// A run answered by a tool server (hop.capability "tools", the server's own data) has no gateway and no policy engine in it: these replace the captions that name them.
+const TOOL_SERVER_CAPTIONS = {
+  "authorize-decision": {
+    say: "Before the tool runs, the tool server applies its rules to this call: who the agent is, whose permission it carries, the scope, the tier group and the size of the change. It is a rule decision, not a prompt the model answers.",
+    deny: "The tool server says no. The decision is made before the tool is touched, so a manipulated agent still meets the same answer.",
+    held: "The tool server does not refuse and does not wave it through. It asks for more: a second factor or a person.",
+    point: "The decision and the rule named on it.",
+  },
+  "gateway-check": {
+    say: "The tool server checks the delegated token: signature against the issuer's keys, audience, expiry, that an agent is acting for a person, and that the scope covers this tool.",
+    deny: "A check failed and the tool server stops the call here. Nothing reaches the tool.",
+    held: "The tool server holds the call. It waits for approval before anything runs.",
+    point: "The checks: each passes or the first one that fails.",
+  },
+};
+
 const GENERIC = { agenda: null, say: "This is one step of the run. Open its detail for the request, the response and the decision.", point: "The request and the response below." };
 
 const verdictOf = (hop) => {
@@ -81,7 +97,8 @@ const verdictOf = (hop) => {
 export function captionFor(hop) {
   if (!hop || typeof hop !== "object") return null;
   if (hop.verdict === "skip") return { ...NOT_IN_PATH, agenda: CAPTIONS[hop.kind]?.agenda ?? null, notInPath: true, real: false };
-  const c = Object.hasOwn(CAPTIONS, hop.kind) ? CAPTIONS[hop.kind] : GENERIC;
+  const base = Object.hasOwn(CAPTIONS, hop.kind) ? CAPTIONS[hop.kind] : GENERIC;
+  const c = hop.capability === "tools" && Object.hasOwn(TOOL_SERVER_CAPTIONS, hop.kind) ? { ...base, ...TOOL_SERVER_CAPTIONS[hop.kind] } : base;
   const v = verdictOf(hop);
   return { say: (v !== "ok" && c[v]) || c.say, point: c.point, agenda: c.agenda, notInPath: false, real: hop.source === "real" };
 }

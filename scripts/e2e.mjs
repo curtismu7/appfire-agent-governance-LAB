@@ -7,7 +7,8 @@
 //
 // Uses the Chromium the installed Playwright resolves (`npx playwright install chromium` if it is missing). The run makes no outbound request: any
 // request to another origin fails the run. Exit 0 only when every check passes.
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -25,7 +26,7 @@ let failures = 0; let checks = 0;
 const check = (ok, what) => { checks += 1; console.log(`${ok ? 'PASS' : 'FAIL'}  ${what}`); if (!ok) failures += 1; };
 
 const port = Number(process.env.E2E_PORT) || 7830;
-if (port < 7814 || port > 7835) { console.error('E2E_PORT must be inside 7814-7835 (the live, hosted and full-Real instances take the next three ports)'); process.exit(2); }
+if (port < 7814 || port > 7835) { console.error('E2E_PORT must be inside 7814-7835 (the live, hosted, full-Real and local-only instances take the next four ports)'); process.exit(2); }
 const base = `http://127.0.0.1:${port}`;
 if (!fs.existsSync(path.join(root, 'web', 'dist', 'index.html'))) { console.error('Run `npm run build` first.'); process.exit(2); }
 // The Mock instance has no PingOne settings (an empty settings file, like a fresh clone or CI with no .env) and no IDP pin, so Real is disabled by
@@ -77,6 +78,9 @@ const watchRuns = (page) => {
   page.on('response', async (r) => { if (r.request().method() === 'POST' && /\/api\/run\//.test(r.url())) { try { runs.push((await r.json()).run || null); } catch { runs.push(null); } } });
   return { runs, next: async (n) => { for (let i = 0; i < 100 && !runs.slice(n).some(Boolean); i++) await sleep(50); return runs.slice(n).filter(Boolean).pop() || null; } };
 };
+
+// The hop of a run that the tool (not the sign-in or the exchanges) answered, in the data.
+const toolHop = (run) => (run?.hops || []).find((h) => ['tool-dispatched', 'tool-held', 'tool-refused'].includes(h.kind) && h.source === 'real');
 
 // NO-MOCK-WORDS (owner 2026-11-16): everything a person can read or hear on a page, text, aria-label, title, placeholder, alt, an input's value and option
 // text (own text nodes of every visible element stand in for innerText, so the data panes can be skipped by element). The words banned are mock, simulat*,
@@ -156,6 +160,44 @@ const fullServer = spawn(process.execPath, ['server/src/index.js'], { cwd: root,
 let fullUp = false;
 for (let i = 0; i < 160 && !fullUp; i++) { try { fullUp = (await fetch(`${fullBase}/api/health`)).ok; } catch { await sleep(250); } }
 if (!fullUp) { server.kill(); liveServer.kill(); hostedServer.kill(); fullServer.kill(); console.error('full-Real server did not start'); process.exit(2); }
+
+// Real with ONLY the lab's own provider (owner 2026-11-16: the SE gateway names are optional, so the lab runs completely standalone with just its own PingOne): a fifth
+// instance with the five app names and no gateway name at all, AAG_PROVIDER=local, its own fake PingOne. No SE, no gateway fake.
+const soloPort = port + 4;
+const soloBase = `http://127.0.0.1:${soloPort}`;
+const soloP1 = await startFakePingOne();
+const soloSettings = { ...settingsFor(), ...fullSettingsFor(null, { AAG_PROVIDER: 'local' }) };
+for (const k of ['AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE']) delete soloSettings[k];
+const soloFile = path.join(settingsDir, 'solo.env');
+fs.writeFileSync(soloFile, `${Object.entries(soloSettings).map(([k, v]) => `${k}=${v}`).join('\n')}\n`, { mode: 0o600 });
+const soloEnv = { ...process.env, PORT: String(soloPort), ALLOW_MOCK_SIGNIN: '1', AAG_ENV_FILE: soloFile, AAG_LIVE_TEST_BASE: soloP1.base };
+for (const k of ['CALAB_BIND', 'AAG_LAB_MODE', 'IDP', 'AAG_ALLOW_LIVE', 'AAG_LIVE_FROM_ENV', ...REAL_KEYS]) delete soloEnv[k];
+const soloServer = spawn(process.execPath, ['server/src/index.js'], { cwd: root, env: soloEnv, stdio: 'inherit' });
+let soloUp = false;
+for (let i = 0; i < 160 && !soloUp; i++) { try { soloUp = (await fetch(`${soloBase}/api/health`)).ok; } catch { await sleep(250); } }
+if (!soloUp) { server.kill(); liveServer.kill(); hostedServer.kill(); fullServer.kill(); soloServer.kill(); console.error('local-only server did not start'); process.exit(2); }
+
+// The delegated token for the tools resource, tampered on its way out of the fake PingOne (one character of the signature, same length), when armed. The fake runs in
+// THIS process, so the response bytes are changed where the fake writes them; nothing in the lab or the fake knows. Used for the "a refused token is a real 401" check.
+let tamperTools = false;
+const tamperBody = (chunk) => {
+  try {
+    const j = JSON.parse(String(chunk));
+    const parts = String(j.access_token || '').split('.');
+    if (parts.length !== 3) return chunk;
+    const aud = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')).aud;
+    if (!(Array.isArray(aud) ? aud : [aud]).includes('appfire-work-tools')) return chunk;
+    parts[2] = (parts[2][0] === 'A' ? 'B' : 'A') + parts[2].slice(1);
+    return JSON.stringify({ ...j, access_token: parts.join('.') });
+  } catch { return chunk; }
+};
+for (const fn of ['write', 'end']) {
+  const orig = http.ServerResponse.prototype[fn];
+  http.ServerResponse.prototype[fn] = function patched(chunk, ...rest) {
+    if (tamperTools && this.socket?.localPort === fullP1.port && String(this.req?.url || '').includes('/as/token') && (typeof chunk === 'string' || Buffer.isBuffer(chunk))) chunk = tamperBody(chunk);
+    return orig.call(this, chunk, ...rest);
+  };
+}
 
 const healthOf = async (b) => (await (await fetch(`${b}/api/health`)).json()).runtime;
 check((await healthOf(liveBase)) === 'live' && (await healthOf(base)) === 'offline', 'health: the live instance reports runtime live, the mock one offline');
@@ -260,7 +302,7 @@ try {
       await t('vertical').selectOption('software');
       // With no .env Real is refused by the server contract (rule 19: POST /api/mode answers 409 and says what to fill in), and the page stays on the lab's own steps.
       const refusedReal = await modeCall(page, 'real');
-      check(refusedReal.status === 409 && /^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME, AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE in this app's \.env/.test(refusedReal.body?.message || '') && (await modeMarker(page, 'mock').count()) === 1, `${tag}: with no .env Real is refused (HTTP 409), the answer says what to fill in, and the page stays on its own steps`);
+      check(refusedReal.status === 409 && /^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME in this app's \.env/.test(refusedReal.body?.message || '') && /need a PingOne environment \(PINGONE_ENVIRONMENT_ID and the AAG_\* apps\)\.$/.test(refusedReal.body?.message || '') && !/PingFederate/.test(refusedReal.body?.message || '') && (await modeMarker(page, 'mock').count()) === 1, `${tag}: with no .env Real is refused (HTTP 409), the answer says what to fill in, and the page stays on its own steps`);
       check((await overflow()) <= 0, `${tag}: the agent page does not scroll sideways (${await overflow()} px)`);
       if (tag === 'desktop-light') await page.screenshot({ path: path.join(shots, 'run.png'), fullPage: true });
 
@@ -593,10 +635,13 @@ try {
     await t('uc-UC1').waitFor();
     await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
     check((await t('mode-select').count()) === 0 && (await t('banner').innerText()) === BANNER_LOCAL && (await t('sign-in').isVisible()), `${tag}: with the full settings the lab opens in Real by itself (marker live, no mode control, the same neutral banner) and shows the Sign in button`);
-    // The default software vertical is served by the lab's own steps even though the lab opened in Real: the persona and the inputs stay and there is no note about a person who signed in.
+    // The default software vertical runs Real on the lab's own tool server (owner 2026-11-16): its reads run as the signed-in person, so no persona and no inputs and the
+    // note says so; a use case that stays on the lab's own steps (UC25, enterprise-managed MCP: it needs an AI-DEMO2 feature flag) keeps its persona and has no note.
     await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
-    check((await t('persona').count()) === 1 && (await t('lab-inputs').count()) === 1 && (await t('live-persona-note').count()) === 0 && (await t('gateway-status').count()) === 1, `${tag}: a use case the gateway does not serve keeps its persona and inputs while the lab opens in Real (software), with no sign-in note`);
-    // Real needs the Banking vertical (the SE gateway serves no software tools): software is the default, so the Real checks pick banking first
+    check((await t('persona').count()) === 0 && (await t('lab-inputs').count()) === 0 && (await t('live-persona-note').count()) === 1, `${tag}: a software use case the lab's own tool server answers runs as the signed-in person while the lab opens in Real: no persona, no inputs, and the note says so`);
+    await t('search').fill('UC25'); await page.locator('[data-testid="uc-UC25"]').click(); await t('search').fill('');
+    check((await t('persona').count()) === 1 && (await t('live-persona-note').count()) === 0, `${tag}: a software use case that stays on the lab's own steps keeps its persona while the lab opens in Real, with no sign-in note`);
+    // The SE gateway serves banking, healthcare and retail: the checks of its path below pick the Banking vertical (the software vertical's own checks are in the next block).
     await t('vertical').selectOption('banking');
     await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
     await t('run').click();
@@ -689,6 +734,182 @@ try {
     await ctx.close();
   }
 
+  // ---- Real on two providers (owner 2026-11-16): the software vertical on the lab's own tool server, against the fake PingOne (the tools resource, ES256 JWKS) -------------
+  // The lab's child process (the tool server, the enforcer and the approval service, loopback only) validates the fake PingOne's tokens against its JWKS. The page says
+  // nothing about who answered; the DATA does (hop.provider, hop.answeredBy) and the step detail shows it as the key fact "Answered by". No real tenant, no SE.
+  {
+    const tag = 'local-provider';
+    await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
+    fullGw.seen.length = 0; fullGw.state.behaviour = 'ok'; fullP1.state.full.exchange = 'ok'; fullP1.state.resources.gateway.act = 'passthrough';
+    const setGroups = (g) => { fullP1.state.tools = fullP1.state.tools || {}; fullP1.state.tools.groups = g; };
+    setGroups([]);
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await ctx.newPage();
+    const external = []; const errors = []; const approvalStarts = [];
+    page.on('request', (r) => { if (!r.url().startsWith(fullBase) && !/^(data|blob):/.test(r.url())) external.push(r.url()); if (r.method() === 'POST' && r.url().endsWith('/api/approval/start')) approvalStarts.push(JSON.parse(r.postData() || '{}')); });
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
+    page.on('response', async (r) => { if (r.status() === 400) console.log(`INFO  ${tag}: HTTP 400 from ${r.request().method()} ${new URL(r.url()).pathname}: ${(await r.text().catch(() => '')).slice(0, 200)} request body ${String(r.request().postData() || '').slice(0, 300)}`); });
+    const t = (id) => page.getByTestId(id);
+    const watch = watchRuns(page);
+    const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
+    // Run the picked use case; when Real asks for the sign-in, sign in (the password is the fake's); return the run the page received.
+    const runIt = async () => {
+      const n = watch.runs.length;
+      await t('run').click();
+      for (let i = 0; i < 300 && !watch.runs.slice(n).some(Boolean); i++) {
+        if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        await sleep(100);
+      }
+      const run = await watch.next(n);
+      await sleep(400);
+      return run;
+    };
+    const runUc = async (id) => { await pick(id); return runIt(); };
+    const answered = (run) => (run?.hops || []).filter((h) => h.provider !== undefined);
+    const textOf = async (id) => (await t(id).innerText()).replace(/\s+/g, ' ');
+    const infoOf = async (b) => (await (await fetch(`${b}/api/info`, { headers: { 'x-workspace': 'w-eeeeeeeeeeeeeeee' } })).json());
+
+    await page.goto(`${fullBase}/`);
+    await t('uc-UC1').waitFor();
+    await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
+    const info = await infoOf(fullBase);
+    check(info.provider?.setting === 'auto' && info.provider?.local?.state === 'ready' && info.provider?.toolsSe === false && info.provider?.hosted === false && !/https?:|secret|token|127\.0\.0\.1|localhost/i.test(JSON.stringify(info.provider)), `${tag}: /api/info says the provider setting is auto and the lab's own tool server is ready, with no URL, port, secret or token`);
+    // The local services are a child process of the lab (the tool server, the enforcer and the approval service are one process, loopback only, no published port).
+    const kids = spawnSync('pgrep', ['-P', String(fullServer.pid)], { encoding: 'utf8' });
+    if (kids.error) console.log('INFO  pgrep is not available here: the child-process checks are skipped');
+    else check(kids.stdout.trim().split('\n').filter(Boolean).length === 1, `${tag}: the lab has exactly one child process (the local services) on the Real-configured instance`);
+
+    // UC1: a software read, real, through the lab's own tool server
+    let run = await runUc('UC1');
+    const seq = (run?.hops || []).map((h) => h.source);
+    const th = toolHop(run);
+    check(run?.kind === 'real' && run.mode === 'live' && run.outcome === 'REAL_PERMIT' && run.provider === 'local' && run.providerWhy === 'auto-se-not-configured', `${tag}: UC1 on the software vertical runs real (REAL_PERMIT) and the data says provider local, chosen by auto because no SE tool server URL is set (${run?.outcome} ${run?.provider} ${run?.providerWhy})`);
+    check(seq.length > 0 && seq.every((x) => x === 'real' || x === 'not-run') && th?.provider === 'local' && th?.source === 'real' && th?.answeredBy === 'tool server (local)', `${tag}: the tool hop is source real and provider local, answered by "tool server (local)" (provider is separate from source: ${th?.source} ${th?.provider})`);
+    check(answered(run).length >= 2 && answered(run).every((h) => h.provider === 'local' && h.answeredBy === 'tool server (local)') && (run?.hops || []).every((h) => h.provider !== 'se') && (run?.hops || []).filter((h) => h.source === 'not-run').every((h) => h.provider === undefined && h.answeredBy === undefined), `${tag}: every hop the provider answered says local, none says SE, and a hop that did not run names no provider (${answered(run).length} hops)`);
+    check(Array.isArray(run?.gatewayTrace) && run.gatewayTrace.length === 0 && (await t('gateway-trace').count()) === 0, `${tag}: a tool server run builds no gateway trace and the page draws no What Privilege did panel`);
+    const tex = fullP1.seen.filter((x) => x.method === 'POST' && x.url.endsWith('/as/token')).map((x) => Object.fromEntries(new URLSearchParams(x.body))).filter((f) => f.grant_type === 'urn:ietf:params:oauth:grant-type:token-exchange');
+    const ex2 = tex[tex.length - 1];
+    check(tex.length >= 2 && ex2?.scope === 'issues:read' && ex2.audience === undefined && !ex2.actor_token, `${tag}: exchange 2 asked PingOne for ONE tool scope from the one tools resource, with no audience and no actor (${ex2?.scope})`);
+    check((await t('turn-answer-text').last().innerText()).includes('lab-invented') && (await t('turn-who').last().textContent()) !== 'Authorize', `${tag}: the reply says the tool data is lab-invented and is not the Authorize voice`);
+    check(fullGw.seen.length === 0, `${tag}: the SE gateway was not called for a software use case`);
+    await t('row-' + th.n).click(); await t('step-detail').waitFor();
+    const detail = await textOf('step-detail');
+    check(detail.includes('Answered by') && detail.includes('tool server (local)') && (await t('hop-source').count()) === 0 && (await t('hop-provider').count()) === 0, `${tag}: the step detail of the tool hop shows the key fact "Answered by: tool server (local)" and no chip`);
+    await walk(page, `${tag}: a software run answered by the lab's own tool server, step detail open`);
+    await t('evtab-tokens').click(); await sleep(300);
+    await walk(page, `${tag}: its tokens`);
+    check(/eyJ[\w-]+\.[\w-]+\.[\w-]+/.test(await t('token').last().innerText()) || (await t('token-raw').last().innerText()).startsWith('eyJ'), `${tag}: the delegated token is shown raw (a PingOne-issued JWT; the lab made no token)`);
+    await t('evtab-sequence').click();
+
+    // UC6: the lab's own refusal, labelled lab policy, not PingOne Authorize
+    run = await runUc('UC6');
+    const dh = (run?.hops || []).find((h) => h.kind === 'authorize-decision' && h.source === 'real');
+    check(run?.outcome === 'REAL_DENY' && dh?.decision?.by === 'lab policy (local), not PingOne Authorize' && /^Lab policy/.test(dh?.title || '') && dh.from === 'toolserver' && dh.to === 'toolserver' && (run.hops || []).every((h) => h.to !== 'authorize' && h.to !== 'gateway' && h.from !== 'gateway'), `${tag}: UC6 (2500 issues) is REAL_DENY; the decision hop says "lab policy (local), not PingOne Authorize" and no hop is drawn to Authorize (${dh?.decision?.by})`);
+    check((await t('decision-word').innerText()) === 'DENIED' && (await textOf('decision-policy')).includes('lab policy (local), not PingOne Authorize') && (await t('turn-who').last().textContent()) === 'Tool server' && (await t('turn-answer-text').last().innerText()).includes('not PingOne Authorize'), `${tag}: the page reads it as DENIED by lab policy, in the Tool server's voice`);
+    check(!(await textOf('decision-card')).includes('Agent Authorize') && (await t('gateway-trace').count()) === 0, `${tag}: the decision card never credits Authorize or a gateway with the lab's own rule`);
+    await walk(page, `${tag}: a refusal by the lab's own policy`);
+
+    // UC7: held for a second factor (no challenge, nothing to approve here)
+    run = await runUc('UC7');
+    check(run?.outcome === 'REAL_HOLD' && !run.challenge && run.reply?.approval?.head === 'Held for step-up' && run.provider === 'local', `${tag}: UC7 (600 issues) is held for step-up: REAL_HOLD, no challenge, the reply says Held for step-up`);
+    check((await t('decision-word').innerText()) === 'ESCALATED' && (await t('risk-2').getAttribute('aria-current')) === 'step', `${tag}: the decision card says ESCALATED on the second rung (a second factor)`);
+    await t('mp-deny').waitFor({ timeout: 10000 }); await t('mp-deny').click(); await t('mp-outcome').waitFor();
+
+    // UC8: held for a person, approved on the phone, the retry carries the receipt and completes (the lab's own approval service)
+    const before = watch.runs.length;
+    await pick('UC8');
+    await t('run').click();
+    await t('mp-approve').waitFor({ timeout: 20000 });
+    const held = await watch.next(before);
+    check(held?.outcome === 'REAL_HOLD' && typeof held.challenge === 'string' && held.provider === 'local' && held.reply?.approval?.head === 'Held for approval', `${tag}: UC8 (300 issues) is held for a person: REAL_HOLD with a challenge, provider local`);
+    check(approvalStarts.length >= 1 && approvalStarts[approvalStarts.length - 1].provider === 'local' && approvalStarts[approvalStarts.length - 1].kind === 'real', `${tag}: the page told the server which service minted the challenge (provider local)`);
+    await t('mp-approve').click();
+    const retried = await watch.next(before + 1); // the page retries the held use case by itself once the phone approves
+    check(retried?.outcome === 'REAL_PERMIT' && retried.provider === 'local' && toolHop(retried)?.answeredBy === 'tool server (local)', `${tag}: after the phone approves, the retry with the receipt completes (REAL_PERMIT) through the lab's own approval service (${retried?.outcome}: ${String(retried?.reply?.text || retried?.narration || '').slice(0, 160)})`);
+    await walk(page, `${tag}: after the approval`);
+
+    // UC9 and UC21: the tier group. Outside it UC21 is NOT OFFERED (the tool is not listed, never called) and UC9 calls it anyway and is refused; inside it both are allowed.
+    run = await runUc('UC21');
+    check(run?.outcome === 'REAL_NOT_LISTED' && !(run.hops || []).some((h) => ['tool-dispatched', 'tool-held', 'tool-refused'].includes(h.kind) && h.source === 'real') && (await t('decision-word').innerText()) === 'NOT OFFERED', `${tag}: outside the tier group UC21 is NOT OFFERED and the tool is never called`);
+    run = await runUc('UC9');
+    check(run?.outcome === 'REAL_DENY' && (await t('decision-word').innerText()) === 'DENIED' && (await textOf('decision-policy')).includes('lab policy (local), not PingOne Authorize'), `${tag}: outside the tier group UC9 calls the tool anyway and is refused by lab policy (${run?.outcome})`);
+    setGroups(['Software_EnterpriseTier']);
+    run = await runUc('UC21');
+    const memberOk21 = run?.outcome === 'REAL_PERMIT';
+    run = await runUc('UC9');
+    check(memberOk21 && run?.outcome === 'REAL_PERMIT', `${tag}: with the tier group in the delegated token's groups claim both UC21 and UC9 are allowed`);
+    setGroups([]);
+
+    // UC24: a public call with no token, then a protected call with no token that the tool server must refuse with a real 401
+    run = await runUc('UC24');
+    const probe = (run?.hops || []).find((h) => h.kind === 'tool-refused');
+    check(run?.outcome === 'REAL_PERMIT' && probe?.verdict === 'deny' && /401/.test(JSON.stringify(probe?.response || {})) && !(run.hops || []).some((h) => h.kind === 'token-exchange'), `${tag}: UC24 calls the public tool with no token and sees the protected one refused with a real 401; no exchange ran`);
+
+    // UC30, UC31, UC42: the tool server's own edge rules
+    run = await runUc('UC30');
+    const scanOk = run?.outcome === 'REAL_PERMIT';
+    run = await runUc('UC31');
+    check(scanOk && run?.outcome === 'REAL_DENY' && (await textOf('decision-policy')).includes('lab policy (local), not PingOne Authorize'), `${tag}: the repository allow-list: the scan of an allowed repository runs, the other is refused by lab policy`);
+    run = await runUc('UC42');
+    check(run?.outcome === 'REAL_DENY' && !JSON.stringify(run).toLowerCase().includes('bitcoin'), `${tag}: a blocked term in a search is refused by lab policy and the term is not echoed`);
+
+    // A tampered token: the tool server answers a real 401 and nobody falls back to anything
+    tamperTools = true;
+    run = await runUc('UC1');
+    tamperTools = false;
+    check(run?.outcome === 'REAL_TOKEN_PROBLEM' && JSON.stringify(run.hops).includes('signature_invalid') && (await t('turn-answer-text').last().innerText()).includes('did not accept the delegated token') && run.provider === 'local', `${tag}: a delegated token tampered on the way gets a real 401 from the tool server (signature_invalid), the run ends REAL_TOKEN_PROBLEM and nothing falls back (${run?.outcome})`);
+    await walk(page, `${tag}: a refused token`);
+
+    // The same use case again, no tampering: the lab recovers (the next run is a fresh run, the provider is chosen again, once)
+    run = await runUc('UC1');
+    check(run?.outcome === 'REAL_PERMIT' && run.provider === 'local', `${tag}: the next run with an untampered token is REAL_PERMIT again`);
+    check(external.length === 0, `${tag}: the browser made no request to another origin (${external.length})`);
+    check(errors.length === 0, `${tag}: no unexpected console error (${errors.slice(0, 2).join(' | ')})`);
+    await ctx.close();
+  }
+
+  // ---- Real with only the lab's own provider: no SE gateway name at all, AAG_PROVIDER=local (the lab runs standalone on another machine) -----------------------------------
+  {
+    const tag = 'local-only';
+    await fetch(`${soloBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: soloBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await ctx.newPage();
+    const external = []; const errors = [];
+    page.on('request', (r) => { if (!r.url().startsWith(soloBase) && !/^(data|blob):/.test(r.url())) external.push(r.url()); });
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
+    const t = (id) => page.getByTestId(id);
+    const watch = watchRuns(page);
+    const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
+    const runIt = async () => {
+      const n = watch.runs.length;
+      await t('run').click();
+      for (let i = 0; i < 300 && !watch.runs.slice(n).some(Boolean); i++) {
+        if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        await sleep(100);
+      }
+      const run = await watch.next(n);
+      await sleep(400);
+      return run;
+    };
+    await page.goto(`${soloBase}/`);
+    await t('uc-UC1').waitFor();
+    await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
+    const info = await (await fetch(`${soloBase}/api/info`, { headers: { 'x-workspace': 'w-eeeeeeeeeeeeeeee' } })).json();
+    check(info.provider?.setting === 'local' && info.provider?.gateway === false && info.provider?.toolsSe === false && info.provider?.local?.state === 'ready' && info.real?.level === 'full', `${tag}: with the five app names and no gateway name Real is configured; the lab's own tool server is ready and the SE gateway is not set up`);
+    await pick('UC1');
+    let run = await runIt();
+    check(run?.outcome === 'REAL_PERMIT' && run.provider === 'local' && run.providerWhy === 'forced' && toolHop(run)?.answeredBy === 'tool server (local)' , `${tag}: the software vertical runs real on the lab's own provider alone; AAG_PROVIDER=local says forced (${run?.outcome} ${run?.providerWhy})`);
+    await t('vertical').selectOption('banking'); await pick('UC1');
+    run = await runIt();
+    check(run?.realGate?.real === false && run.mode === 'mock' && /software vertical only|SE gateway is not set up/.test(run.realGate?.reason || '') && (run.hops || []).every((h) => h.provider === undefined), `${tag}: banking, healthcare and retail say the SE gateway is not served here and run on the lab's own steps (${run?.realGate?.reason})`);
+    await walk(page, `${tag}: a banking run with no SE gateway`);
+    check(external.length === 0, `${tag}: the browser made no request to another origin (${external.length})`);
+    check(errors.length === 0, `${tag}: no unexpected console error (${errors.slice(0, 2).join(' | ')})`);
+    await ctx.close();
+  }
+
   // ---- NO-MOCK-WORDS (owner 2026-11-16): a Real-configured lab, opened in Real, walked page by page with runs on it ----------------------------------------
   // One use case the gateway cannot serve (it runs whole on the lab's own steps), one held use case with the phone open, one guided page, then a use case through
   // the gateway; after the runs, the four evidence tabs, a step detail, the RFC column, the Why list, Compare, the Demo guide, Quick Config, Presenter and the talk
@@ -727,7 +948,7 @@ try {
     check(true, `${tag}: the lab is opened in Real (marker live, nothing on the page says so)`);
     await walk(page, `${tag}: the Agent page before any run`);
 
-    // an engine use case: the software pack has no tool at the gateway, so the whole run is the lab's own steps
+    // a use case on the lab's own steps: agent-to-agent is banking only, so in the software pack the whole run is the lab's own steps
     await pick('UC2');
     let run = await runIt();
     check(run?.realGate?.real === false && run?.mode === 'mock', `${tag}: UC2 in the software pack runs whole on the lab's own steps (data: realGate.real false)`);
@@ -748,6 +969,17 @@ try {
     await walk(page, `${tag}: a held use case with the phone open`);
     await t('mp-deny').click(); await t('mp-outcome').waitFor();
     await walk(page, `${tag}: after the phone answer`);
+
+    // a use case the lab's own tool server answers (software, Real): the page, its step detail with "Answered by", and its tokens
+    await pick('UC1');
+    run = await runIt();
+    check(run?.outcome === 'REAL_PERMIT' && run.provider === 'local' && toolHop(run)?.answeredBy === 'tool server (local)', `${tag}: UC1 in the software pack ran on the lab's own tool server (data: provider local)`);
+    await walk(page, `${tag}: a run answered by the lab's own tool server`);
+    await t('row-' + toolHop(run).n).click(); await t('step-detail').waitFor();
+    await walk(page, `${tag}: the step detail of a tool server run (Answered by)`);
+    await t('evtab-tokens').click(); await sleep(300);
+    await walk(page, `${tag}: the tokens of a tool server run`);
+    await t('evtab-sequence').click();
 
     // a guided page
     await pick('UC-LEARN2');
@@ -818,6 +1050,14 @@ try {
       const hostedRun = await watch.next(0);
       check((await t('outcome').innerText()) === 'PERMIT' && hostedRun?.mode === 'mock' && modeCalls.length === 0, `${tag}: a use case runs on the hosted copy (PERMIT, no /api/mode write by the page: ${modeCalls.join(' | ')})`);
       await walk(page, `${tag}: the hosted page after a run`);
+      if (tag === 'hosted-desktop-light') {
+        // Hosted never starts the lab's own services: the data says hosted, and the server process has no child.
+        const hinfo = await (await fetch(`${hostedBase}/api/info`, { headers: { 'x-workspace': 'w-eeeeeeeeeeeeeeee' } })).json();
+        const hkids = spawnSync('pgrep', ['-P', String(hostedServer.pid)], { encoding: 'utf8' });
+        check(hinfo.provider?.hosted === true && hinfo.provider?.local?.state === 'hosted' && hinfo.provider?.local?.tools === 0 && hinfo.provider?.gateway === false && hinfo.provider?.toolsSe === false, `${tag}: /api/info says the build is hosted and the lab's own services are not there (state hosted, no tools)`);
+        if (hkids.error) console.log('INFO  pgrep is not available here: the hosted child-process check is skipped');
+        else check(hkids.stdout.trim() === '', `${tag}: the hosted server has no child process (the local services never start in the hosted build)`);
+      }
       const refused = await modeCall(page, 'real');
       check(refused.status === 409 && (await modeMarker(page, 'mock').count()) === 1, `${tag}: the server still refuses Real on the hosted build (HTTP ${refused.status}), the marker stays mock`);
       check((await overflow()) <= 0, `${tag}: the hosted page fits the ${width}px viewport`);
@@ -832,6 +1072,6 @@ try {
   const deploySh = fs.readFileSync(path.join(root, 'deploy', 'k8s', 'deploy.sh'), 'utf8'); const imageYml = fs.readFileSync(path.join(root, '.github', 'workflows', 'image.yml'), 'utf8');
   check(/banner">Hosted copy\. HIVE/.test(hostedHtml) && deploySh.includes('banner">Hosted copy\\. HIVE') && imageYml.includes('banner">Hosted copy\\. HIVE'), 'hosted: the served HTML opens its banner with the text deploy.sh and image.yml grep for');
   console.log(`INFO  the word scan read ${wordsRead} strings in all`);
-} finally { if (browser) await browser.close(); server.kill(); liveServer.kill(); hostedServer.kill(); fullServer.kill(); await fake.close(); await fullP1.close(); await fullGw.close(); fs.rmSync(settingsDir, { recursive: true, force: true }); fs.rmSync(noEnvDir, { recursive: true, force: true }); }
+} finally { if (browser) await browser.close(); server.kill(); liveServer.kill(); hostedServer.kill(); fullServer.kill(); soloServer.kill(); await fake.close(); await fullP1.close(); await soloP1.close(); await fullGw.close(); fs.rmSync(settingsDir, { recursive: true, force: true }); fs.rmSync(noEnvDir, { recursive: true, force: true }); }
 console.log(`\n${checks - failures} of ${checks} checks passed`);
 process.exit(failures ? 1 : 0);

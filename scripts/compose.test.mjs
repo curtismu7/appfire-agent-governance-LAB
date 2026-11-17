@@ -69,8 +69,10 @@ test('the compose file tells the guards the publish is loopback-only, opts in to
 // settings and come from .env by ${VAR:-} substitution (empty when unset); every other name is a fixed value or a non-secret setting.
 export const COMPOSE_ENV = {
   substituted: ['SHELF_URL', 'AAG_LAB_MODE', 'AAG_BRAIN_URL', 'LAB_ALLOWED_HOSTS', 'AAG_ALLOW_LIVE', 'PINGONE_ENVIRONMENT_ID', 'PINGONE_REGION', 'PINGONE_CLIENT_ID', 'PINGONE_CLIENT_SECRET',
-    // Full Real (owner, 2026-11-10): exactly these eight names, which the owner's scripts write ...
+    // Full Real (owner, 2026-11-10): the five app names the owner's scripts write, and (optional since 2026-11-16) the SE gateway trio ...
     'AAG_USER_CLIENT_ID', 'AAG_USER_CLIENT_SECRET', 'AAG_AGENT_CLIENT_ID', 'AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME', 'AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE',
+    // ... and, optional (2026-11-16), the provider setting and the tools resource: AAG_PROVIDER, the audience, the tier group and an SE-hosted tool server's url.
+    'AAG_PROVIDER', 'AAG_TOOLS_AUDIENCE', 'AAG_TOOLS_TIER_GROUP', 'AAG_TOOLS_SE_URL',
     // ... and, optional, the agent scope (empty = agent:invoke), the agent client's token auth, and the SE HITL service (the mock phone's real approvals).
     'AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET',
     // ... and, optional, Real A2A (2026-11-16): the specialist agent's app and the two audiences and scopes of the chained exchange (all six together turn it on).
@@ -94,8 +96,24 @@ test('owner 2026-11-09/11-10: no env_file; the container gets exactly the listed
   assert.deepEqual(Object.keys(env).sort(), [...COMPOSE_ENV.substituted, ...COMPOSE_ENV.fixed].sort(), 'exactly these names, no other');
   for (const k of COMPOSE_ENV.substituted) assert.match(env[k], new RegExp(`^\\$\\{${k}:-[^}$]*\\}$`), `${k} comes from its own name by substitution`);
   for (const k of ['PINGONE_ENVIRONMENT_ID', 'PINGONE_REGION', 'PINGONE_CLIENT_ID', 'PINGONE_CLIENT_SECRET', 'AAG_ALLOW_LIVE', ...REAL_KEYS.filter((x) => x.startsWith('AAG_'))]) assert.equal(env[k], `\${${k}:-}`, `${k} defaults to empty: a clone with no .env is Mock with Real disabled`);
-  assert.deepEqual(Object.keys(env).filter((k) => /SECRET|PASSWORD|TOKEN|KEY|PINGONE|CLIENT|USERNAME|GATEWAY|AUDIENCE|SCOPE|HITL/.test(k)).sort(), [...REAL_KEYS].sort(), 'no other secret-like name: exactly the Real settings the server reads');
+  const SECRET_LIKE = /SECRET|PASSWORD|TOKEN|KEY|PINGONE|CLIENT|USERNAME|GATEWAY|AUDIENCE|SCOPE|HITL/;
+  // Equivalent to the earlier all-of-REAL_KEYS comparison, and stronger: REAL_KEYS now also holds names that are not secret-like (AAG_PROVIDER, AAG_TOOLS_SE_URL ...), so the
+  // secret-like names in env must equal the secret-like names of REAL_KEYS, AND every REAL_KEY must be in env.
+  assert.deepEqual(Object.keys(env).filter((k) => SECRET_LIKE.test(k)).sort(), REAL_KEYS.filter((k) => SECRET_LIKE.test(k)).sort(), 'no other secret-like name: exactly the Real settings the server reads');
+  for (const k of REAL_KEYS) assert.ok(Object.hasOwn(env, k), `${k} (a setting the server reads) is passed to the container`);
   assert.ok(!Object.keys(env).some((k) => /PASSWORD/.test(k)), 'no password is ever passed: the person types it in the Sign in dialog');
+});
+
+// The lab's own tool server runs INSIDE the one container (server/src/local, forked by server/src/index.js) on a loopback port nothing publishes (owner 2026-11-16).
+test('the local tool server adds no published port, no volume and no writable path; its code ships in the image', () => {
+  const compose = here('docker-compose.yml');
+  const code = compose.split('\n').filter((l) => !l.trimStart().startsWith('#')).join('\n');
+  assert.equal(publishedPorts(compose).length, 1, 'exactly one published port: the app\'s');
+  assert.doesNotMatch(code, /^\s*volumes:/m, 'no volumes'); assert.doesNotMatch(code, /^\s*tmpfs:/m, 'no tmpfs: the child writes no file');
+  assert.match(code, /read_only: true/);
+  assert.match(here('Dockerfile'), /^COPY server\/src server\/src$/m, 'server/src (so server/src/local) is in the image');
+  assert.doesNotMatch(code, /AAG_PROVIDER: (?!\$\{AAG_PROVIDER:-\})/, 'AAG_PROVIDER comes from .env by substitution and defaults to empty (auto)');
+  assert.ok(fs.existsSync(new URL('../server/src/localServices.js', import.meta.url)), 'the parent-side service exists');
 });
 
 test('the compose name-list check fails on an extra secret, an env_file or a hard-coded PingOne value', () => {

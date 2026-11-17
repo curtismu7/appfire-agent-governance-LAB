@@ -8,8 +8,11 @@
 # Real (owner, 2026-11-10, option a): the four PINGONE_* names are passed by substitution and AAG_LIVE_FROM_ENV=1 tells the server to take them from
 # the environment (the image has no .env, .dockerignore). Real is available when they are complete; with none of them the lab runs on its own steps with Real disabled.
 # AAG_LAB_MODE is passed through EMPTY by default (owner, 2026-11-16): the lab then opens in Real when the Real settings are complete and nothing refuses it.
-# Full Real (owner, 2026-11-10): the eight AAG_* names (user app, agent app, demo username, Agent Gateway URL, audience, scope) plus
+# Full Real (owner, 2026-11-10): the five required AAG_* names (user app, agent app, demo username) plus the optional gateway trio, plus
 # PINGONE_ENVIRONMENT_ID and PINGONE_REGION, by the same substitution. When any AAG_* name is set, the old PINGONE_CLIENT_* worker client is ignored.
+# The SE Agent Gateway trio (AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE) is OPTIONAL (owner 2026-11-16): Real starts with the five app names and the
+# environment id alone, and the lab's own tool server (forked inside this container, on a loopback port nothing publishes) answers the software vertical.
+# AAG_PROVIDER (auto, se or local), AAG_TOOLS_AUDIENCE, AAG_TOOLS_TIER_GROUP and AAG_TOOLS_SE_URL (all optional, empty = the defaults) pick and name that provider.
 # AAG_AGENT_SCOPE (optional, empty = agent:invoke) is the scope of the agent token and exchange 1. AAG_AGENT_TOKEN_AUTH=CLIENT_SECRET_POST (optional)
 # switches the agent token call to client_secret_post (PingOne AI_AGENT apps refuse Basic).
 # AAG_ALLOW_LIVE=0 in .env (or the shell) is the explicit OFF switch. IDP is not pinned: each mode uses its own IdP, so the toggle switches both ways.
@@ -45,6 +48,10 @@ services:
       AAG_GATEWAY_AUDIENCE: ${AAG_GATEWAY_AUDIENCE:-}
       AAG_GATEWAY_SCOPE: ${AAG_GATEWAY_SCOPE:-}
       AAG_AGENT_SCOPE: ${AAG_AGENT_SCOPE:-}
+      AAG_PROVIDER: ${AAG_PROVIDER:-}
+      AAG_TOOLS_AUDIENCE: ${AAG_TOOLS_AUDIENCE:-}
+      AAG_TOOLS_TIER_GROUP: ${AAG_TOOLS_TIER_GROUP:-}
+      AAG_TOOLS_SE_URL: ${AAG_TOOLS_SE_URL:-}
       AAG_AGENT_TOKEN_AUTH: ${AAG_AGENT_TOKEN_AUTH:-}
       AAG_HITL_SERVICE_URL: ${AAG_HITL_SERVICE_URL:-}
       AAG_HITL_INTERNAL_SECRET: ${AAG_HITL_INTERNAL_SECRET:-}

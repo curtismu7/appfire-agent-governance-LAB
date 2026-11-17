@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { hostCheck, sameOriginWrites, liveRefusal, mockSignInRefusal, notConfiguredText, allowedExtraHosts, trustedProxyHeaders } from './safety.js';
+import { hostCheck, sameOriginWrites, liveRefusal, mockSignInRefusal, notConfiguredText, allowedExtraHosts, trustedProxyHeaders, NEEDS_PINGONE_NOTE } from './safety.js';
 import { createHealth } from './health.js';
 import { DEFAULT_VERTICAL, isFullVertical, isKnownVertical, isPersona, loadCast, verticalList, PERSONAS } from './cast.js';
 import { defaultMode, isHosted, modeOf, MODES } from './config.js';
@@ -27,6 +27,7 @@ import { createLive, LiveRefused } from './live.js';
 import { createReal, RealRefused, REDIRECT_URI } from './real.js';
 import { createApprovals } from './approval.js';
 import { A2A_VERTICAL, realGate } from './realGate.js';
+import { createProviders } from './provider.js';
 import { shelfInfo } from './shelfLink.js';
 import { localize, promptsFor, routeOf } from './routes.js';
 import { createBrain, REASONS } from './brain.js';
@@ -35,16 +36,17 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
 const CONFIG = process.env.CUSTOMER_CONFIG || path.resolve(HERE, '../../customer.config.json');
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-const KEYS = Object.freeze({ run: ['vertical', 'persona', 'mode', 'brain', 'said', 'instructions'], mode: ['mode'], reset: [], pick: ['vertical', 'text'], signin: ['password'], signout: [] });
+const KEYS = Object.freeze({ run: ['vertical', 'persona', 'mode', 'brain', 'said', 'instructions', 'approvalId'], mode: ['mode'], reset: [], pick: ['vertical', 'text'], signin: ['password'], signout: [] });
 
 // What a list or detail answer shows for a use case: the manifest row, plus the tool resolved for the vertical and whether the run is guided (the
 // lab opens the product's page and does not compute the outcome) or computed by the engine. `labInputs` are the lab-invented numbers and events fed to the engine (empty for most).
 // `route` says where the use case runs (data/handoff.json): Here, Here + go deeper, Hand off (another standalone app) or Guide.
-// `realGate`: whether full Real runs this use case (realGate.js), or the fixed reason it stays Mock in Real mode.
-const view = (catalogUc, cast, a2a, vertical) => { const uc = localize(catalogUc, vertical); return { ...uc, tool: uc.primaryTool ? toolFor(cast, uc.primaryTool) : null, live: liveNote(uc), guided: !isFlow(uc), labInputs: { ...situationOf(uc.id, vertical) }, route: { ...routeOf(uc.id) }, realGate: realGate(uc, cast, a2a) }; };
+// `realGate`: whether full Real runs this use case (realGate.js), or the fixed reason it runs whole on the lab's own steps in Real mode. `gate` is what the
+// gate needs to know: the A2A settings and what the providers can answer (providers.snapshot()).
+const view = (catalogUc, cast, gate, vertical) => { const uc = localize(catalogUc, vertical); return { ...uc, tool: uc.primaryTool ? toolFor(cast, uc.primaryTool) : null, live: liveNote(uc), guided: !isFlow(uc), labInputs: { ...situationOf(uc.id, vertical) }, route: { ...routeOf(uc.id) }, realGate: realGate(uc, cast, gate) }; };
 
 export const REAL_LABELS = {
-  full: 'Real: sign-in (pi.flow), agent token, token exchange and the Agent Gateway',
+  full: 'Real: sign-in (pi.flow), agent token, token exchange and the tool server or the Agent Gateway',
   'idp-only': 'Real, identity provider only: two real calls (discovery and a client-credentials token)',
   none: 'Real is not configured',
 };
@@ -52,6 +54,8 @@ export const REAL_LABELS = {
 const withSource = (run) => ({ ...run, hops: run.hops.map((h) => ({ ...h, source: h.verdict === 'skip' ? 'not-run' : 'mock' })) });
 export function createApp({
   health = createHealth(), configFile = CONFIG, env = process.env, bind = '127.0.0.1', openingMode = defaultMode(), workspaces = createWorkspaces({ defaultMode: openingMode }), webDist = WEB_DIST, live = createLive(), brain = createBrain(), real = createReal(),
+  // The lab's own tool server (localServices.js; null when Real is not configured, the build is hosted or AAG_PROVIDER=se) and the providers made from it. A test may pass its own `providers`.
+  local = null, providers = createProviders({ setting: real.providerSetting(), real, local, hosted: isHosted(env) }),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -101,10 +105,13 @@ export function createApp({
     if (!real.a2aReady()) return { a2a: false, a2aWhy: real.a2aProblem() };
     return v === A2A_VERTICAL ? { a2a: true } : { a2a: false, a2aWhy: `the specialist agent set up for A2A Real is the ${A2A_VERTICAL} one` };
   };
+  // What realGate needs per vertical: the A2A answer and what the providers can serve (sync, no network: the pick itself is made once per run, below).
+  const gateOpts = (v) => ({ ...a2aOpts(v), ...providers.snapshot() });
   const realLevel = () => (real.configured() ? 'full' : real.wanted() ? null : live.configured() ? 'idp-only' : null);
-  // The approval service (owner 2026-11-13): the mock phone in both modes. The SE HITL service URL and its internal
-  // secret come from the app's .env (write-only: the secret never reaches the page or a log).
-  const approvals = createApprovals({ hitlUrl: env.AAG_HITL_SERVICE_URL ?? '', hitlSecret: env.AAG_HITL_INTERNAL_SECRET ?? '' });
+  // The approval service (owner 2026-11-13): the phone in both modes. A real approval is recorded with the HITL service of the provider that minted the challenge:
+  // 'se' from the app's settings (write-only: the secret never reaches the page or a log; F1: it is read from the same settings as the rest, not from the
+  // process environment, which takeLiveSettingsFromEnv empties), 'local' from the lab's own approval service (loopback, its secret made at start).
+  const approvals = createApprovals({ hitl: (provider) => (provider === 'local' ? local?.hitl?.() ?? null : real.hitl()) });
   const realRefusal = (req) => liveRefusal(realCtx(req)) ?? (realLevel() ? null : notConfiguredText(real.missing(), real.problem()));
   const mockCtx = (req) => ({ env, bind, headers: trustedProxyHeaders(req.headers, proxyOrigin()) });
   // Owner 2026-11-13: Real gets the same trusted-proxy exception as Mock sign-in. The shared lab-proxy is the owner's own
@@ -154,7 +161,10 @@ export function createApp({
       real: {
         level: realLevel(), label: REAL_LABELS[realLevel() ?? 'none'], missing: realLevel() === 'full' ? [] : real.missing(),
         redirectUri: REDIRECT_URI, origins: realLevel() === 'full' ? real.origins() : realLevel() === 'idp-only' ? [live.origin()] : [],
+        note: NEEDS_PINGONE_NOTE, // PingFederate is design-only: the plain note a PingFederate-only user gets
       },
+      // Which providers can answer a Real run (data, no URL, port, secret or token): the setting, hosted, whether the SE gateway and an SE tool server are set, the local tool server's state.
+      provider: providers.info(),
     });
   });
 
@@ -188,7 +198,7 @@ export function createApp({
     if (track !== undefined && !(typeof track === 'string' && Object.hasOwn(TRACKS, track))) return res.status(400).json({ error: 'bad_track', detail: 'track is not one of the eight tracks' });
     const cast = loadCast(configFile, isFullVertical(v) ? v : DEFAULT_VERTICAL);
     const tracks = Object.keys(TRACKS).filter((t) => track === undefined || t === track).map((t) => {
-      const items = MANIFEST.usecases.filter((u) => u.track === t).map((u) => view(u, cast, a2aOpts(v), isFullVertical(v) ? v : DEFAULT_VERTICAL));
+      const items = MANIFEST.usecases.filter((u) => u.track === t).map((u) => view(u, cast, gateOpts(v), isFullVertical(v) ? v : DEFAULT_VERTICAL));
       return { track: t, count: items.length, usecases: items };
     });
     res.json({ schema: 'appfire-agent-governance-usecases/1', vertical: v, pack: isFullVertical(v) ? 'full' : 'stub', total: tracks.reduce((n, t) => n + t.count, 0), source: MANIFEST.source, meta: MANIFEST.meta, tracks });
@@ -226,7 +236,7 @@ export function createApp({
     const uc = findUseCase(req.params.id);
     if (!uc) return res.status(404).json({ error: 'unknown_use_case' });
     const v = verticalOf(req.query.vertical, res); if (!v) return;
-    res.json({ vertical: v, usecase: view(uc, loadCast(configFile, isFullVertical(v) ? v : DEFAULT_VERTICAL), a2aOpts(v), isFullVertical(v) ? v : DEFAULT_VERTICAL) });
+    res.json({ vertical: v, usecase: view(uc, loadCast(configFile, isFullVertical(v) ? v : DEFAULT_VERTICAL), gateOpts(v), isFullVertical(v) ? v : DEFAULT_VERTICAL) });
   });
 
   // The Sign in dialog (full Real). GET: whether sign-in is available, who is signed in, and the username to prefill (from AAG_DEMO_USERNAME).
@@ -310,7 +320,9 @@ export function createApp({
     if (b.tool !== undefined && (typeof b.tool !== 'string' || b.tool.length > 120)) return res.status(400).json({ error: 'bad_tool', detail: 'tool must be a short string' });
     if (b.amount !== undefined && b.amount !== null && !Number.isFinite(b.amount)) return res.status(400).json({ error: 'bad_amount', detail: 'amount must be a number' });
     if (b.description !== undefined && (typeof b.description !== 'string' || b.description.length > 300)) return res.status(400).json({ error: 'bad_description', detail: 'description must be a short string' });
-    return res.json({ ok: true, approval: approvals.start({ workspace: id, kind, tool: b.tool, amount: b.amount ?? null, description: b.description ?? '', challengeId: b.challengeId ?? null }) });
+    // Which provider minted the challenge (the run says: run.provider); a fixed enum, default the SE service.
+    if (b.provider !== undefined && b.provider !== 'se' && b.provider !== 'local') return res.status(400).json({ error: 'bad_provider', detail: 'provider must be se or local' });
+    return res.json({ ok: true, approval: approvals.start({ workspace: id, kind, tool: b.tool, amount: b.amount ?? null, description: b.description ?? '', challengeId: b.challengeId ?? null, provider: b.provider ?? 'se' }) });
   });
   // GET /api/approval/status?id= — the phone polls this while pending.
   api.get('/approval/status', (req, res) => {
@@ -371,6 +383,8 @@ export function createApp({
       // first like all free text (zero-width and bidi removed, control characters to spaces, every credential shape masked, long-blob included).
       if (body.brain !== undefined && body.brain !== 'scripted' && body.brain !== 'llama') return res.status(400).json({ error: 'bad_brain', detail: 'brain must be scripted or llama' });
       if (body.said !== undefined && (typeof body.said !== 'string' || body.said.length > 400)) return res.status(400).json({ error: 'bad_said', detail: 'said must be a string of at most 400 characters' });
+      // An approved phone session of this workspace (the page sends it on the retry after an approval; unknown or unapproved ids are ignored below).
+      if (body.approvalId !== undefined && (typeof body.approvalId !== 'string' || body.approvalId.length > 64)) return res.status(400).json({ error: 'bad_approval', detail: 'approvalId must be a string of at most 64 characters' });
       // The agent's instructions (Mock only: a Real run sends no instructions to anything). Free text: cleaned like `said`.
       if (body.instructions !== undefined && (typeof body.instructions !== 'string' || body.instructions.length > MAX_INSTRUCTIONS)) return res.status(400).json({ error: 'bad_instructions', detail: `instructions must be a string of at most ${MAX_INSTRUCTIONS} characters` });
       const requested = body.mode === undefined ? modeFor(req, workspaces.peek(id).mode) : modeOf(body.mode);
@@ -405,12 +419,16 @@ export function createApp({
         const traceparent = parseTraceparent(req.headers.traceparent) ? req.headers.traceparent : randomTraceparent();
         const cast = loadCast(configFile, vertical);
         if (level === 'full') {
-          const gate = realGate(uc, cast, a2aOpts(vertical));
+          await providers.prepare?.();   // a tool server mid-restart is waited for (up to 5 s) so the gate below sees it, not the lab's own steps
+          const gate = realGate(uc, cast, gateOpts(vertical));
           if (!gate.real) {
             // Owner 2026-11-16 (reversing 2026-11-13): a use case that cannot run Real runs on the labelled mock engine instead. Every hop says MOCK and
             // the run carries the reason (the same one the picker shows), so it is never mistaken for a real run.
             return await runMock(gate);
           }
+          // The provider is chosen ONCE per run, here, and real.run never chooses again: a failure of the picked provider is an honest "no decision", never a switch.
+          const pick = await providers.choose({ capability: gate.capability });
+          if (!pick) return await runMock({ real: false, reason: 'no provider is available for this run' });
           const session = await real.ensureSession(id, traceparent);
           if (!session) return res.status(401).json({ error: 'sign_in_required', detail: 'Sign in first: this run is made as you. Use Sign in (pi.flow, the username is filled in for you).' });
           let run;
@@ -418,7 +436,7 @@ export function createApp({
           // challenge id (server-side only) so the retry discharges the consent. The approval must belong to this
           // workspace and be approved — otherwise it is ignored (a plain run).
           const approvalReceipt = typeof body.approvalId === 'string' ? approvals.receiptOf(id, body.approvalId) : null;
-          try { run = await real.run(uc, { vertical, tool: gate.tool, traceparent, session, receipt: approvalReceipt ?? null, a2a: gate.a2a === true }); } catch (e) {
+          try { run = await real.run(uc, { vertical, tool: gate.tool, traceparent, session, receipt: approvalReceipt ?? null, a2a: gate.a2a === true, pick }); } catch (e) {
             if (e instanceof RealRefused) return res.status(e.code === 'busy' ? 429 : e.status).json({ error: e.code === 'busy' ? 'live_busy' : e.code, detail: e.message });
             throw e;
           }

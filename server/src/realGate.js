@@ -1,6 +1,7 @@
 // Which use cases run Real (owner, 2026-11-10; widened 2026-11-16). A use case runs Real only when the tool it calls (resolved for the vertical) is
-// served through the SE Agent Gateway, and when nothing in it needs a part this lab keeps simulated. Everything else runs on the labelled mock engine
-// in Real mode (owner 2026-11-16, reversing the 2026-11-13 refusal), and its hops say MOCK and why.
+// served by something that can answer it (the SE Agent Gateway for banking, healthcare and retail; the lab's own tool server, or an SE-hosted instance of
+// it, for the software vertical: owner 2026-11-16 reversed "software is mock-only"), and when nothing in it needs a part this lab does not run for real.
+// Everything else runs whole on the lab's own steps in Real mode (owner 2026-11-16, reversing the 2026-11-13 refusal), and the data says why.
 //
 // SE_MCP_TOOLS: tool NAMES only, read once from AI-DEMO2's oauth-mcp source (src/tools/BankingToolRegistry.ts and
 // src/tools/handlers/verticalTools.generated.ts at origin/main, 2026-11-10), limited to the tools the use cases here can call. 2026-11-16: the
@@ -11,6 +12,7 @@
 // reach (none today).
 import { isFlow, chainOf } from './flow.js';
 import { toolFor } from './cast.js';
+import { LOCAL_TOOLS } from './provider.js';
 
 export const SE_MCP_TOOLS = new Set([
   'get_my_accounts', 'get_account_balance', 'create_transfer', 'get_sensitive_account_details', 'get_branch_hours', 'request_fee_waiver',
@@ -31,13 +33,23 @@ const A2A = /^a2a-|^verified-trust-issuance$/;
 const PRIVILEGE_LANE = /^(privilege-gateway-leg|credential-swap|enterprise-managed-mode|id-jag-)/;
 const APPROVAL = new Set(['ciba-poll', 'ciba-authorize', 'hitl-receipt']);
 
-// { real: true, tool } or { real: false, reason } (fixed words; the reason names the part that keeps it Mock).
+// Feature flags whose product feature the lab's own tool server does not need: UC9's flag is about AI-DEMO2's group policy, and the tool server enforces the
+// group rule itself. Every other flag (ciba_enabled, ff_rar, ff_dpop, ff_enterprise_managed_mcp_auth, ...) still keeps the use case on the lab's own steps.
+export const LOCAL_FLAG_OK = new Set(['ff_authorize_group_policy']);
+const GATEWAY_MISSING = 'the SE gateway is not set up here (AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE)';
+// A partial or invalid trio is named: the setting problem is fixed words from real.js (never a value).
+const gatewayWhy = (problem) => (typeof problem === 'string' && problem ? `the SE gateway is not set up here: ${problem}` : GATEWAY_MISSING);
+// What the lab says about its own tool server when it is not up, by the state the supervisor is in (the default is the plain "not running here").
+const localDown = (st) => (st === 'starting' ? "the lab's tool server is restarting here" : st === 'failed' ? "the lab's tool server stopped here and could not be restarted yet (it is tried again on a later run)" : "the lab's tool server is not running here");
+const GATEWAY_LOCAL_ONLY = 'AAG_PROVIDER=local is set and the local tool server serves the software vertical only';
+
+// { real: true, tool, capability } or { real: false, reason } (fixed words; the reason names the part that keeps it on the lab's own steps).
 // opts.a2a: the AAG_A2A_* settings are complete and the vertical is A2A_VERTICAL; opts.a2aWhy: the fixed words saying why not, when they are not.
-export function realGate(uc, cast, { a2a = false, a2aWhy = null } = {}) {
+// opts.tools / opts.gateway / opts.setting: what providers.snapshot() says is available (provider.js); the defaults say nothing is.
+export function realGate(uc, cast, { a2a = false, a2aWhy = null, tools = { se: false, local: false }, gateway = false, gatewayProblem = null, setting = 'auto' } = {}) {
   if (!isFlow(uc)) return { real: false, reason: 'it is a guided page: the lab shows it and does not compute it' };
-  // A pack the SE gateway serves no tool of (the software pack, owner 2026-11-16): nothing runs Real, whatever its tool is called. Checked before the
-  // tool list because a pass-through tool such as brave_news_search is on it for the other packs.
-  if (cast?.castMockOnly) return { real: false, reason: 'the SE gateway serves no tool of this vertical (banking, healthcare and retail only)' };
+  // The pack's tools are served by a tool server, not the SE gateway (castToolServer, software): the capability decides which provider can answer.
+  const capability = cast && Object.hasOwn(cast, 'castToolServer') ? 'tools' : 'gateway';
   const chain = chainOf(uc);
   // Owner 2026-11-13: UC7/UC8 (the hitl track, tool create_transfer) run REAL — the SE gateway's HITL pipeline
   // (428 + challenge, the HITL service, the receipt retry) is live and this lab drives it with the mock phone.
@@ -49,20 +61,33 @@ export function realGate(uc, cast, { a2a = false, a2aWhy = null } = {}) {
   if (chain.some((k) => A2A.test(k)) || uc.primaryTool === 'get_portfolio_summary') {
     if (uc.primaryTool !== 'get_portfolio_summary' || !chain.every((k) => A2A_REAL_CHAIN.has(k))) return { real: false, reason: 'its agent-to-agent (A2A) steps (the agent card, the protocol messages, a mismatch probe or a signed assertion) are staged by the lab only' };
     if (!a2a) return { real: false, reason: a2aWhy || 'the agent-to-agent (A2A) chain needs the specialist agent\'s PingOne settings (AAG_A2A_*), which are not set' };
-    return { real: true, tool: toolFor(cast, uc.primaryTool), a2a: true };
+    if (capability === 'tools') return { real: false, reason: 'the agent-to-agent (A2A) chain runs through the SE gateway, which serves banking only' };
+    if (setting === 'local') return { real: false, reason: GATEWAY_LOCAL_ONLY };
+    if (!gateway) return { real: false, reason: gatewayWhy(gatewayProblem) };
+    return { real: true, tool: toolFor(cast, uc.primaryTool), a2a: true, capability: 'gateway' };
   }
   if (chain.some((k) => PRIVILEGE_LANE.test(k)) || (uc.needs || []).includes('privilege')) return { real: false, reason: 'the Privilege, PingFederate and ID-JAG lanes are not part of this Real path' };
   if (chain.includes('personal-agent-lookup')) return { real: false, reason: 'the personal-agent lane is not part of this Real path' };
   if (chain.some((k) => k.startsWith('sim-'))) return { real: false, reason: 'it stages an attack, which only the lab can stage' };
-  if (uc.flag) return { real: false, reason: `it needs the AI-DEMO2 feature flag ${uc.flag}, which is not known to be on in SE` };
+  if (uc.flag && !(capability === 'tools' && LOCAL_FLAG_OK.has(uc.flag))) return { real: false, reason: `it needs the AI-DEMO2 feature flag ${uc.flag}, which is not known to be on in SE` };
   if (!uc.primaryTool) return { real: false, reason: 'it calls no tool, so there is nothing for the SE MCP server to run' };
   const tool = toolFor(cast, uc.primaryTool);
   if (Object.hasOwn(TOOL_NEEDS, tool)) return { real: false, reason: `its tool ${tool} needs ${TOOL_NEEDS[tool]}` };
+  if (capability === 'tools') {
+    if (!LOCAL_TOOLS.has(tool)) return { real: false, reason: `its tool ${tool} is not served by the lab's tool server` };
+    if (setting === 'se' && !tools.se) return { real: false, reason: 'AAG_PROVIDER=se is set and AAG_TOOLS_SE_URL is not' };
+    if (setting === 'local' && !tools.local) return { real: false, reason: `AAG_PROVIDER=local is set and ${localDown(tools.localState)}` };
+    if (setting === 'auto' && !tools.se && !tools.local) return { real: false, reason: `${localDown(tools.localState)} and AAG_TOOLS_SE_URL is not set` };
+    return { real: true, tool, capability: 'tools' };
+  }
   if (!SE_MCP_TOOLS.has(tool)) return { real: false, reason: `its tool ${tool} is not served by the SE mcp-server` };
-  return { real: true, tool };
+  if (setting === 'local') return { real: false, reason: GATEWAY_LOCAL_ONLY };
+  if (!gateway) return { real: false, reason: gatewayWhy(gatewayProblem) };
+  return { real: true, tool, capability: 'gateway' };
 }
 
 // The arguments the lab sends for each tool (lab-invented, labelled). Account ids come from get_my_accounts in the same session (the user's own).
+// Every value is a string or number this table or a situation fixed, never visitor text (`said` is not a tool argument).
 export const NEEDS_ACCOUNTS = new Set(['get_account_balance', 'create_transfer', 'request_fee_waiver']);
 export function toolArgs(tool, { vertical, accounts = [], amount, args }) {
   const a0 = accounts[0] ?? null; const a1 = accounts[1] ?? accounts[0] ?? null;
@@ -76,6 +101,15 @@ export function toolArgs(tool, { vertical, accounts = [], amount, args }) {
     // The third-party tools take what the use case stages (situations.js args: a state, a search query). Parameter names are UNVERIFIED against SE.
     case 'get_weather': return { state: typeof args?.state === 'string' ? args.state : 'TX' };
     case 'brave_news_search': case 'code_search': return { query: typeof args?.query === 'string' ? args.query : 'status' };
+    // The software vertical's tool server (design-real-local.md B.8).
+    case 'get_my_issues': return { limit: 5 };
+    case 'bulk_update_issues': return { project: 'PLAT', issue_count: amt, field: 'status', value: 'Done' };
+    case 'get_project_security_settings': return { project: 'PLAT' };
+    case 'get_release_summary': return {};
+    case 'list_marketplace_apps': return { limit: 5 };
+    case 'get_deployment_status': return { environment: 'production' };
+    case 'request_admin_access': return { role: 'project-admin', project: 'PLAT', reason: 'Lab request: approve the release' };
+    case 'scan_repository': return { repo: typeof args?.repo === 'string' ? args.repo : 'platform' };
     default: return {};
   }
 }

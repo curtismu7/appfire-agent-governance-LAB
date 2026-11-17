@@ -149,3 +149,18 @@ test('the hosted talk track never claims a live call: its sign-in and approval-s
     assert.doesNotMatch(JSON.stringify(story.talkTrack), /This is live|Real mode/);
   }, { env: HOSTED, bind: '0.0.0.0' });
 });
+
+test('hosted forks nothing and reaches nothing: /api/info says the local tool server is hosted, with no provider available', async () => {
+  const { createProviders } = await import('../src/provider.js');
+  const { createLocalServices } = await import('../src/localServices.js');
+  let forks = 0;
+  const local = createLocalServices({ config: { issuer: 'https://auth.pingone.example/x/as', audience: 'a', allowedActors: ['b'], tierGroup: 'c' }, hosted: true, forkImpl: () => { forks += 1; throw new Error('must not fork'); } });
+  assert.deepEqual(await local.start(), { ok: false, reason: 'hosted' });
+  const providers = createProviders({ setting: 'local', real: { configured: () => true, gateway: () => null, toolsSeUrl: () => 'https://t.example/mcp' }, local, hosted: true });
+  await withServer(async (url) => {
+    const info = await (await get(url, '/api/info')).json();
+    assert.deepEqual(info.provider, { setting: 'auto', hosted: true, gateway: false, toolsSe: false, local: { state: 'hosted', tools: 0 } });
+    assert.equal((await post(url, '/api/mode', { source: 'real' }, INGRESS)).status, 409, 'Real stays refused in the hosted build');
+  }, { env: HOSTED, bind: '0.0.0.0', providers, local });
+  assert.equal(forks, 0);
+});

@@ -12,7 +12,7 @@ import QuickConfig from "./components/QuickConfig";
 import SetupSidebar, { VerticalSelect } from "./components/SetupSidebar";
 import Rail from "./rail/Rail";
 import { getJson, postJson, resetWorkspace } from "./api";
-import { BANNER_HOSTED, BANNER_LOCAL, DEFAULT_VERTICAL, EXTRAS, MOCK_ONLY_VERTICALS, focusHop, holdWords, newTraceparent, setUseCaseTitles, titleOfUc } from "./lib";
+import { BANNER_HOSTED, BANNER_LOCAL, DEFAULT_VERTICAL, EXTRAS, OWN_TOOL_VERTICALS, focusHop, holdWords, newTraceparent, setUseCaseTitles, titleOfUc } from "./lib";
 import { matchPrompt, reasoningOf } from "./chat";
 import { isHandoff } from "./handoff";
 import { chooseTab, cleanConfig, loadConfig, saveConfig, setView } from "./quickConfig";
@@ -255,10 +255,12 @@ export default function App() {
         : ["HITL_REQUIRED", "STEP_UP", "REAL_HOLD"].includes(run.outcome) ? "mock" : null;
       if (hold) {
         postJson("/api/approval/start", {
-          kind: hold, tool: run.real?.tool || (MOCK_ONLY_VERTICALS.includes(vertical) ? u.tool : null) || u.primaryTool || null, // the pack's own tool name only where its pack is not the catalog's (software); the other three keep the catalog name
+          kind: hold, tool: run.real?.tool || (OWN_TOOL_VERTICALS.includes(vertical) ? u.tool : null) || u.primaryTool || null, // the pack's own tool name only where its pack is not the catalog's (software); the other three keep the catalog name
           amount: run.real?.tool === "create_transfer" ? 300 : null,
           description: holdWords(run.outcome),
           ...(hold === "real" ? { challengeId: run.challenge } : {}),
+          // Which service minted the challenge (the server's own words, a fixed pair): the phone answers it there.
+          ...(hold === "real" && ["se", "local"].includes(run.provider) ? { provider: run.provider } : {}),
         }).then((r) => { if (r.ok) setPhoneApproval(r.body.approval); }).catch(() => {});
       } else setPhoneApproval(null);
     }

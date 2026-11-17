@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Tag } from "./Tag";
 import { actorOf, readPref, STAGE_STATE, txt, verdictState, verdictWord, withSkipped, writePref } from "./lanes";
-import { HttpMessage, KeyFacts } from "../components/HttpMessage";
+import { HttpMessage, KeyFacts, answeredByOf } from "../components/HttpMessage";
 import { Json } from "../components/JsonPane";
 import { ExchangeList } from "../components/ExchangeList";
 import { pairedCalls } from "../exchanges";
@@ -160,7 +160,7 @@ export default function StepDetailPanel({ hops = [], selected = null, onSelect, 
           {calls ? (
             <>
               <h4>Calls ({calls.request.length})</h4>
-              <ExchangeList request={calls.request} response={calls.response} />
+              <ExchangeList request={calls.request} response={calls.response} answeredBy={answeredByOf(h)} />
             </>
           ) : (
             <>

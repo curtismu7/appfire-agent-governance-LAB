@@ -112,3 +112,39 @@ test('.env.example lists the names with placeholder values only; .env is git-ign
   assert.equal(parsed.PINGONE_CLIENT_SECRET, 'replace-me'); assert.equal(parsed.SHELF_URL, '');
   for (const f of ['.gitignore', '.dockerignore']) assert.match(fs.readFileSync(path.join(REPO_ROOT, f), 'utf8'), /^\.env$/m, f);
 });
+
+// The provider and gateway names (owner 2026-11-16, design-real-local.md C.2): the SE gateway trio is OPTIONAL, four new names choose the provider.
+import { FULL_KEYS, FULL_REQUIRED, GATEWAY_KEYS, OPTIONAL_KEYS, PROVIDER_KEYS, REAL_KEYS, fullWanted, missingFull, takeLiveSettingsFromEnv, liveSettingsFor } from '../src/settings.js';
+
+test('the setting lists: the gateway trio leaves the required names, the four provider names are optional, and every name is read from the app\'s .env', () => {
+  assert.deepEqual(FULL_KEYS, ['AAG_USER_CLIENT_ID', 'AAG_USER_CLIENT_SECRET', 'AAG_AGENT_CLIENT_ID', 'AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME']);
+  assert.deepEqual(GATEWAY_KEYS, ['AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE']);
+  assert.deepEqual(PROVIDER_KEYS, ['AAG_PROVIDER', 'AAG_TOOLS_AUDIENCE', 'AAG_TOOLS_TIER_GROUP', 'AAG_TOOLS_SE_URL']);
+  assert.deepEqual(FULL_REQUIRED, ['PINGONE_ENVIRONMENT_ID', ...FULL_KEYS]);
+  for (const k of [...GATEWAY_KEYS, ...PROVIDER_KEYS]) { assert.ok(OPTIONAL_KEYS.includes(k), `${k} is optional`); assert.ok(REAL_KEYS.includes(k), `${k} is a Real key`); assert.ok(!FULL_REQUIRED.includes(k), `${k} is never required`); }
+  assert.equal(new Set(REAL_KEYS).size, REAL_KEYS.length, 'no name twice');
+});
+
+test('fullWanted and missingFull: the five app names and the environment id alone make Real; any gateway or app name set means Real is the target; the provider names do not', () => {
+  const five = Object.fromEntries(FULL_REQUIRED.map((k) => [k, k === 'PINGONE_ENVIRONMENT_ID' ? '11111111-2222-4333-8444-555555555555' : `value-of-${k.toLowerCase()}`]));
+  assert.deepEqual(missingFull(five), [], 'no gateway name needed'); assert.equal(fullWanted(five), true);
+  assert.deepEqual(missingFull({}), FULL_REQUIRED, 'in the order environment id, user id, user secret, agent id, agent secret, username');
+  assert.equal(fullWanted({}), false); assert.equal(fullWanted({ AAG_GATEWAY_SCOPE: 'x:y' }), true, 'a gateway name alone means the owner wants full Real');
+  assert.equal(fullWanted({ AAG_PROVIDER: 'local', AAG_TOOLS_AUDIENCE: 'a', AAG_TOOLS_TIER_GROUP: 'g', AAG_TOOLS_SE_URL: 'https://x.example/mcp' }), false, 'the provider names alone do not make Real wanted');
+  assert.equal(fullWanted({ AAG_USER_CLIENT_ID: 'replace-me' }), false, 'a placeholder is unset');
+});
+
+test('Docker: takeLiveSettingsFromEnv takes the four provider names too (and deletes them), so a container behaves like a host run', () => {
+  const env = { AAG_LIVE_FROM_ENV: '1', AAG_PROVIDER: 'local', AAG_TOOLS_AUDIENCE: 'appfire-work-tools', AAG_TOOLS_TIER_GROUP: 'Software_EnterpriseTier', AAG_TOOLS_SE_URL: 'https://tools.example/mcp', OTHER: 'x' };
+  const taken = takeLiveSettingsFromEnv(env);
+  assert.deepEqual(Object.keys(taken).sort(), [...PROVIDER_KEYS].sort()); assert.deepEqual(Object.keys(env).sort(), ['AAG_LIVE_FROM_ENV', 'OTHER']);
+  assert.equal(liveSettingsFor({}).AAG_PROVIDER, 'local', 'the process then uses the taken ones');
+});
+
+test('.env.example: the gateway trio is under its own optional heading and the provider names are present, commented out, with placeholders only', () => {
+  const ex = fs.readFileSync(path.join(REPO_ROOT, '.env.example'), 'utf8');
+  for (const k of [...GATEWAY_KEYS, ...PROVIDER_KEYS]) assert.match(ex, new RegExp(`^#? ?${k}=`, 'm'), `${k} is listed`);
+  assert.match(ex, /Optional: the SE Agent Gateway \(banking, healthcare, retail\)/);
+  for (const k of PROVIDER_KEYS) assert.match(ex, new RegExp(`^# ?${k}=`, 'm'), `${k} is commented out`);
+  assert.ok(!/AAG_TOOLS_SE_URL=https?:\/\/(?!\s*$)[^\s]*\.(se|ping)/i.test(ex), 'no real host');
+});

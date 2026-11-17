@@ -13,7 +13,7 @@
 // receipt the lab echoes back after an approval, and anything the lab keeps write-only. The lab's Tokens tab still shows real tokens raw (owner 2026-11-14); the
 // trace follows rule 25 instead, so a copy of the trace is safe to paste.
 import { bearerForDisplay, failureTrace, mockTrace, realTrace } from './gatewayTrace.js';
-import { parseAuditTrail } from './mcpClient.js';
+import { holdInfo, parseAuditTrail } from './mcpClient.js';
 
 // A simulated gateway's host is never a real one: the engine's `.example` hosts become `.invalid`.
 export const mockGatewayUrl = (url) => String(url).replace(/\.example(?=[/:]|$)/, '.invalid');
@@ -71,7 +71,7 @@ const HOLD_TEXT = 'HTTP 428: the gateway held the call for a person to approve i
 export function realExchange(c, { step, title, url, token, vertical, setup, receipt = null }) {
   const authorization = bearerForDisplay('<delegated token>', () => `Bearer ${token}`);
   // The hold's challenge id is what the mock phone later turns into the receipt: the lab keeps it server-side (it travels only as run.challenge).
-  const secrets = [token, c.sessionId, receipt, c.rpc?.challengeId, c.rpc?.error?.challengeId];
+  const secrets = [token, c.sessionId, receipt, holdInfo(c).challengeId, c.rpc?.challengeId, c.rpc?.error?.challengeId];
   const body = c.sentBody ?? null;
   // The receipt the lab echoes back after an approval is a credential that discharges the hold: it is never shown.
   const rpc = receipt && body?.params?.arguments?._hitl_challenge_id ? { ...body, params: { ...body.params, arguments: { ...body.params.arguments, _hitl_challenge_id: '<approval receipt, kept on the server>' } } } : body;
