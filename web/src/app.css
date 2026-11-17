@@ -1,6 +1,6 @@
 /* App layout only. Colours, fonts, controls and the dark theme come from styles/standalone-ui.css (loaded first). Tokens only here:
    no colour literals, no dark-mode media queries, no forced priority, breakpoints 600px and 900px only. */
-.app { margin: 0 auto; padding: 0 0 32px; } /* full page width: the owner waived the 1100px frame for this app */
+.app { max-width: 2200px; margin: 0 auto; padding: 0 0 32px; } /* page frame rule (owner 2026-11-16): wide 2200px container; the earlier 1100px waiver is superseded */
 .seg { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .chip { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 600; }
 .notice { margin: 6px 0 0; padding: 8px 12px; border: 1px solid var(--status-warn); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }

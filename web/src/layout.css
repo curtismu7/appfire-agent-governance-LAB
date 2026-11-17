@@ -1,8 +1,8 @@
-/* The Agno-style agent page (owner pick 2026-11-08, full page width: owner waived the 1100px frame for this app): shell bar, setup sidebar,
+/* The Agno-style agent page (owner pick 2026-11-08; page frame 2200px per the shared rule, owner 2026-11-17): shell bar, setup sidebar,
    a narrow agent column, a wide evidence column, Quick Config, the full-page diagram views and the hand-off card. Layout only, tokens only:
    no colour literals, no theme media query, no forced priority, no italics, breakpoints 600px and 900px only. The agent and evidence columns
    wrap with flexbox instead of a third breakpoint: the agent column's base is clamp(380px, 30vw, 470px) and the evidence column's 360px, so
-   sidebar | agent | evidence sit side by side from a ~1090px viewport up (1100, 1280, 1440, 1600 all fit) and stack below that; one column on phones. */
+   sidebar | agent | evidence sit side by side from a ~1090px viewport up (1100, 1280, 1440, 1600 all fit) and stack below that; one column on phones. The gateway-trace .gw-io pane collapses at 900px per the 2200px frame rule. */
 
 /* ===== shell bar (UI patterns 1): dark in both themes, Ping Red gradient rule, pill nav ===== */
 .shell-bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 -16px; padding: 10px 16px; background: var(--box-dark); color: var(--on-box); border-bottom: 3px solid transparent; border-image: var(--accent-gradient) 1; }
