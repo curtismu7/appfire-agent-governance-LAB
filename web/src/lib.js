@@ -94,8 +94,8 @@ export const BANNER_LOCAL = "HIVE, Appfire's platform, is represented here and n
 export const BANNER_HOSTED = "Hosted copy. HIVE, Appfire's platform, is represented and never called. Thresholds, personas and amounts are the lab's own (lab-invented). No tenant or live system is reached.";
 // The vertical the page opens on (owner, 2026-11-16: Appfire's own industry). The server's default (cast.js DEFAULT_VERTICAL) is the same id; the picker starts here.
 export const DEFAULT_VERTICAL = "software";
-// The full packs whose own tool names the lab uses for a held write (server: the pack's `castMockOnly`); the other packs keep the catalog's tool name.
-export const MOCK_ONLY_VERTICALS = ["software"];
+// The full packs whose own tool names the lab uses for a held write (server: the pack's `castToolServer`, the tool server the lab ships); the other packs keep the catalog's tool name.
+export const OWN_TOOL_VERTICALS = ["software"];
 
 // Vertical names for prose. "sporting-goods" is "Sporting goods"; the full packs are the ones the server lists with pack "full", so a sentence that names them
 // never goes stale when a pack is added.

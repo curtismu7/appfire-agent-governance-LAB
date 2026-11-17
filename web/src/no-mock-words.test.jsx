@@ -103,6 +103,18 @@ describe("no mock, simulated, offline, engine or scripted word on any page", () 
     await u.click(screen.getByTestId("evtab-tokens")); walk("Real tokens");
   });
 
+  test("a run the lab's own tool server answered: the page, every step detail (Answered by, Decided by) and the tokens", async () => {
+    const served = new Set(["gateway-check", "authorize-decision", "tool-dispatched", "tool-held", "tool-refused", "api-call"]);
+    const b = denyBody("UC1");
+    b.run.provider = "local"; b.run.gatewayTrace = []; b.run.reply = { who: "Tool server", text: "The tool server refused this request (HTTP 403, access_denied) under the lab's own policy (local), not PingOne Authorize. Nothing was run." };
+    b.run.hops = b.run.hops.map((h) => (served.has(h.kind) ? { ...h, provider: "local", answeredBy: "tool server (local)", ...(h.kind === "authorize-decision" ? { from: "gateway", to: "gateway", title: "Lab policy (local)", decision: { outcome: "DENY", by: "lab policy (local), not PingOne Authorize" } } : {}) } : h));
+    const u = await boot({ mode: "live", live: "allowed", full: true, signedIn: true, info: { ...INFO, ...FULL_INFO }, realAnswer: () => b });
+    await runUc(u, "UC1");
+    walk("a tool server run");
+    for (const row of screen.getAllByTestId(/^row-\d+$/)) { await u.click(row); walk(`step detail: ${row.getAttribute("data-testid")}`); }
+    await u.click(screen.getByTestId("evtab-tokens")); walk("tool server tokens");
+  });
+
   test("every step of a refused Real run: its detail with the RFC column open (the specification text per hop kind)", async () => {
     const u = await boot({ mode: "live", live: "allowed", full: true, signedIn: true, info: { ...INFO, ...FULL_INFO }, realAnswer: (id) => denyBody(id) });
     await runUc(u, "UC1");

@@ -36,8 +36,14 @@ export const LIVE_KEYS = ['PINGONE_ENVIRONMENT_ID', 'PINGONE_REGION', 'PINGONE_C
 export const LIVE_REQUIRED = ['PINGONE_ENVIRONMENT_ID', 'PINGONE_CLIENT_ID', 'PINGONE_CLIENT_SECRET'];
 // Full Real (owner, 2026-11-10): the names the owner's scripts write. Any one of them set means full Real is the target: the old worker-client path is then
 // ignored entirely (PINGONE_CLIENT_ID/SECRET are AI-DEMO2's worker credentials and are never used for the user or agent flow).
-export const FULL_KEYS = ['AAG_USER_CLIENT_ID', 'AAG_USER_CLIENT_SECRET', 'AAG_AGENT_CLIENT_ID', 'AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME', 'AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE'];
+// Owner decision (2026-11-16): the SE Agent Gateway is OPTIONAL. Real starts with the five app names and the environment id alone; the lab's own tool server
+// (the local provider) then answers the software vertical. The three gateway names are optional as a group (GATEWAY_KEYS): all three, or none.
+export const FULL_KEYS = ['AAG_USER_CLIENT_ID', 'AAG_USER_CLIENT_SECRET', 'AAG_AGENT_CLIENT_ID', 'AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME'];
+export const GATEWAY_KEYS = ['AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE'];
 export const FULL_REQUIRED = ['PINGONE_ENVIRONMENT_ID', ...FULL_KEYS];
+// Provider selection and the tools resource (all optional): AAG_PROVIDER auto|se|local, the tools resource's audience, the PingOne group that means the
+// premium tier, and the MCP endpoint of an SE-hosted tool server. Read like every other REAL_KEYS name (the app's .env on a host run, compose substitution in Docker).
+export const PROVIDER_KEYS = ['AAG_PROVIDER', 'AAG_TOOLS_AUDIENCE', 'AAG_TOOLS_TIER_GROUP', 'AAG_TOOLS_SE_URL'];
 // Optional (never required, never makes full Real "wanted"): the scope the agent token and exchange 1 ask for (the scope of the resource whose `act`
 // attribute stamps the agent into the token). Empty or absent means the default; the owner's setup script writes it only when it is not the default.
 export const DEFAULT_AGENT_SCOPE = 'agent:invoke';
@@ -46,7 +52,7 @@ export const DEFAULT_AGENT_SCOPE = 'agent:invoke';
 // empty (Basic). Any other combination leaves A2A use cases on the labelled mock engine and says which name is missing.
 export const A2A_REQUIRED = ['AAG_A2A_AGENT_CLIENT_ID', 'AAG_A2A_AGENT_CLIENT_SECRET', 'AAG_A2A_INTERMEDIATE_AUDIENCE', 'AAG_A2A_INTERMEDIATE_SCOPE', 'AAG_A2A_GATEWAY_AUDIENCE', 'AAG_A2A_SCOPE'];
 export const A2A_KEYS = [...A2A_REQUIRED, 'AAG_A2A_AGENT_TOKEN_AUTH'];
-export const OPTIONAL_KEYS = ['AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET', ...A2A_KEYS];
+export const OPTIONAL_KEYS = ['AAG_AGENT_SCOPE', 'AAG_AGENT_TOKEN_AUTH', 'AAG_HITL_SERVICE_URL', 'AAG_HITL_INTERNAL_SECRET', ...GATEWAY_KEYS, ...PROVIDER_KEYS, ...A2A_KEYS];
 export const REAL_KEYS = [...LIVE_KEYS, ...FULL_KEYS, ...OPTIONAL_KEYS];
 export function readLiveSettings(file) {
   try {
@@ -63,7 +69,7 @@ const unset = (s, k) => !(k in s) || isPlaceholder(s[k]);
 export const missingIn = (s) => LIVE_REQUIRED.filter((k) => unset(s, k));
 export const missingLiveSettings = (file) => missingIn(readLiveSettings(file));
 // Full Real: wanted when any AAG_* name holds a real value; missing = the required names that do not.
-export const fullWanted = (s) => FULL_KEYS.some((k) => !unset(s, k));
+export const fullWanted = (s) => [...FULL_KEYS, ...GATEWAY_KEYS].some((k) => !unset(s, k));
 export const missingFull = (s) => FULL_REQUIRED.filter((k) => unset(s, k));
 
 // Docker (owner, 2026-11-10): the image has no .env, so docker-compose.yml fills these names from the app's .env by ${VAR:-} substitution and pins

@@ -38,7 +38,7 @@ Run “Agent observability and traceability”, then open Run history: every run
 
 ## What runs when you sign in
 
-When you sign in with PingOne, “Delegated access” and the other use cases the gateway serves run the actual chain — the agent's own token, two RFC 8693 exchanges at PingOne, the SE Agent Gateway, a PingOne Authorize decision and the tool itself. The two approval use cases then add a human-approval loop: the gateway mints a challenge, you approve on the phone, the approval is recorded with the HITL service and the call is retried with the verified receipt. The SE gateway hosts only some verticals' tools, so the other use cases keep running on the lab's own steps. Sign in appears only on a local lab with the PingOne settings filled in; the hosted copy reaches no tenant.
+When you sign in with PingOne, “Delegated access” and the other use cases the lab can serve run the actual chain — the agent's own token, two RFC 8693 exchanges at PingOne, then the SE Agent Gateway or the lab's own tool server, and the tool itself. The two approval use cases then add a human-approval loop: the gateway mints a challenge, you approve on the phone, the approval is recorded with the HITL service and the call is retried with the verified receipt. The SE gateway hosts only some verticals' tools, so the other use cases keep running on the lab's own steps. Sign in appears only on a local lab with the PingOne settings filled in; the hosted copy reaches no tenant.
 
 ## What the lab does not call
 

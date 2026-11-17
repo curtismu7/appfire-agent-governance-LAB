@@ -167,4 +167,9 @@ export function liveRefusal({ env, bind, headers }) {
 }
 
 // The how-to the Real button shows (and the 409 says) when the guards hold but the PingOne settings are missing. Names only, never a value.
-export const notConfiguredText = (missing = [], problem = null) => `Real is not configured: ${missing.length ? `fill ${missing.join(', ')}` : problem ? `${problem}; fix it` : 'fill the full-Real settings'} in this app's .env beside docker-compose.yml (copy .env.example; PINGONE_REGION is com, eu, ca or asia), then start the lab again (Docker: docker compose up -d).`;
+// PingFederate is design-only (owner 2026-11-16): the lab's issuer is always the user's own PingOne. The refusal says plainly that Real needs a PingOne environment (which is
+// all a PingFederate-only user needs to read); the PingFederate sentence is NOT added to every refusal, because the lab cannot tell who has PingFederate: it lives in
+// /api/info `real.note` and the docs.
+export const NEEDS_PINGONE_SHORT = 'Real sign-in and token exchange need a PingOne environment (PINGONE_ENVIRONMENT_ID and the AAG_* apps).';
+export const NEEDS_PINGONE_NOTE = `${NEEDS_PINGONE_SHORT} PingFederate is not wired into this lab yet.`;
+export const notConfiguredText = (missing = [], problem = null) => `Real is not configured: ${missing.length ? `fill ${missing.join(', ')}` : problem ? `${problem}; fix it` : 'fill the full-Real settings'} in this app's .env beside docker-compose.yml (copy .env.example; PINGONE_REGION is com, eu, ca or asia), then start the lab again (Docker: docker compose up -d). ${NEEDS_PINGONE_SHORT}`;

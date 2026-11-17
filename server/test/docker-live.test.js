@@ -59,8 +59,8 @@ test('Docker with no .env (compose passes empty values): Mock only, Real disable
   const blank = Object.fromEntries(REAL_KEYS.map((k) => [k, '']));
   const r = await boot(7821, { AAG_LIVE_FROM_ENV: '1', AAG_PUBLISH: 'loopback', AAG_ALLOW_LIVE: '', ...blank });
   assert.equal(r.info.realAvailable, false); assert.equal(r.info.guards.mockSignIn, 'allowed');
-  assert.match(r.mode.liveReason, /^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME, AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE in this app's \.env/);
-  assert.deepEqual(r.info.real.missing, ['PINGONE_ENVIRONMENT_ID', 'AAG_USER_CLIENT_ID', 'AAG_USER_CLIENT_SECRET', 'AAG_AGENT_CLIENT_ID', 'AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME', 'AAG_AGENT_GATEWAY_URL', 'AAG_GATEWAY_AUDIENCE', 'AAG_GATEWAY_SCOPE']);
+  assert.match(r.mode.liveReason, /^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME in this app's \.env/);
+  assert.deepEqual(r.info.real.missing, ['PINGONE_ENVIRONMENT_ID', 'AAG_USER_CLIENT_ID', 'AAG_USER_CLIENT_SECRET', 'AAG_AGENT_CLIENT_ID', 'AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME']);
   assert.match(r.log, /no outbound network/);
   assert.equal(r.info.mode, 'mock'); assert.equal(r.mode.mode, 'mock');
 });
@@ -68,7 +68,7 @@ test('Docker with no .env (compose passes empty values): Mock only, Real disable
 test('takeLiveSettingsFromEnv takes and removes every Real setting, the AAG_* secrets included', () => {
   const env = { AAG_LIVE_FROM_ENV: '1', ...fullSettingsFor('https://gw.lab-test.net/mcp'), OTHER: 'x' };
   const taken = takeLiveSettingsFromEnv(env);
-  assert.deepEqual(Object.keys(taken).sort(), Object.keys(fullSettingsFor('')).sort());
+  assert.deepEqual(Object.keys(taken).sort(), Object.keys(fullSettingsFor('https://gw.lab-test.net/mcp')).sort());
   assert.deepEqual(Object.keys(env).sort(), ['AAG_LIVE_FROM_ENV', 'OTHER'], 'no Real setting is left in the environment');
 });
 
@@ -104,9 +104,9 @@ test('opening mode: empty AAG_LAB_MODE + full Real settings opens in Real (info,
 });
 
 test('Docker with only some full-Real settings: Real disabled, the missing ones named, the worker client ignored', async () => {
-  const partial = { ...fullSettingsFor('https://gw.lab-test.net/mcp') }; delete partial.AAG_AGENT_CLIENT_SECRET; delete partial.AAG_GATEWAY_SCOPE;
+  const partial = { ...fullSettingsFor('https://gw.lab-test.net/mcp') }; delete partial.AAG_AGENT_CLIENT_SECRET; delete partial.AAG_DEMO_USERNAME;
   const r = await boot(7826, { AAG_LIVE_FROM_ENV: '1', AAG_PUBLISH: 'loopback', ...settingsFor(), ...partial });
-  assert.equal(r.info.realAvailable, false); assert.deepEqual(r.info.real.missing, ['AAG_AGENT_CLIENT_SECRET', 'AAG_GATEWAY_SCOPE']);
+  assert.equal(r.info.realAvailable, false); assert.deepEqual(r.info.real.missing, ['AAG_AGENT_CLIENT_SECRET', 'AAG_DEMO_USERNAME']);
   assert.match(r.log, /no outbound network/);
 });
 

@@ -87,8 +87,8 @@ test('env writer: the printed lines say "set" and never carry a value', () => {
 const IDS = { env: '11111111-1111-1111-1111-111111111111', admin: '22222222-2222-2222-2222-222222222222' };
 // agentResource: 'one' (default: a custom resource with the scope agent:invoke, found by the scope's NAME), 'none', 'two' (two resources have it) or 'on-gateway'
 // (the gateway resource itself has it). agentAct: 'ok' (the expected expression), 'absent' or 'other'. gwAct: true = the pass-through attribute exists.
-// grants: { <app id>: [...] } already on the apps. Every call is recorded; r-gw is the gateway resource, which must never be written.
-function fakePingOne({ apps = [], gwAct = true, agentAct = 'ok', agentResource = 'one', agentId = 'r-agent', gwId = 'r-gw', agentScopeName = 'agent:invoke', grants = {}, policyActions = [{ type: 'LOGIN' }], users = [{ id: 'u1', username: 'demouser', population: { id: 'pop1' } }], gwScopes = ['gateway:mcp:invoke'], otherGw = null } = {}) {
+// noGateway: the environment has no resource with the SE gateway's audience. grants: { <app id>: [...] } already on the apps. Every call is recorded; r-gw is the gateway resource, which must never be written.
+function fakePingOne({ apps = [], gwAct = true, agentAct = 'ok', agentResource = 'one', agentId = 'r-agent', gwId = 'r-gw', agentScopeName = 'agent:invoke', grants = {}, policyActions = [{ type: 'LOGIN' }], users = [{ id: 'u1', username: 'demouser', population: { id: 'pop1' } }], gwScopes = ['gateway:mcp:invoke'], otherGw = null, noGateway = false } = {}) {
   const calls = [];
   const agentRes = { id: agentId, name: 'Agent Invoke Resource', type: 'CUSTOM', audience: 'https://agent.example/invoke' };
   const extra = agentResource === 'two' ? [{ id: 'r-agent2', name: 'Second Agent Resource', type: 'CUSTOM', audience: 'https://agent2.example/invoke' }] : agentResource === 'forged' ? [{ id: 'x/../r-gw', name: 'Forged id', type: 'CUSTOM', audience: 'forged.example' }] : [];
@@ -119,7 +119,7 @@ function fakePingOne({ apps = [], gwAct = true, agentAct = 'ok', agentResource =
     if (method === 'GET' && p === '') return json(200, { id: IDS.env });
     if (method === 'GET' && p.startsWith('/users?filter=')) return json(200, { _embedded: { users: users.filter((u) => p.includes(`"${u.username}"`)) } });
     if (method === 'GET' && p === '/populations/pop1') return json(200, { name: 'Demo Users' });
-    if (method === 'GET' && p === '/resources') return json(200, { _embedded: { resources: [...(otherGw ? [{ id: 'r-other', name: otherGw.name, type: 'CUSTOM', audience: otherGw.audience }] : []), { id: 'r-oidc', name: 'openid', type: 'OPENID_CONNECT' }, { id: gwId, name: 'Agent Gateway', type: gwId === 'r-gw' ? 'CUSTOM' : 'PING_ONE_API', audience: 'https://api.ping.demo:3036/mcp' }, { id: 'r-x', name: 'Other', type: 'CUSTOM', audience: 'other.example' }, agentRes, ...extra] } });
+    if (method === 'GET' && p === '/resources') return json(200, { _embedded: { resources: [...(otherGw ? [{ id: 'r-other', name: otherGw.name, type: 'CUSTOM', audience: otherGw.audience }] : []), { id: 'r-oidc', name: 'openid', type: 'OPENID_CONNECT' }, ...(noGateway ? [] : [{ id: gwId, name: 'Agent Gateway', type: gwId === 'r-gw' ? 'CUSTOM' : 'PING_ONE_API', audience: 'https://api.ping.demo:3036/mcp' }]), { id: 'r-x', name: 'Other', type: 'CUSTOM', audience: 'other.example' }, agentRes, ...extra] } });
     let m;
     if ((m = /^\/resources\/([^/]+)\/scopes$/.exec(p)) && method === 'GET') return json(200, { _embedded: { scopes: scopesOf[m[1]] || [] } });
     if ((m = /^\/resources\/([^/]+)\/attributes$/.exec(p))) {
@@ -377,6 +377,28 @@ test('region codes: na and com are the same region, ap and asia too; different r
   assert.equal(setup.resolveTarget(lab('eu'), cred('eu')).region, 'eu');
   assert.throws(() => setup.resolveTarget(lab('na'), cred('eu')), /different regions/);
   assert.throws(() => setup.resolveTarget(lab('na'), cred('nope')), /must be na/);
+});
+
+test('setup run: with no SE gateway resource the gateway section is skipped (dry run and apply), no gateway grant or name is written, and the lab .env keeps no gateway name', async () => {
+  const dry = labFiles(); const p1d = fakePingOne({ noGateway: true }); const cd = capture();
+  const r0 = await setup.run(setup.parseArgs(['--env-file', dry.envFile]), { fetchImpl: p1d.fetchImpl, log: cd.log, credFile: dry.credFile });
+  assert.equal(r0.applied, false);
+  const dryText = cd.out.join('\n');
+  assert.match(dryText, /SE gateway: not configured \(skipped\)/); assert.match(dryText, /gateway resource act attribute: skipped/);
+  assert.match(dryText, /would set AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME \(dry run/);
+  assert.ok(!/AAG_(AGENT_GATEWAY_URL|GATEWAY_AUDIENCE|GATEWAY_SCOPE)/.test(dryText));
+  const { envFile, credFile } = labFiles(); const p1 = fakePingOne({ noGateway: true }); const { out, log } = capture();
+  const r = await setup.run(setup.parseArgs(['--apply', '--env-file', envFile]), { fetchImpl: p1.fetchImpl, log, credFile });
+  assert.equal(r.applied, true); assert.deepEqual(r.decisions, []);
+  const [user, agent] = p1.state.apps;
+  assert.deepEqual((p1.state.grants[agent.id] || []).map((g) => g.resource.id), ['r-agent'], 'the agent app is granted only the agent scope');
+  assert.deepEqual((p1.state.grants[user.id] || []).map((g) => g.resource.id), ['r-oidc'], 'the sign-in app gets only the OpenID Connect scopes');
+  const env = parseEnv(fs.readFileSync(envFile, 'utf8'));
+  assert.equal(env.AAG_AGENT_CLIENT_ID, agent.id); assert.equal(env.AAG_AGENT_GATEWAY_URL, undefined); assert.equal(env.AAG_GATEWAY_AUDIENCE, undefined); assert.equal(env.AAG_GATEWAY_SCOPE, undefined);
+  assertNoSecretOrId(out.join('\n'));
+  // two resources with the gateway's audience still stop the run (the script never guesses)
+  const two = fakePingOne({ otherGw: { name: 'Second gateway', audience: 'https://api.ping.demo:3036/mcp', scopes: [] } });
+  await assert.rejects(setup.run(setup.parseArgs(['--env-file', envFile]), { fetchImpl: two.fetchImpl, log: () => {}, credFile }), /at most one resource with audience/);
 });
 
 test('setup run: the gateway resource is found by audience; no user, a placeholder environment or a region mismatch stop the run', async () => {

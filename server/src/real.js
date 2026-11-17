@@ -8,7 +8,10 @@
 //      the audience and passes the subject token's act through. This is the proven two-exchange pattern; one exchange (user + agent + gateway
 //      scope together) mints a token with no act, which PingOne Authorize (HasValidActorChain) would deny. If the final token has no act the run
 //      stops here and the gateway is never called.
-//   5. The Agent Gateway (AAG_AGENT_GATEWAY_URL), as an MCP client: initialize, tools/list, tools/call (mcpClient.js; never a trusted-caller header).
+//   5. The provider, as an MCP client: initialize, tools/list, tools/call (mcpClient.js; never a trusted-caller header). The provider is the Pick provider.js made
+//      once for this run: the SE Agent Gateway (banking, healthcare, retail), or a tool server for the software vertical (the lab's own, in this image, or an
+//      SE-hosted instance of it). For a tool server exchange 2 asks for the ONE scope the tool needs (PingOne refuses scopes from two resources in a request),
+//      UC24 runs no token and no exchange, and its refusals are the lab's own policy, labelled so. The issuer is always the user's own PingOne.
 //
 // Secrets: the two client secrets are held in a closure and sent only in the Authorization header of a token call. The password is a function
 // argument used once in one request body and kept nowhere: not stored, not logged, not returned, not in a hop (a hop shows a fixed placeholder).
@@ -16,16 +19,18 @@
 // authorization code, state, nonce, PKCE verifier or flow cookies). Only the password and the client secrets stay write-only; the refresh token is dropped.
 // Every PingOne call goes through assertAuthUrl(): https (http only to a loopback fake), the configured environment, one of four fixed paths.
 import { createHash, randomBytes } from 'node:crypto';
+import net from 'node:net';
 import { isLoopbackHost } from './safety.js';
 import { formatTraceparent, newTrace } from './trace.js';
 import { enrichHop } from './vendor/hopDetail.mjs';
 import HOP_CATALOG from './vendor/hop-catalog.json' with { type: 'json' };
-import { createGatewaySession, gatewayUrlProblem, parseAuditTrail } from './mcpClient.js';
+import { createGatewaySession, errorCodeOf, holdInfo, parseAuditTrail, urlProblem } from './mcpClient.js';
 import { realExchange } from './gatewayExchanges.js';
 import { NEEDS_ACCOUNTS, toolArgs } from './realGate.js';
 import { situationOf } from './situations.js';
 import { cleanFree } from './credentials.js';
-import { A2A_REQUIRED, DEFAULT_AGENT_SCOPE, FULL_REQUIRED, isPlaceholder } from './settings.js';
+import { A2A_REQUIRED, DEFAULT_AGENT_SCOPE, FULL_REQUIRED, GATEWAY_KEYS, isPlaceholder } from './settings.js';
+import { CALL_UNLISTED, GROUP_GATED_TOOLS, PUBLIC_TOOLS, providerSettingOf, toolScopeOf } from './provider.js';
 
 export const TIMEOUT_MS = 8_000;
 export const MAX_BODY_BYTES = 64 * 1024;
@@ -47,6 +52,7 @@ const AT = 'urn:ietf:params:oauth:token-type:access_token';
 const PW_TYPE = 'application/vnd.pingidentity.usernamePassword.check+json';
 const EX1_TITLE = 'Exchange 1: act = agent';
 const EX2_TITLE = 'Exchange 2: for the gateway';
+const EX2_TOOLS_TITLE = 'Exchange 2: for the tools';
 const A2A_EX1_TITLE = 'A2A exchange 1: act = agent 1';
 const A2A_ACTOR2_TITLE = 'A2A actor token: the specialist';
 const A2A_EX2_TITLE = 'A2A exchange 2: nested act';
@@ -62,6 +68,52 @@ const actOf = (claims) => {
 const actShown = (act) => (act ? { sub: act.sub.slice(0, 200) } : 'ABSENT'); // actOf guarantees a string sub
 // The reply when the delegated token has no act claim. The same words either way; after exchange 2 it also points at the pass-through.
 const noActText = (agentScope, afterExchange2) => `Stopped before the gateway, nothing was sent to it: the delegated token carries no act claim: check the ${agentScope} resource's act attribute.${afterExchange2 ? ' Exchange 1 had the claim, so also check that the gateway scope\'s resource passes the subject token\'s act through (a PingOne change for the owner; this lab never edits that resource).' : ''}`;
+
+// The same words when the lab's own tool server (or an SE-hosted instance of it) is next, which is no gateway: the tools run never names a gateway.
+const noActToolsText = (agentScope, afterExchange2) => `Stopped before the tool server, nothing was sent to it: the delegated token carries no act claim: check the ${agentScope} resource's act attribute.${afterExchange2 ? ' Exchange 1 had the claim, so also check that the tools resource passes the subject token\'s act through (a PingOne change for the owner; this lab never edits that resource).' : ''}`;
+
+// The parts of a run that depend on who answers: names, lanes, titles and the data that says which provider did (design-real-local.md C.7). `rows` are the five
+// provider-side hops in order (check, decide, tool, api, reply) as a not-run hop names them. A tool server's decision is drawn as a note on its own lane (from === to):
+// no Authorize lane appears in a tools run, because the lab's own rule is not PingOne Authorize.
+const LEG_KEYS = ['check', 'decide', 'tool', 'api', 'reply'];
+const PROBE_TOOL = 'get_my_issues'; // the protected tool UC24 probes with no token
+function legOf(P) {
+  const tools = P.capability === 'tools';
+  const where = P.provider === 'local' ? 'local' : 'SE';
+  // `lab`: the lab's own tool server answers, so its refusals are the lab's own rule. An SE-hosted tool server is unknowable from here: the lab calls its answer the tool
+  // server's, and never says whose policy produced it.
+  const lab = P.provider === 'local';
+  const ans = { provider: P.provider, answeredBy: P.answeredBy };
+  const rows = tools ? {
+    check: { kind: 'gateway-check', label: P.label, from: 'agent', to: 'toolserver', title: `Tool server (${where}): token and tool list` },
+    decide: { kind: 'authorize-decision', label: lab ? 'Lab policy decision' : 'Tool server decision', from: 'toolserver', to: 'toolserver', title: lab ? `Lab policy (${where})` : `Tool server decision (${where})` },
+    tool: { kind: 'tool-dispatched', label: 'Tool server', from: 'toolserver', to: 'toolserver', title: `Tool server (${where})` },
+    api: { kind: 'api-call', label: 'API', from: 'toolserver', to: 'api', title: 'Tool data' },
+    reply: { kind: 'agent-reply', label: 'Agent reply', from: 'agent', to: 'page' },
+  } : {
+    check: { kind: 'gateway-check', label: 'Agent Gateway', from: 'agent', to: 'gateway' },
+    decide: { kind: 'authorize-decision', label: 'Authorize decision', from: 'gateway', to: 'authorize' },
+    tool: { kind: 'tool-dispatched', label: 'MCP tool', from: 'gateway', to: 'mcp' },
+    api: { kind: 'api-call', label: 'API', from: 'mcp', to: 'api' },
+    reply: { kind: 'agent-reply', label: 'Agent reply', from: 'agent', to: 'page' },
+  };
+  return { tools, where, lab, ans, rows, ex2Label: tools ? 'Token exchange 2: for the tools' : 'Token exchange 2: for the gateway', ex2Title: tools ? EX2_TOOLS_TITLE : EX2_TITLE };
+}
+// The vendored catalog's specification text speaks of a gateway and a policy engine. For a run answered by a tool server those words would credit a product that is not
+// in the path, so the "why / mandate / failure" lines of the hops that name one are replaced here (the catalog file itself is never edited). `lab`: the lab's own server.
+function toolsSpecFor(kind, lab) {
+  switch (kind) {
+    case 'gateway-check': return { why: 'The tool server checks the delegated token itself before any tool runs: its signature against the issuer\'s published keys, issuer, audience, expiry, the act chain and the scope. Nothing else sits in front of it in this path.' };
+    case 'authorize-decision': return lab
+      ? { mandate: 'No RFC defines the decision itself. Here the tool server applies the lab\'s own fixed rules (scope, tier group and size bands); they are written into the lab itself.', why: 'This shows where a decision sits in a call: the lab\'s rules are fixed teaching rules, and they are not PingOne Authorize.', failure: 'Reading the lab\'s own bands as a product policy. A policy a security team edits without a redeploy is what PingOne Authorize would give; this lab does not run it.' }
+      : { mandate: 'No RFC defines the decision itself.', why: 'The tool server answered with a decision. The lab can read its status and audit header, not the policy behind them, so it names no policy.', failure: 'Assuming which rule fired. The lab sees the answer, not the rule.' };
+    case 'tool-dispatched': return { why: 'The tool server checks the token on every call and then runs the tool itself. Nothing else sits in front of it in this path.', failure: 'Trusting a user id sent in a header. Anything that can reach the tool server directly can then pretend to be any user.' };
+    case 'tool-held': return { why: 'The tool server holds the write, so nothing changes until the approval is given.' };
+    default: return null;
+  }
+}
+// What the exchanged token's groups claim holds, for the exchange-2 hop note (UNVERIFIED that PingOne puts it there: the note makes it visible).
+const groupsNote = (claims) => (Array.isArray(claims?.groups) || typeof claims?.groups === 'string' ? `groups claim: ${cleanFree(JSON.stringify(claims.groups), 300)}` : 'groups claim: ABSENT (check the tools resource\'s groups attribute)');
 
 export class RealRefused extends Error {
   constructor(code, message, status = 502) { super(message); this.code = code; this.status = status; }
@@ -85,21 +137,33 @@ function a2aFrom(s) {
   return { a2a: { agent2: { id: s.AAG_A2A_AGENT_CLIENT_ID, secret: s.AAG_A2A_AGENT_CLIENT_SECRET, authMethod: s.AAG_A2A_AGENT_TOKEN_AUTH === 'CLIENT_SECRET_POST' ? 'post' : 'basic' }, intermediateAud: s.AAG_A2A_INTERMEDIATE_AUDIENCE, intermediateScope: s.AAG_A2A_INTERMEDIATE_SCOPE, gatewayAud: s.AAG_A2A_GATEWAY_AUDIENCE, scope: s.AAG_A2A_SCOPE } };
 }
 
+// The tools resource (owner 2026-11-16): the audience the lab's own tool server requires and the PingOne group that means the premium tier. Defaults are the
+// names the owner's session created in PingOne.
+export const DEFAULT_TOOLS_AUDIENCE = 'appfire-work-tools';
+export const DEFAULT_TIER_GROUP = 'Software_EnterpriseTier';
+const optional = (settings, k, dflt) => (settings[k] === undefined || settings[k] === '' || isPlaceholder(settings[k]) ? dflt : settings[k]);
+
 // settings: the full-Real names from the app's .env. Returns the config, or { problem } in fixed words naming the setting (never a value).
+// The SE Agent Gateway trio (AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE) is OPTIONAL as a group: all three make `gateway`, none leaves
+// it null, a partial or invalid trio leaves it null with a `gatewayProblem` (Real stays configured: the software vertical needs no gateway).
 export function realConfig(settings = {}, env = {}) {
   const environmentId = String(settings.PINGONE_ENVIRONMENT_ID || '');
   if (!UUID.test(environmentId)) return { problem: 'the app .env has no valid PINGONE_ENVIRONMENT_ID' };
-  for (const [k, max] of [['AAG_USER_CLIENT_ID', 200], ['AAG_USER_CLIENT_SECRET', 512], ['AAG_AGENT_CLIENT_ID', 200], ['AAG_AGENT_CLIENT_SECRET', 512], ['AAG_DEMO_USERNAME', 200], ['AAG_GATEWAY_AUDIENCE', 300]]) {
+  for (const [k, max] of [['AAG_USER_CLIENT_ID', 200], ['AAG_USER_CLIENT_SECRET', 512], ['AAG_AGENT_CLIENT_ID', 200], ['AAG_AGENT_CLIENT_SECRET', 512], ['AAG_DEMO_USERNAME', 200]]) {
     if (!plain(settings[k], max)) return { problem: `the app .env has no valid ${k}` };
   }
-  if (!plain(settings.AAG_GATEWAY_SCOPE, 300) || !SCOPE_LIST.test(settings.AAG_GATEWAY_SCOPE)) return { problem: 'the app .env has no valid AAG_GATEWAY_SCOPE' };
+  const provider = providerSettingOf(settings.AAG_PROVIDER);
+  if (!provider) return { problem: 'the app .env has no valid AAG_PROVIDER (auto, se or local)' };
+  const toolsAudience = optional(settings, 'AAG_TOOLS_AUDIENCE', DEFAULT_TOOLS_AUDIENCE);
+  if (!plain(toolsAudience, 300)) return { problem: 'the app .env has no valid AAG_TOOLS_AUDIENCE' };
+  const toolsTierGroup = optional(settings, 'AAG_TOOLS_TIER_GROUP', DEFAULT_TIER_GROUP);
+  if (!plain(toolsTierGroup, 120)) return { problem: 'the app .env has no valid AAG_TOOLS_TIER_GROUP' };
   // Optional: absent or empty is the default.
   const agentScope = settings.AAG_AGENT_SCOPE === undefined || settings.AAG_AGENT_SCOPE === '' ? DEFAULT_AGENT_SCOPE : settings.AAG_AGENT_SCOPE;
   // One scope name (the owner's setup script looks one up), and not the gateway scope: exchange 1 must go to the resource that owns the agent scope.
   if (!plain(agentScope, 300) || !SCOPE_LIST.test(agentScope) || agentScope.includes(' ')) return { problem: 'the app .env has no valid AAG_AGENT_SCOPE (one scope name)' };
-  if (settings.AAG_GATEWAY_SCOPE.split(' ').includes(agentScope)) return { problem: 'the app .env has AAG_AGENT_SCOPE equal to AAG_GATEWAY_SCOPE: exchange 1 needs the agent scope, not the gateway scope' };
-  const gwProblem = gatewayUrlProblem(settings.AAG_AGENT_GATEWAY_URL);
-  if (gwProblem) return { problem: `the app .env has no valid AAG_AGENT_GATEWAY_URL (${gwProblem.replace('AAG_AGENT_GATEWAY_URL ', '')})` };
+  const gw = gatewayFrom(settings, agentScope);
+  if (gw.problem) return { problem: gw.problem };
   let base;
   if (env.AAG_LIVE_TEST_BASE) {
     try {
@@ -112,10 +176,39 @@ export function realConfig(settings = {}, env = {}) {
     if (!tld) return { problem: 'the app .env has no valid PINGONE_REGION (com, eu, ca or asia)' };
     base = `https://auth.pingone.${tld}/${environmentId}`;
   }
+  // An SE-hosted tool server (R2) and the SE HITL service: only a validated https (or loopback http) URL can add a host to the netguard.
+  const se = optionalUrl(settings, 'AAG_TOOLS_SE_URL');
+  const hitl = optionalUrl(settings, 'AAG_HITL_SERVICE_URL');
   return {
-    ...a2aFrom(settings), environmentId, base, gatewayUrl: new URL(settings.AAG_AGENT_GATEWAY_URL).toString(), audience: settings.AAG_GATEWAY_AUDIENCE, scope: settings.AAG_GATEWAY_SCOPE, agentScope, username: settings.AAG_DEMO_USERNAME,
+    ...a2aFrom(settings), environmentId, base, gateway: gw.gateway, ...(gw.gatewayProblem ? { gatewayProblem: gw.gatewayProblem } : {}), agentScope, username: settings.AAG_DEMO_USERNAME,
+    provider, toolsAudience, toolsTierGroup, toolsSeUrl: se.url, ...(se.problem ? { toolsSeProblem: se.problem } : {}), hitlUrl: hitl.url, ...(hitl.problem ? { hitlProblem: hitl.problem } : {}),
+    hitlSecret: typeof settings.AAG_HITL_INTERNAL_SECRET === 'string' && settings.AAG_HITL_INTERNAL_SECRET && !isPlaceholder(settings.AAG_HITL_INTERNAL_SECRET) ? settings.AAG_HITL_INTERNAL_SECRET : null,
     user: { id: settings.AAG_USER_CLIENT_ID, secret: settings.AAG_USER_CLIENT_SECRET }, agent: { id: settings.AAG_AGENT_CLIENT_ID, secret: settings.AAG_AGENT_CLIENT_SECRET, authMethod: settings.AAG_AGENT_TOKEN_AUTH === 'CLIENT_SECRET_POST' ? 'post' : 'basic' },
   };
+}
+
+// An optional URL setting: unset (or an .env.example placeholder) is { url: null }; a valid one { url }; an invalid one { url: null, problem } (names the setting only).
+function optionalUrl(settings, name) {
+  const raw = settings[name];
+  if (typeof raw !== 'string' || raw === '' || isPlaceholder(raw)) return { url: null };
+  const p = urlProblem(raw, name);
+  return p ? { url: null, problem: p } : { url: new URL(raw).toString() };
+}
+
+// The SE Agent Gateway trio. { gateway: null } when none is set; { gateway, } when all three are valid; { gateway: null, gatewayProblem } for a partial or
+// invalid trio. The one hard problem is a gateway scope that names the agent scope: exchange 1 needs the agent scope, so the two must differ.
+function gatewayFrom(settings, agentScope) {
+  const has = (k) => typeof settings[k] === 'string' && settings[k] !== '' && !isPlaceholder(settings[k]);
+  const set = GATEWAY_KEYS.filter(has);
+  if (!set.length) return { gateway: null };
+  const absent = GATEWAY_KEYS.filter((k) => !has(k));
+  if (absent.length) return { gateway: null, gatewayProblem: `the app .env sets some of ${GATEWAY_KEYS.join(', ')} but not ${absent.join(', ')}` };
+  if (!plain(settings.AAG_GATEWAY_AUDIENCE, 300)) return { gateway: null, gatewayProblem: 'the app .env has no valid AAG_GATEWAY_AUDIENCE' };
+  if (!plain(settings.AAG_GATEWAY_SCOPE, 300) || !SCOPE_LIST.test(settings.AAG_GATEWAY_SCOPE)) return { gateway: null, gatewayProblem: 'the app .env has no valid AAG_GATEWAY_SCOPE' };
+  if (settings.AAG_GATEWAY_SCOPE.split(' ').includes(agentScope)) return { problem: 'the app .env has AAG_AGENT_SCOPE equal to AAG_GATEWAY_SCOPE: exchange 1 needs the agent scope, not the gateway scope' };
+  const gwProblem = urlProblem(settings.AAG_AGENT_GATEWAY_URL, 'AAG_AGENT_GATEWAY_URL');
+  if (gwProblem) return { gateway: null, gatewayProblem: `the app .env has no valid AAG_AGENT_GATEWAY_URL (${gwProblem.replace('AAG_AGENT_GATEWAY_URL ', '')})` };
+  return { gateway: { url: new URL(settings.AAG_AGENT_GATEWAY_URL).toString(), audience: settings.AAG_GATEWAY_AUDIENCE, scope: settings.AAG_GATEWAY_SCOPE } };
 }
 
 // The last check before a PingOne socket opens: the configured origin, https (http only on loopback), no credentials, one of the fixed paths.
@@ -174,6 +267,7 @@ const failText = (r, who = 'PingOne') => (r.unreachable ? `${who} did not answer
 
 export function createReal({ config = { problem: 'not configured' }, missing = FULL_REQUIRED, wanted = false, fetchImpl = (...a) => globalThis.fetch(...a), timeoutMs = TIMEOUT_MS, maxBytes = MAX_BODY_BYTES, now = Date.now, gatewayFetch } = {}) {
   const configured = () => !config.problem;
+  const endpoints = () => [config.base, config.gateway?.url, config.toolsSeUrl, config.hitlUrl].filter(Boolean);
   const sessions = new Map(); // workspace id -> { accessToken, claims, idClaims, expiresAt, steps }
   // The PingOne session (owner, 2026-11-16: "once logged in, I should not have to login again. Use P1 session"): the cookies PingOne set during the last
   // password sign-in, kept in memory only for this process (never returned, logged or put in a hop except the flow's own steps, never written to disk).
@@ -310,9 +404,13 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
 
   // One Real run of a use case the gate let through. session: the workspace's sign-in. Never throws for a refusal by PingOne or the gateway (those
   // are hops with a verdict and a mapped outcome); throws RealRefused('busy') when two Real calls are in flight.
-  async function run(uc, { vertical, tool, traceparent, session, receipt = null, a2a = false }) {
-    let challenge = null; // the gateway's HITL challenge id when the run holds for approval (never leaves here except via the return)
+  async function run(uc, { vertical, tool, traceparent, session, receipt = null, a2a = false, pick = null }) {
+    let challenge = null; // the provider's HITL challenge id when the run holds for approval (never leaves here except via the return)
     if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
+    // pick = null is the SE Agent Gateway exactly as before (the settings' own trio); app.js passes the Pick provider.js chose once for this run.
+    const P = pick ?? (config.gateway ? { provider: 'se', capability: 'gateway', url: config.gateway.url, audience: config.gateway.audience, scope: config.gateway.scope, why: 'only-option', answeredBy: 'Agent Gateway (SE)', label: 'Agent Gateway [SE]' } : null);
+    if (!P) throw new RealRefused('no_provider', 'no provider is available for this run', 503);
+    const L = legOf(P);
     if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two calls are already in flight; wait for one to finish', 429);
     inFlight += 1;
     try {
@@ -324,18 +422,26 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       const gw = []; // "What Privilege did" (rule 25): one record per call the lab's MCP client made to the gateway, returned as `gatewayTrace`
       const push = (h) => hops.push({ n: hops.length + 1, mock: false, live: false, source: 'real', ...h });
       // shortTitle: the name "Where each hop ran" shows (the two exchanges share one catalog kind, so the catalog title cannot tell them apart).
-      const notRun = (kind, label, from, to, why, shortTitle) => hops.push({ n: hops.length + 1, mock: false, live: false, source: 'not-run', kind, label: `${label} [NOT RUN]`, from, to, verdict: 'skip', note: why, request: {}, response: {}, ...(shortTitle ? { shortTitle } : {}) });
+      const notRun = (kind, label, from, to, why, shortTitle, extra) => hops.push({ n: hops.length + 1, mock: false, live: false, source: 'not-run', kind, label: `${label} [NOT RUN]`, from, to, verdict: 'skip', note: why, request: {}, response: {}, ...(shortTitle ? { shortTitle } : {}), ...(extra ?? {}) });
+      // A hop the provider would have answered (named in the data: provider, answeredBy) that did not run. key: check | decide | tool | api | reply.
+      // It carries NO provider or answeredBy: nothing answered it, so no provider is named on it (hop.capability only says which path the run was on).
+      const legNotRun = (key, why) => { const r = L.rows[key]; notRun(r.kind, r.label, r.from, r.to, why, r.title, L.tools ? { capability: 'tools' } : undefined); };
       // expectAct: an exchange token; the page shows its act (or that it has none) next to the label.
       const addToken = (label, raw, notice, expectAct = false) => { const d = decodeJwt(raw); tokens.push({ label, mock: false, live: false, real: true, ...(expectAct ? { expectAct: true } : {}), notice, raw, header: d?.header ?? null, claims: d?.claims ?? { note: 'the token is opaque, not a JWT: there is nothing to decode' } }); };
-      let outcome = null; let reply = null;
-      const finishNotRun = (from, why) => {
-        const rest = [['gateway-check', 'Agent Gateway', 'agent', 'gateway'], ['authorize-decision', 'Authorize decision', 'gateway', 'authorize'], ['tool-dispatched', 'MCP tool', 'gateway', 'mcp'], ['api-call', 'API', 'mcp', 'api'], ['agent-reply', 'Agent reply', 'agent', 'page']];
-        for (const [kind, label, f, t] of rest.slice(from)) notRun(kind, label, f, t, why);
-      };
+      let outcome = null; let reply = null; let groupsClaim = null; // groupsClaim: for a group-gated tool run, whether the delegated token carried the claim ('present' | 'absent')
+      const finishNotRun = (from, why) => { for (const key of LEG_KEYS.slice(from)) legNotRun(key, why); };
 
       // 1. Sign-in (done in the dialog before this run): what happened, and the user's token.
       push({ kind: 'sign-in', label: session.viaP1Session ? 'Sign-in: your PingOne session, pi.flow with no password this time (no redirect)' : 'Sign-in: pi.flow with the password you typed in the Sign in dialog (no redirect)', from: 'browser', to: 'pingone', verdict: 'ok', traceparent: session.steps[0]?.traceparent ?? tp(), note: session.viaP1Session ? 'The lab used the PingOne session from your earlier sign-in: authorize with response_mode=pi.flow and PKCE S256 and the session cookie, then the code for tokens. No password was typed or sent.' : 'Done once in the Sign in dialog: authorize with response_mode=pi.flow and PKCE S256, the flows API username/password step, then the code for tokens. The password was sent once and is shown nowhere.', request: { steps: session.steps.map((s) => ({ step: s.step, ...s.request })) }, response: { steps: session.steps.map((s) => ({ step: s.step, ...s.response })), user: userOf(session) } });
       addToken('user access token (from the pi.flow sign-in)', session.accessToken, 'Token from your PingOne environment, shown raw for teaching (rule 4). It expires in minutes; secrets and your password are never shown.');
+
+      // UC24 (a public tool, tools capability): NO agent token and NO exchange. The public call goes with no token, then the protected tool is probed with no
+      // token to see it refused. The sign-in above is the only PingOne call of this run.
+      if (L.tools && (situationOf(uc.id, vertical).public === true || PUBLIC_TOOLS.has(tool))) {
+        const leg = await tokenlessLeg({ vertical, tool, uc, tp, push, legNotRun, P, L, probe: situationOf(uc.id, vertical).public === true });
+        outcome = leg.outcome; reply = leg.reply;
+        return done();
+      }
 
       // 2. Agent token (the actor), with the agent scope.
       const t2 = tp();
@@ -347,7 +453,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         const noGrant = !ag.unreachable && p1Error(ag).error === 'invalid_scope';
         reply = { who: 'PingOne', text: ag.unreachable ? 'PingOne did not answer the agent\'s token request. Check the network.' : noGrant ? `PingOne refused the agent's token for the scope ${config.agentScope} (invalid_scope): the agent app has no grant for it. Ask the owner to re-run scripts/owner/pingone-real-setup.mjs --apply, or set AAG_AGENT_SCOPE to the scope that was granted.` : `PingOne refused the agent's own token (HTTP ${ag.status}). Check AAG_AGENT_CLIENT_ID and its secret.` };
         notRun('token-exchange', 'Token exchange 1: act = agent', 'bff', 'pingone', 'Not run: the agent has no token.', EX1_TITLE);
-        notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'pingone', 'Not run: the agent has no token.', EX2_TITLE);
+        notRun('token-exchange', L.ex2Label, 'bff', 'pingone', 'Not run: the agent has no token.', L.ex2Title);
         finishNotRun(0, 'Not run: the agent has no token.');
       } else {
         addToken('agent token (client credentials)', agent, 'Token for the agent app, shown raw for teaching. This is the actor token. The agent secret is write-only.');
@@ -363,14 +469,14 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         if (!first) {
           outcome = ex1.unreachable ? 'REAL_UNREACHABLE' : 'REAL_REFUSED';
           reply = { who: 'PingOne', text: ex1.unreachable ? 'PingOne did not answer token exchange 1. Check the network.' : `PingOne refused token exchange 1 (HTTP ${ex1.status}${p1Error(ex1).error ? `: ${p1Error(ex1).error}` : ''}). Check that the agent app has the token-exchange grant and the ${config.agentScope} scope.` };
-          notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'pingone', 'Not run: exchange 1 gave no token.', EX2_TITLE);
+          notRun('token-exchange', L.ex2Label, 'bff', 'pingone', 'Not run: exchange 1 gave no token.', L.ex2Title);
           finishNotRun(0, 'Not run: there is no delegated token.');
         } else if (!act1) {
           // The final token would have no act either (exchange 2 only passes act through): stop before spending exchange 2, and never reach the gateway.
           addToken('exchange 1 token (NO act claim)', first, 'Token from exchange 1, but it has NO act claim, so nothing was sent on. Shown raw for teaching.', true);
           outcome = 'REAL_NO_ACT';
-          reply = { who: 'PingOne', text: noActText(ex1Scope, false) };
-          notRun('token-exchange', 'Token exchange 2: for the gateway', 'bff', 'pingone', 'Not run: exchange 1 carries no act claim, and exchange 2 only passes act through.', EX2_TITLE);
+          reply = { who: 'PingOne', text: L.tools ? noActToolsText(ex1Scope, false) : noActText(ex1Scope, false) };
+          notRun('token-exchange', L.ex2Label, 'bff', 'pingone', 'Not run: exchange 1 carries no act claim, and exchange 2 only passes act through.', L.ex2Title);
           finishNotRun(0, 'Not run: the delegated token carries no act claim, so the gateway was not called.');
         } else {
           addToken('exchange 1 token (act = agent)', first, 'Token from exchange 1: your subject, the agent in the act claim, the audience of the agent scope\'s resource. Shown raw for teaching.', true);
@@ -410,62 +516,83 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
                 finishNotRun(0, 'Not run: the delegated token carries no nested act chain, so the gateway was not called.');
               } else {
                 addToken('delegated token (A2A exchange 2: nested act)', delegated, `Delegated token: your subject, act = the specialist with the first agent inside it. Shown raw for teaching. Its audience is the A2A gateway audience, not AAG_GATEWAY_AUDIENCE: whether the Agent Gateway accepts it is for this run to show (UNVERIFIED).${aud2Note}`, true);
-                const leg = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun, receipt, gw });
-                outcome = leg.outcome; reply = leg.reply;
+                const leg = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun, legNotRun, receipt, gw, P, L, dClaims });
+                outcome = leg.outcome; reply = leg.reply; groupsClaim = leg.groupsClaim ?? null;
                 if (leg.challengeId) challenge = leg.challengeId;
               }
             }
           } else {
-          // 4. Exchange 2: the exchange-1 token as subject, no actor, no audience parameter; the gateway scope picks the audience and passes act through.
+          // 4. Exchange 2: the exchange-1 token as subject, no actor, no audience parameter; the one scope picks the resource, which chooses the audience and
+          // passes act through. SE gateway: the gateway scope (AAG_GATEWAY_SCOPE). Tool server: the ONE scope the tool needs (PingOne refuses scopes from two resources).
           const t4 = tp();
-          const ex2 = await tokenCall({ grant_type: TX, subject_token: first, subject_token_type: AT, scope: config.scope }, config.agent, t4);
+          const scope2 = L.tools ? toolScopeOf(tool) : P.scope;
+          const ex2 = await tokenCall({ grant_type: TX, subject_token: first, subject_token_type: AT, scope: scope2 }, config.agent, t4);
           const delegated = typeof ex2.json?.access_token === 'string' ? ex2.json.access_token : null;
           const dClaims = delegated ? decodeJwt(delegated)?.claims ?? null : null;
           const act2 = actOf(dClaims);
           const opaque2 = Boolean(delegated) && dClaims === null;
           const auds = [].concat(dClaims?.aud ?? []).filter((a) => typeof a === 'string');
-          const audNote = delegated && dClaims && !auds.includes(config.audience) ? ` The token's aud (${cleanFree(auds.join(' ') || 'none', 300)}) is not AAG_GATEWAY_AUDIENCE: the gateway may refuse it. Check which resource owns the gateway scope.` : '';
-          push({ kind: 'token-exchange', shortTitle: EX2_TITLE, label: 'Token exchange 2: for the gateway (RFC 8693 at PingOne, the exchange-1 token as subject, no actor, the gateway scope)', from: 'bff', to: 'pingone', verdict: delegated && act2 ? 'ok' : 'deny', traceparent: t4, note: delegated ? `${act2 ? 'act carried over from exchange 1; the audience comes from the resource that owns the gateway scope (no audience parameter is sent).' : (opaque2 ? 'The token is not a JWT (opaque), so the lab cannot read an act claim from it and treats it as having none.' : 'The token has NO act claim: exchange 2 should pass the exchange-1 token\'s act through.')}${audNote}` : failText(ex2), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: first, subject_token_type: AT, scope: config.scope } }, response: answerOf(ex2, delegated ? 'delegated' : null, act2) });
+          const wantAud = L.tools ? config.toolsAudience : P.audience;
+          const audNote = delegated && dClaims && !auds.includes(wantAud) ? ` The token's aud (${cleanFree(auds.join(' ') || 'none', 300)}) is not ${L.tools ? 'AAG_TOOLS_AUDIENCE: the tool server will refuse it. Check which resource owns the scope ' + scope2 + '.' : 'AAG_GATEWAY_AUDIENCE: the gateway may refuse it. Check which resource owns the gateway scope.'}` : '';
+          // A group-gated tool: say what the exchanged token's groups claim holds (UNVERIFIED that PingOne puts it there: the notes make it visible).
+          const groupNote = L.tools && delegated && dClaims && GROUP_GATED_TOOLS.has(tool) ? ` ${groupsNote(dClaims)}` : '';
+          push({ kind: 'token-exchange', shortTitle: L.ex2Title, label: L.tools ? `Token exchange 2: for the tools (RFC 8693 at PingOne, the exchange-1 token as subject, no actor, the one scope this tool needs: ${scope2})` : 'Token exchange 2: for the gateway (RFC 8693 at PingOne, the exchange-1 token as subject, no actor, the gateway scope)', from: 'bff', to: 'pingone', verdict: delegated && act2 ? 'ok' : 'deny', traceparent: t4, note: delegated ? `${act2 ? (L.tools ? `act carried over from exchange 1; the audience comes from the resource that owns ${scope2} (no audience parameter is sent).` : 'act carried over from exchange 1; the audience comes from the resource that owns the gateway scope (no audience parameter is sent).') : (opaque2 ? 'The token is not a JWT (opaque), so the lab cannot read an act claim from it and treats it as having none.' : 'The token has NO act claim: exchange 2 should pass the exchange-1 token\'s act through.')}${audNote}${groupNote}` : failText(ex2), request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: TX, subject_token: first, subject_token_type: AT, scope: scope2 } }, response: answerOf(ex2, delegated ? 'delegated' : null, act2) });
           if (!delegated) {
             outcome = ex2.unreachable ? 'REAL_UNREACHABLE' : 'REAL_REFUSED';
-            reply = { who: 'PingOne', text: ex2.unreachable ? 'PingOne did not answer token exchange 2. Check the network.' : `PingOne refused token exchange 2 (HTTP ${ex2.status}${p1Error(ex2).error ? `: ${p1Error(ex2).error}` : ''}). Check that the agent app is granted the gateway scope and that the scope's resource exists.` };
+            reply = { who: 'PingOne', text: ex2.unreachable ? 'PingOne did not answer token exchange 2. Check the network.' : `PingOne refused token exchange 2 (HTTP ${ex2.status}${p1Error(ex2).error ? `: ${p1Error(ex2).error}` : ''}). ${L.tools ? `Check that the agent app is granted the scope ${scope2} on the tools resource and that the resource exists.` : 'Check that the agent app is granted the gateway scope and that the scope\'s resource exists.'}` };
             finishNotRun(0, 'Not run: there is no delegated token.');
           } else if (!act2) {
-            addToken('delegated token (exchange 2: for the gateway, NO act claim)', delegated, 'Token from exchange 2, but it has NO act claim, so it was not sent to the gateway. Shown raw for teaching.', true);
+            addToken(L.tools ? 'delegated token (exchange 2: for the tools, NO act claim)' : 'delegated token (exchange 2: for the gateway, NO act claim)', delegated, L.tools ? 'Token from exchange 2, but it has NO act claim, so it was not sent to the tool server. Shown raw for teaching.' : 'Token from exchange 2, but it has NO act claim, so it was not sent to the gateway. Shown raw for teaching.', true);
             outcome = 'REAL_NO_ACT';
-            reply = { who: 'PingOne', text: noActText(config.agentScope, true) };
-            finishNotRun(0, 'Not run: the delegated token carries no act claim, so the gateway was not called.');
+            reply = { who: 'PingOne', text: L.tools ? noActToolsText(config.agentScope, true) : noActText(config.agentScope, true) };
+            finishNotRun(0, L.tools ? 'Not run: the delegated token carries no act claim, so the tool server was not called.' : 'Not run: the delegated token carries no act claim, so the gateway was not called.');
           } else {
-            addToken('delegated token (exchange 2: for the gateway)', delegated, `Delegated token: your subject, the agent in the act claim, the gateway audience and scope. Shown raw for teaching.${audNote}`, true);
-            const leg = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun, receipt, gw });
-            outcome = leg.outcome; reply = leg.reply;
-            if (leg.challengeId) challenge = leg.challengeId; // a REAL_HOLD with a minted challenge: the mock phone can approve it
+            addToken(L.tools ? 'delegated token (exchange 2: for the tools)' : 'delegated token (exchange 2: for the gateway)', delegated, `Delegated token: your subject, the agent in the act claim, the ${L.tools ? 'tools' : 'gateway'} audience and ${L.tools ? 'the one scope' : 'scope'}. Shown raw for teaching.${audNote}`, true);
+            const leg = await gatewayLeg({ token: delegated, vertical, tool, uc, tp, push, notRun, legNotRun, receipt, gw, P, L, dClaims });
+            outcome = leg.outcome; reply = leg.reply; groupsClaim = leg.groupsClaim ?? null;
+            if (leg.challengeId) challenge = leg.challengeId; // a REAL_HOLD with a minted challenge: the phone can approve it
           }
           }
         }
       }
-      return {
+      return done();
+      function done() { return {
         schema: 'appfire-agent-governance-run/1', mode: 'live', kind: 'real', useCase: { id: uc.id, track: uc.track, title: uc.title, maturity: uc.maturity, flag: uc.flag }, vertical,
-        expectedOutcome: uc.expectedOutcome, real: { level: 'full', tool, ...(A2A ? { a2a: true } : {}) }, labSimulated: false, computed: false, persona: null, outcome, matchesExpected: null, reply,
-        hops: hops.map(({ shortTitle, ...h }) => { const e0 = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'raw' }); const e = e0.verdict === 'error' ? { ...e0, fact: 'no decision' } : e0; return shortTitle ? { ...e, title: shortTitle } : e; }), gatewayTrace: gw, tokens, traceId: trace.traceId, traceparent: formatTraceparent(trace.traceId, rootSpan),
+        expectedOutcome: uc.expectedOutcome, real: { level: 'full', tool, provider: P.provider, ...(A2A ? { a2a: true } : {}) }, labSimulated: false, computed: false, persona: null, outcome, matchesExpected: null, reply,
+        // Who answered is DATA (hop.provider, hop.answeredBy, run.provider), not a chip: the page never names it by itself (owner 2026-11-16).
+        provider: P.provider, providerWhy: P.why,
+        hops: hops.map(({ shortTitle, factOverride, ...h }) => { const e0 = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'raw' }); const e = e0.verdict === 'error' ? { ...e0, fact: 'no decision' } : e0; const t0 = shortTitle ? { ...e, title: shortTitle } : e; const sp = L.tools ? toolsSpecFor(h.kind, L.lab) : null; const t = sp && t0.spec && !t0.spec.none ? { ...t0, spec: { ...t0.spec, ...sp } } : t0; return factOverride && e.verdict === 'ok' ? { ...t, fact: factOverride } : t; }),
+        // A tool server's refusal is the lab's own rule, not a gateway's: the vendored "What Privilege did" panel would attribute it to one, so a tools run builds none.
+        gatewayTrace: L.tools ? [] : gw, tokens, traceId: trace.traceId, traceparent: formatTraceparent(trace.traceId, rootSpan),
         narration: reply?.text ?? '',
         ...(outcome === 'REAL_HOLD' && challenge ? { challenge } : {}),
-      };
+        ...(groupsClaim ? { groupsClaim } : {}),
+      }; }
     } finally { inFlight -= 1; }
   }
 
-  // 4-8: the Agent Gateway as an MCP client, the decision read from its answer, the tool, the API behind it and the reply.
-  async function gatewayLeg({ token, vertical, tool, uc, tp, push, notRun, receipt = null, gw = [] }) {
-    const gs = createGatewaySession({ url: config.gatewayUrl, token, vertical, nextTraceparent: tp, fetchImpl: gatewayFetch ?? fetchImpl });
-    const shownReq = (c, body) => ({ method: 'POST', url: config.gatewayUrl, headers: Object.fromEntries(c.sentHeaders.map((k) => [k, k === 'authorization' ? `Bearer ${token}` : k === 'traceparent' ? c.traceparent : k === 'x-active-vertical' ? vertical : k === 'x-token-validation' ? 'jwks' : k === 'mcp-session-id' ? gs.sessionId() : k === 'mcp-protocol-version' ? '(from initialize)' : k === 'accept' ? 'application/json, text/event-stream' : 'application/json'])), body });
+  // 4-8: the provider as an MCP client (the SE Agent Gateway or a tool server), the decision read from its answer, the tool, the API behind it and the reply.
+  // P is the Pick (provider.js), L = legOf(P). For a tool server the hops and strings name the tool server, never a gateway, and the refusal is the lab's own policy.
+  async function gatewayLeg({ token, vertical, tool, uc, tp, push, notRun, legNotRun, receipt = null, gw = [], P, L, dClaims = null }) {
+    const gs = createGatewaySession({ url: P.url, token, vertical, nextTraceparent: tp, provider: P.provider, fetchImpl: gatewayFetch ?? fetchImpl });
+    const shownReq = (c, body) => ({ method: 'POST', url: P.url, headers: Object.fromEntries(c.sentHeaders.map((k) => [k, k === 'authorization' ? `Bearer ${token}` : k === 'traceparent' ? c.traceparent : k === 'x-active-vertical' ? vertical : k === 'x-token-validation' ? 'jwks' : k === 'mcp-session-id' ? gs.sessionId() : k === 'mcp-protocol-version' ? '(from initialize)' : k === 'accept' ? 'application/json, text/event-stream' : 'application/json'])), body });
     const shownRes = (c, body) => ({ status: c.status, headers: Object.fromEntries(Object.entries(c.headers).map(([k, v]) => [k, v])), body });
-    const rest = (from, why) => {
-      const all = [['authorize-decision', 'Authorize decision', 'gateway', 'authorize'], ['tool-dispatched', 'MCP tool', 'gateway', 'mcp'], ['api-call', 'API', 'mcp', 'api'], ['agent-reply', 'Agent reply', 'agent', 'page']];
-      for (const [kind, label, f, t] of all.slice(from)) notRun(kind, label, f, t, why);
+    const rest = (from, why) => { for (const key of LEG_KEYS.slice(1 + from)) legNotRun(key, why); };
+    const mapped = (c) => mapAnswer(c, { provider: P.provider, capability: P.capability });
+    // A tool server's hold: its challenge id and the receipt the retry echoes discharge the hold, so no hop shows them (the run's `challenge` field carries the id to the
+    // phone; the 428 body in a hop says <kept on the server>). The vendored trace panel does the same for SE (gatewayExchanges.js), and a tools run builds none.
+    const hidden = [];
+    const hide = (v) => {
+      const list = hidden.filter((x) => typeof x === 'string' && x.length >= 8);
+      if (!list.length) return v;
+      try { return JSON.parse(list.reduce((t, x) => t.split(x).join('<kept on the server>'), JSON.stringify(v))); } catch { return v; }
     };
-    const mapped = (c) => mapAnswer(c);
-    // One trace record per call the gateway answered (or failed to): the request and answer as they were, the decisions read from the status.
-    const traced = (c, title, setup) => gw.push(realExchange(c, { step: gw.length + 1, title, url: config.gatewayUrl, token, vertical, setup, receipt }));
+    // answered: something answered this hop. A hop whose call got no answer (verdict 'error', or an unreachable tool server or gateway) names no provider.
+    const leg = (h, key, answered = h.verdict !== 'error') => push({ ...(answered ? L.ans : {}), ...(L.tools ? { capability: 'tools' } : {}), ...(L.tools && L.rows[key].title ? { shortTitle: L.rows[key].title } : {}), ...(L.tools ? hide(h) : h) });
+    // One trace record per call the gateway answered (or failed to): the request and answer as they were, the decisions read from the status. A tool server
+    // builds none (its refusals are the lab's own rule, and the vendored panel would attribute them to a gateway).
+    const traced = (c, title, setup) => { if (!L.tools) gw.push(realExchange(c, { step: gw.length + 1, title, url: P.url, token, vertical, setup, receipt })); };
+    const callUnlisted = L.tools && CALL_UNLISTED.has(uc.id);
     const init = await gs.initialize();
     let list = null;
     if (init.kind === 'ok') {
@@ -475,14 +602,33 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     } else traced(init, 'initialize');
     const listed = Array.isArray(list?.rpc?.result?.tools) ? list.rpc.result.tools.filter((t) => t && typeof t.name === 'string').map((t) => t.name.slice(0, 80)).slice(0, 300) : [];
     const firstBad = init.kind !== 'ok' ? init : list && list.kind !== 'ok' ? list : null;
-    push({
-      kind: 'gateway-check', label: 'Agent Gateway: initialize and tools/list over MCP with the delegated token', from: 'agent', to: 'gateway', verdict: firstBad ? (firstBad.kind === 'hold' ? 'held' : 'deny') : 'ok', traceparent: init.traceparent,
-      note: firstBad ? mapped(firstBad).note : `The gateway accepted the delegated token (X-Token-Validation: jwks) and listed ${listed.length} tools${listed.includes(tool) ? `, including ${tool}` : `; ${tool} is NOT among them`}. No trusted-caller header was sent.`,
+    leg({
+      kind: 'gateway-check', label: L.tools ? `${P.label}: initialize and tools/list over MCP with the delegated token` : 'Agent Gateway: initialize and tools/list over MCP with the delegated token', from: 'agent', to: L.tools ? 'toolserver' : 'gateway', ...(L.tools && !firstBad ? { factOverride: `token accepted by the tool server (${L.where})` } : {}), verdict: firstBad ? (firstBad.kind === 'hold' ? 'held' : L.tools && (firstBad.kind === 'unreachable' || firstBad.kind === 'other') ? 'error' : 'deny') : 'ok', traceparent: init.traceparent,
+      note: firstBad ? mapped(firstBad).note : L.tools
+        ? `The tool server (${L.where}) accepted the delegated token and listed ${listed.length} tools${listed.includes(tool) ? `, including ${tool}` : `; ${tool} is not among them${callUnlisted ? '; this use case calls it anyway' : ''}`}. No trusted-caller header was sent.`
+        : `The gateway accepted the delegated token (X-Token-Validation: jwks) and listed ${listed.length} tools${listed.includes(tool) ? `, including ${tool}` : `; ${tool} is NOT among them`}. No trusted-caller header was sent.`,
       request: { calls: [shownReq(init, { method: 'initialize' }), ...(list ? [shownReq(list, { method: 'notifications/initialized, then tools/list' })] : [])] },
       response: { calls: [shownRes(init, init.rpc?.result ? { serverInfo: init.rpc.result.serverInfo ?? null, protocolVersion: str(init.rpc.result.protocolVersion) } : init.rpc?.error ?? null), ...(list ? [shownRes(list, { tools: listed.length, names: listed.slice(0, 40) })] : [])] },
-    });
+    }, 'check', !(firstBad && firstBad.kind === 'unreachable'));
     if (firstBad) { const m = mapped(firstBad); rest(0, `Not run: ${m.note}`); return { outcome: m.outcome, reply: m.reply }; }
-    if (!listed.includes(tool)) {
+    if (!listed.includes(tool) && !callUnlisted) {
+      if (L.tools) {
+        // The tool server hides a tool from a token that may not use it (design R3): not listed is NOT OFFERED, never a DENY, and the lab does not call it.
+        rest(0, `Not run: the tool server does not list ${tool} to this token.`);
+        if (uc.id === 'UC21') {
+          const g = dClaims?.groups;
+          const has = Array.isArray(g) || typeof g === 'string';
+          const tier = config.toolsTierGroup;
+          // The groups claim is UNVERIFIED in a real exchanged token: when it is absent the tool server could not tell the tier at all, which is not the same as "not in the group".
+          // The run says which it was (`groupsClaim`), and the decision card words it so.
+          const whose = L.lab ? `Lab policy (${L.where}), not PingOne Authorize` : `The tool server's own policy (${L.where})`;
+          const text = has
+            ? `The tool server did not offer ${tool} to this user, so the agent never called it. ${whose}: the tool is offered only to the tier group ${tier}, and this delegated token's groups claim does not include it. Add the user to that group in PingOne, sign out, sign in again and run it again.`
+            : `The tool server did not offer ${tool} to this user, so the agent never called it. No tier decision can be read from this: the delegated token has NO groups claim (UNVERIFIED that PingOne puts it there), so the tool server could not see the tier group ${tier}. Check the groups attribute of the tools resource in PingOne, then sign out, sign in again and run it again.`;
+          return { outcome: 'REAL_NOT_LISTED', groupsClaim: has ? 'present' : 'absent', reply: { who: 'Tool server', text } };
+        }
+        return { outcome: 'REAL_NOT_LISTED', reply: { who: 'Tool server', text: `The tool server does not list the tool ${tool} for this token (it holds the scope ${toolScopeOf(tool) ?? 'none'} only), so the agent did not call it.` } };
+      }
       // UC21 (entitlement tiers): the product never offers a premium tool to a standard-tier user, so "not listed" IS the standard tier (owner 2026-11-16).
       if (uc.id === 'UC21') {
         rest(0, `Not run: the gateway does not offer ${tool} to this user. For the entitlement-tier use case that is the standard tier: the tier (a PingOne group) decides which tools exist.`);
@@ -503,55 +649,119 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     const pre = calls.find((c) => c.kind !== 'ok');
     const needTwo = tool === 'create_transfer';
     if (!pre && NEEDS_ACCOUNTS.has(tool) && accounts.length < (needTwo ? 2 : 1)) {
-      notRun('authorize-decision', 'Authorize decision', 'gateway', 'authorize', `Not run: ${tool} was not called.`);
-      push({ kind: 'tool-refused', label: `MCP tool: get_my_accounts (${tool} was not called)`, from: 'gateway', to: 'mcp', verdict: 'deny', traceparent: calls[0].traceparent, note: `The account list had ${accounts.length} usable account${accounts.length === 1 ? '' : 's'}; ${tool} needs ${needTwo ? 'two' : 'one'}, so the lab did not call it.`, request: { calls: calls.map((c) => shownReq(c, { method: 'tools/call', name: 'get_my_accounts', arguments: {} })) }, response: { calls: calls.map((c) => shownRes(c, { content: contentShown(c.rpc?.result) })) } });
+      legNotRun('decide', `Not run: ${tool} was not called.`);
+      leg({ kind: 'tool-refused', label: `MCP tool: get_my_accounts (${tool} was not called)`, from: 'gateway', to: 'mcp', verdict: 'deny', traceparent: calls[0].traceparent, note: `The account list had ${accounts.length} usable account${accounts.length === 1 ? '' : 's'}; ${tool} needs ${needTwo ? 'two' : 'one'}, so the lab did not call it.`, request: { calls: calls.map((c) => shownReq(c, { method: 'tools/call', name: 'get_my_accounts', arguments: {} })) }, response: { calls: calls.map((c) => shownRes(c, { content: contentShown(c.rpc?.result) })) } }, 'tool');
       rest(2, 'Not run: the tool was not called.');
       return { outcome: 'REAL_TOOL_ERROR', reply: { who: 'Agent', text: `I could not find ${needTwo ? 'two accounts' : 'an account'} of yours for ${tool}, so I did not call it.` } };
     }
     const args = toolArgs(tool, { vertical, accounts, amount: situationOf(uc.id, vertical).amount, args: situationOf(uc.id, vertical).args });
-    // Owner 2026-11-13: a HITL retry echoes the gateway's challenge id as the control field _hitl_challenge_id
-    // (the gateway strips it before dispatch; a verified receipt discharges the consent obligation).
+    // Owner 2026-11-13: a HITL retry echoes the provider's challenge id as the control field _hitl_challenge_id
+    // (the provider strips it before dispatch; a verified receipt discharges the consent obligation).
     if (receipt) args._hitl_challenge_id = receipt;
     const call = pre ? null : await gs.callTool(tool, args);
     if (call) { calls.push(call); traced(call, `tools/call ${tool}`); }
     const last = call ?? pre;
+    if (L.tools) hidden.push(receipt, holdInfo(last).challengeId);
     const m = mapped(last);
     const audit = parseAuditTrail(last.headers['x-gw-audit-trail']);
     const decisionOutcome = last.kind === 'deny' ? 'DENY' : last.kind === 'hold' ? 'HOLD' : last.kind === 'ok' ? 'PERMIT' : last.kind === 'token' ? 'TOKEN REFUSED' : 'NO DECISION';
-    push({
-      kind: 'authorize-decision', label: `Authorize decision: ${decisionOutcome}, read from the gateway's answer to tools/call`, from: 'gateway', to: 'authorize', verdict: last.kind === 'ok' ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny', traceparent: last.traceparent,
-      decision: { outcome: audit?.decision ?? decisionOutcome, by: 'the Agent Gateway' },
-      note: last.kind === 'ok' ? 'The gateway let tools/call through, so its policy permitted it.' : m.note, request: { tool, arguments: argsShown(args) }, response: { status: last.status, ...(audit ? { 'x-gw-audit-trail': audit.parsed ?? audit.raw, decision: audit.decision } : {}), ...(last.headers['www-authenticate'] ? { 'www-authenticate': last.headers['www-authenticate'] } : {}), ...(last.rawText ? { body: last.rawText } : {}), ...(last.status === 0 ? { no_response: last.timedOut ? `no HTTP response within ${Math.round((last.waitedMs ?? 0) / 1000)} s: the lab stopped waiting` : 'the connection failed before any response' } : {}) },
-    });
+    const decisionVerdict = last.kind === 'ok' ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny';
+    const decisionBody = { tool, arguments: argsShown(args) };
+    const decisionRes = { status: last.status, ...(audit ? { 'x-gw-audit-trail': audit.parsed ?? audit.raw, decision: audit.decision } : {}), ...(last.headers['www-authenticate'] ? { 'www-authenticate': last.headers['www-authenticate'] } : {}), ...(last.rawText ? { body: last.rawText } : {}), ...(last.status === 0 ? { no_response: last.timedOut ? `no HTTP response within ${Math.round((last.waitedMs ?? 0) / 1000)} s: the lab stopped waiting` : 'the connection failed before any response' } : {}) };
+    if (L.tools) {
+      // The tool server's own decision, drawn as a note on its own lane (from === to). The lab's OWN tool server enforces the lab's own rule, never PingOne Authorize, and says
+      // so; an SE-hosted tool server is a different thing the lab cannot see into, so it is named as the tool server's decision and nothing is said about whose policy it was.
+      // Observed when the answer's audit header says it, inferred when only the status does; and when nothing answered there is no decision to attribute.
+      const noAnswer = last.kind === 'unreachable' || last.kind === 'other';
+      const decidedBy = noAnswer ? 'no decision: nothing answered' : L.lab ? `lab policy (${L.where}), not PingOne Authorize` : `the tool server (${L.where}); the lab cannot see which policy it applied`;
+      leg({ kind: 'authorize-decision', factOverride: noAnswer ? undefined : L.lab ? 'lab policy decided' : 'tool server decided', label: L.lab ? `Lab policy (${L.where}) decision: ${decisionOutcome}, read from the tool server's answer to tools/call (not PingOne Authorize)` : `Tool server (${L.where}) decision: ${decisionOutcome}, read from its answer to tools/call`, from: 'toolserver', to: 'toolserver', verdict: decisionVerdict, traceparent: last.traceparent,
+        decision: { outcome: audit?.decision ?? decisionOutcome, by: decidedBy, basis: audit?.decision ? 'observed' : 'inferred' },
+        note: last.kind === 'ok' ? (L.lab ? `The tool server let tools/call through: the lab's own policy (${L.where}) permitted it, not PingOne Authorize.` : `The tool server (${L.where}) let tools/call through.`) : m.note, request: decisionBody, response: decisionRes }, 'decide');
+    } else {
+      leg({ kind: 'authorize-decision', label: `Authorize decision: ${decisionOutcome}, read from the gateway's answer to tools/call`, from: 'gateway', to: 'authorize', verdict: decisionVerdict, traceparent: last.traceparent,
+        decision: { outcome: audit?.decision ?? decisionOutcome, by: 'the Agent Gateway' },
+        note: last.kind === 'ok' ? 'The gateway let tools/call through, so its policy permitted it.' : m.note, request: decisionBody, response: decisionRes }, 'decide');
+    }
     const result = last.kind === 'ok' ? last.rpc?.result ?? null : null;
     const rpcError = last.kind === 'ok' ? last.rpc?.error ?? null : null;
     const toolFailed = last.kind === 'ok' && (!result || result.isError === true || rpcError);
     const cut = last.kind === 'ok' && !result && last.truncated;
-    push({
-      kind: last.kind === 'ok' ? 'tool-dispatched' : last.kind === 'hold' ? 'tool-held' : 'tool-refused', label: `MCP tool: tools/call ${tool}${calls.length > 1 ? ' (after get_my_accounts for your account ids)' : ''}`, from: 'gateway', to: 'mcp', verdict: last.kind === 'ok' && !toolFailed ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny', traceparent: last.traceparent,
-      note: last.kind === 'ok' ? (toolFailed ? 'The tool answered with an error.' : 'The SE MCP server ran the tool.') : m.note,
+    leg({
+      kind: last.kind === 'ok' ? 'tool-dispatched' : last.kind === 'hold' ? 'tool-held' : 'tool-refused', label: L.tools ? `${P.label}: tools/call ${tool}` : `MCP tool: tools/call ${tool}${calls.length > 1 ? ' (after get_my_accounts for your account ids)' : ''}`, from: L.tools ? 'toolserver' : 'gateway', to: L.tools ? 'toolserver' : 'mcp', verdict: last.kind === 'ok' && !toolFailed ? 'ok' : last.kind === 'hold' ? 'held' : (last.kind === 'unreachable' || last.kind === 'other') ? 'error' : 'deny', traceparent: last.traceparent,
+      note: last.kind === 'ok' ? (toolFailed ? 'The tool answered with an error.' : L.tools ? (L.lab ? 'The tool server ran the tool. The data is lab-invented.' : `The tool server (${L.where}) ran the tool.`) : 'The SE MCP server ran the tool.') : m.note,
       request: { calls: calls.map((c) => shownReq(c, { method: 'tools/call', name: c === call ? tool : 'get_my_accounts', arguments: c === call ? argsShown(args) : {} })) },
-      response: { calls: calls.map((c) => shownRes(c, c.kind !== 'ok' ? (c.rawText ? { raw: c.rawText } : null) : c.rpc ? (c.rpc.error ? { error: { code: c.rpc.error.code ?? null, message: str(c.rpc.error.message) } } : { isError: c.rpc.result?.isError === true, content: contentShown(c.rpc.result) }) : null)) },
-    });
-    if (last.kind !== 'ok') { rest(2, `Not run: ${m.note}`); return { outcome: m.outcome, reply: m.reply }; }
+      response: { calls: calls.map((c) => shownRes(c, c.kind !== 'ok' ? (c.rawText ? { raw: c.rawText } : (c.rpc ?? null)) : c.rpc ? (c.rpc.error ? { error: { code: c.rpc.error.code ?? null, message: str(c.rpc.error.message) } } : { isError: c.rpc.result?.isError === true, content: contentShown(c.rpc.result) }) : null)) },
+    }, 'tool');
+    if (last.kind !== 'ok') { rest(2, `Not run: ${m.note}`); return { outcome: m.outcome, reply: m.reply, ...(m.challengeId ? { challengeId: m.challengeId } : {}) }; }
     if (toolFailed) {
-      notRun('api-call', 'API', 'mcp', 'api', 'Not known: the tool answered with an error.');
+      legNotRun('api', 'Not known: the tool answered with an error.');
       const why = rpcError ? str(rpcError.message) : textOf(result);
       const text = cut ? `The answer from ${tool} was larger than the lab reads, so it was cut off and not used.` : `The tool ${tool} answered with an error${why ? `: ${cleanFree(why, 300)}` : ''}.`;
       push({ kind: 'agent-reply', label: 'Agent reply: written from the tool\'s error', from: 'agent', to: 'page', verdict: 'ok', traceparent: tp(), request: {}, response: { reply: text } });
       return { outcome: 'REAL_TOOL_ERROR', reply: { who: 'Agent', text } };
     }
-    push({ kind: 'api-call', label: 'API: the call behind the tool, made by the SE MCP server (seen only through its result)', from: 'mcp', to: 'api', verdict: 'ok', traceparent: last.traceparent, note: 'The lab does not see this call itself: the MCP server makes it with its own token and hands back the result.', request: { note: 'made by the SE MCP server, not by this lab' }, response: { content: contentShown(result) } });
-    const text = replyText(tool, result);
+    if (L.tools) legNotRun('api', L.lab ? 'Not run: this tool serves lab-invented data itself; no API sits behind it.' : 'Not run: the lab sees no API behind the tool server; its own answer is the data.');
+    else push({ kind: 'api-call', label: 'API: the call behind the tool, made by the SE MCP server (seen only through its result)', from: 'mcp', to: 'api', verdict: 'ok', traceparent: last.traceparent, note: 'The lab does not see this call itself: the MCP server makes it with its own token and hands back the result.', request: { note: 'made by the SE MCP server, not by this lab' }, response: { content: contentShown(result) }, ...L.ans });
+    const text = replyText(tool, result, { provider: P.provider });
     push({ kind: 'agent-reply', label: 'Agent reply: written from the tool result', from: 'agent', to: 'page', verdict: 'ok', traceparent: tp(), request: {}, response: { reply: text } });
+    return { outcome: 'REAL_PERMIT', reply: { who: 'Agent', text } };
+  }
+
+  // UC24 on the tool server: the public tool is called with NO token, then a protected tool is probed with no token and must be refused (401). No agent token,
+  // no exchange (the public path skips them). Hops: gateway-check, tool-dispatched (the public call), tool-refused (the probe), agent-reply.
+  async function tokenlessLeg({ vertical, tool, uc, tp, push, legNotRun, P, L, probe }) {
+    const gs = createGatewaySession({ url: P.url, token: null, vertical, nextTraceparent: tp, provider: P.provider, fetchImpl: gatewayFetch ?? fetchImpl });
+    const shownReq = (c, body) => ({ method: 'POST', url: P.url, headers: Object.fromEntries(c.sentHeaders.map((k) => [k, k === 'traceparent' ? c.traceparent : k === 'x-active-vertical' ? vertical : k === 'mcp-session-id' ? gs.sessionId() : k === 'mcp-protocol-version' ? '(from initialize)' : k === 'accept' ? 'application/json, text/event-stream' : 'application/json'])), body });
+    const shownRes = (c, body) => ({ status: c.status, headers: { ...c.headers }, body });
+    const mapped = (c) => mapAnswer(c, { provider: P.provider, capability: P.capability });
+    const leg = (h, key, answered = h.verdict !== 'error') => push({ ...(answered ? L.ans : {}), capability: 'tools', ...(L.rows[key].title ? { shortTitle: L.rows[key].title } : {}), ...h });
+    const init = await gs.initialize();
+    let list = null;
+    if (init.kind === 'ok') { await gs.initialized(); list = await gs.listTools(); }
+    const listed = Array.isArray(list?.rpc?.result?.tools) ? list.rpc.result.tools.filter((t) => t && typeof t.name === 'string').map((t) => t.name.slice(0, 80)).slice(0, 300) : [];
+    const firstBad = init.kind !== 'ok' ? init : list && list.kind !== 'ok' ? list : null;
+    leg({ kind: 'gateway-check', label: `${P.label}: initialize and tools/list over MCP without a token`, from: 'agent', to: 'toolserver', verdict: firstBad ? 'deny' : 'ok', traceparent: init.traceparent,
+      note: firstBad ? mapped(firstBad).note : `The tool server (${L.where}) answered with no token and listed ${listed.length} tool${listed.length === 1 ? '' : 's'}: the public ones only.`,
+      request: { calls: [shownReq(init, { method: 'initialize' }), ...(list ? [shownReq(list, { method: 'notifications/initialized, then tools/list' })] : [])] },
+      response: { calls: [shownRes(init, init.rpc?.result ? { serverInfo: init.rpc.result.serverInfo ?? null, protocolVersion: str(init.rpc.result.protocolVersion) } : init.rpc ?? null), ...(list ? [shownRes(list, { tools: listed.length, names: listed.slice(0, 40) })] : [])] } }, 'check', !(firstBad && firstBad.kind === 'unreachable'));
+    if (firstBad) { const m = mapped(firstBad); legNotRun('tool', `Not run: ${m.note}`); legNotRun('reply', `Not run: ${m.note}`); return { outcome: m.outcome, reply: m.reply }; }
+    const args = toolArgs(tool, { vertical, args: situationOf(uc.id, vertical).args });
+    const call = await gs.callTool(tool, args);
+    const m = mapped(call);
+    leg({ kind: call.kind === 'ok' ? 'tool-dispatched' : call.kind === 'hold' ? 'tool-held' : 'tool-refused', label: `${P.label}: tools/call ${tool} without a token (a public tool)`, from: 'toolserver', to: 'toolserver', verdict: call.kind === 'ok' ? 'ok' : call.kind === 'hold' ? 'held' : (call.kind === 'unreachable' || call.kind === 'other') ? 'error' : 'deny', traceparent: call.traceparent,
+      note: call.kind === 'ok' ? (L.lab ? 'The tool server ran the public tool with no token. The data is lab-invented.' : `The tool server (${L.where}) ran the public tool with no token.`) : m.note,
+      request: { calls: [shownReq(call, { method: 'tools/call', name: tool, arguments: args })] }, response: { calls: [shownRes(call, call.kind !== 'ok' ? (call.rawText ? { raw: call.rawText } : (call.rpc ?? null)) : call.rpc?.error ? { error: { code: call.rpc.error.code ?? null, message: str(call.rpc.error.message) } } : { isError: call.rpc?.result?.isError === true, content: contentShown(call.rpc?.result) })] } }, 'tool');
+    if (call.kind !== 'ok') { legNotRun('reply', `Not run: ${m.note}`); return { outcome: m.outcome, reply: m.reply }; }
+    let probed = null;
+    if (probe) {
+      const pArgs = { limit: 1 };
+      const pc = await gs.callTool(PROBE_TOOL, pArgs);
+      probed = pc.kind === 'token';
+      leg({ kind: 'tool-refused', label: `${P.label}: tools/call ${PROBE_TOOL} without a token (the protected tool, probed)`, from: 'toolserver', to: 'toolserver', verdict: probed ? 'deny' : 'error', traceparent: pc.traceparent,
+        note: probed ? 'Refused as it should be: the protected tool answered 401 with no token.' : 'NOT refused: the protected tool answered without a token',
+        request: { calls: [shownReq(pc, { method: 'tools/call', name: PROBE_TOOL, arguments: pArgs })] }, response: { calls: [shownRes(pc, pc.kind !== 'ok' ? (pc.rawText ? { raw: pc.rawText } : (pc.rpc ?? null)) : { content: contentShown(pc.rpc?.result) })] } }, 'tool');
+    }
+    const found = replyText(tool, call.rpc?.result ?? null, { provider: P.provider });
+    const text = probed === null ? found : probed ? `${found} The protected tool ${PROBE_TOOL} was refused with no token (HTTP 401).` : `${found} The protected tool ${PROBE_TOOL} answered with no token: it was NOT refused.`;
+    push({ kind: 'agent-reply', label: 'Agent reply: written from the tool result', from: 'agent', to: 'page', verdict: probed === false ? 'error' : 'ok', traceparent: tp(), request: {}, response: { reply: text } });
+    if (probed === false) return { outcome: 'REAL_NOT_REFUSED', reply: { who: 'Tool server', text } };
     return { outcome: 'REAL_PERMIT', reply: { who: 'Agent', text } };
   }
 
   return {
     configured, wanted: () => wanted, problem: () => (configured() ? null : config.problem), missing: () => [...missing],
     username: () => (configured() ? config.username : null),
-    origins: () => (configured() ? [new URL(config.base).origin, new URL(config.gatewayUrl).origin] : []),
-    hosts: () => (configured() ? [new URL(config.base).hostname, new URL(config.gatewayUrl).hostname] : []),
+    // The endpoints a Real run may reach: PingOne, and when set (and valid) the SE gateway, an SE-hosted tool server and the SE HITL service. Only a validated URL adds one.
+    origins: () => (configured() ? endpoints().map((u) => new URL(u).origin) : []),
+    // The host names the netguard may allow (DNS names only: an IP literal is never allowed; loopback needs nothing).
+    hosts: () => (configured() ? [...new Set(endpoints().map((u) => new URL(u).hostname).filter((h) => !net.isIP(h.replace(/^\[|\]$/g, ''))))] : []),
+    gateway: () => (configured() ? config.gateway : null), gatewayProblem: () => (configured() ? config.gatewayProblem ?? null : null),
+    providerSetting: () => (configured() ? config.provider : 'auto'), toolsAudience: () => (configured() ? config.toolsAudience : DEFAULT_TOOLS_AUDIENCE), toolsTierGroup: () => (configured() ? config.toolsTierGroup : DEFAULT_TIER_GROUP),
+    toolsSeUrl: () => (configured() ? config.toolsSeUrl : null), toolsSeProblem: () => (configured() ? config.toolsSeProblem ?? null : null),
+    // The SE HITL service (F1: from the same settings as everything else), or null. The secret is write-only: it leaves here only to the approvals module.
+    hitl: () => (configured() && config.hitlUrl ? { url: config.hitlUrl, secret: config.hitlSecret } : null), hitlProblem: () => (configured() ? config.hitlProblem ?? null : null),
+    // What the local tool server needs at init (no secret): the issuer is always the user's own PingOne; the agent client is the one actor it accepts.
+    localConfig: () => (configured() ? { issuer: `${config.base}/as`, audience: config.toolsAudience, allowedActors: [config.agent.id], tierGroup: config.toolsTierGroup } : null),
     a2aReady: () => configured() && Boolean(config.a2a), a2aProblem: () => (configured() ? config.a2aProblem ?? null : null),
     signIn, session: sessionOf, signOut: (ws) => sessions.delete(ws), userOf, run,
     // A workspace's session, or one signed in silently from the PingOne session (null when there is none or it has ended). Waits 5 s after a failed try.
@@ -561,29 +771,84 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
   };
 }
 
-// The gateway's answer to the lab's words: outcome, the hop note and the reply. 403 DENY (with the audit trail's decision), 401 token problem (with
-// WWW-Authenticate), 428 hold (REAL hold, simulated approval), 502/503/504 or no answer: SE is down or scaled down. Never retried.
-export function mapAnswer(c) {
+// The provider's answer in the lab's words: outcome, the hop note and the reply. 403 DENY (with the audit trail's decision), 401 token problem (with
+// WWW-Authenticate), 428 hold (REAL hold, the phone approves it), 502/503/504 or no answer: no decision. Never retried.
+// c: what mcpClient.js send() returned. { provider, capability }: who answered. SE gateway (the default) keeps its own words; for capability 'tools' EVERY string
+// names the tool server and says a refusal is the lab's own policy, never a gateway's or PingOne Authorize's (design-real-local.md C.5). These are the lab's reading
+// of the answer, not Ping's behaviour.
+export function mapAnswer(c, { provider = 'se', capability = 'gateway' } = {}) {
   const audit = parseAuditTrail(c.headers?.['x-gw-audit-trail']);
   const www = c.headers?.['www-authenticate'] ? str(c.headers['www-authenticate'], 500) : null;
+  const body = c.rpc && typeof c.rpc === 'object' ? c.rpc : null;
+  const code = errorCodeOf(c);
+  // Three different things, said apart (owner 2026-11-16: "no response" is not a malformed request, which would get a 4xx): it answered 5xx, it sent nothing in time, or the connection failed.
+  const what = () => (c.status ? `answered HTTP ${c.status} and did not complete the call` : c.timedOut ? `sent no HTTP response within ${Math.round((c.waitedMs ?? 0) / 1000)} s, so the lab stopped waiting` : 'could not be reached: the connection failed before any response');
+  if (capability === 'tools') {
+    const where = provider === 'local' ? 'local' : 'SE';
+    const lab = provider === 'local';
+    // Whose rule refused: the lab's own tool server enforces the lab's own rule (not PingOne Authorize); an SE-hosted one is unknowable from here, so nothing is claimed about it.
+    const rule0 = lab ? `lab policy (${where}), not PingOne Authorize` : `the tool server's own policy (${where}), which the lab cannot see`;
+    const word = (v) => (typeof v === 'string' && /^[A-Za-z0-9_.:-]{1,80}$/.test(v) ? v : null);
+    switch (c.kind) {
+      case 'deny': {
+        if (code === 'hitl_receipt_rejected') {
+          const why = word(body?.reason) ?? 'receipt_unknown';
+          return { outcome: 'REAL_RECEIPT_REJECTED', note: `The tool server answered 403: it refused the approval receipt (${why}).`, reply: { who: 'Tool server', text: `The tool server refused the approval receipt (HTTP 403, ${why}), which is not a policy decision. Nothing was run.` } };
+        }
+        const rule = word(body?.reason) ?? word(code) ?? 'no reason given';
+        return { outcome: 'REAL_DENY', note: `The tool server answered 403: refused by ${rule0}: ${rule}.`, reply: { who: 'Tool server', text: `The tool server refused this request (HTTP 403, ${word(code) ?? 'no code'}) under ${lab ? `the lab's own policy (${where}), not PingOne Authorize` : rule0}. Nothing was run.` } };
+      }
+      case 'token': {
+        const fromHeader = /error_description="([a-z_]{1,40})"/.exec(www ?? '')?.[1] ?? null;
+        const why = word(body?.reason) ?? fromHeader;
+        const extra = `${why === 'token_expired' || why === 'token_not_yet_valid' ? ' This machine\'s clock may differ from PingOne\'s by more than 60 seconds.' : ''}${why === 'aud_mismatch' ? ' The token\'s aud must be AAG_TOOLS_AUDIENCE.' : ''}`;
+        return { outcome: 'REAL_TOKEN_PROBLEM', note: `The tool server (${where}) answered 401: it did not accept the delegated token (${why ?? 'no reason given'}).${extra}`, reply: { who: 'Tool server', text: `The tool server did not accept the delegated token (HTTP 401${why ? `, ${why}` : ''}). Nothing was run.` } };
+      }
+      case 'hold': {
+        const h = holdInfo(c);
+        if (h.stepUp) {
+          return {
+            outcome: 'REAL_HOLD',
+            note: `The tool server (${where}) answered 428: this write needs a stronger authentication, which the lab cannot complete, so the call is not retried.`,
+            reply: { who: 'Tool server', approval: { head: 'Held for step-up', body: `The tool server answered 428: this call needs step-up authentication under ${lab ? `its lab policy (${where}), not PingOne Authorize` : rule0}. This lab cannot complete a step-up, so nothing was run.` } },
+          };
+        }
+        return {
+          outcome: 'REAL_HOLD',
+          ...(h.challengeId ? { challengeId: h.challengeId } : {}),
+          note: `The tool server (${where}) answered 428: a person must approve (challenge ${h.challengeId ? 'minted' : 'not minted'}). Approve on the phone and the lab retries with the receipt.`,
+          reply: { who: 'Tool server', approval: { head: 'Held for approval', body: `The tool server answered 428: this call needs a person to approve it under ${lab ? `its lab policy (${where}), not PingOne Authorize` : rule0}. Approve (or deny) on the phone: the answer is recorded with ${lab ? 'the lab\'s own approval service' : 'the approval service that issued the challenge'} and the call is retried with the receipt.` } },
+        };
+      }
+      case 'unreachable': {
+        if (c.status === 503 && body?.error === 'jwks_unavailable') {
+          return { outcome: 'REAL_UNREACHABLE', note: 'The tool server could not get your PingOne\'s signing keys (jwks_unavailable), so it made no decision.', reply: { who: 'Tool server', text: 'No decision: the tool server could not get your PingOne\'s signing keys. Check that its network reaches PingOne (and NODE_EXTRA_CA_CERTS if a proxy inspects TLS). Nothing was run.' } };
+        }
+        const w = what();
+        return { outcome: 'REAL_UNREACHABLE', note: `The tool server (${where}) ${w}. The lab does not retry.`, reply: { who: 'Tool server', text: `No decision: the tool server ${w}.` } };
+      }
+      default: return { outcome: 'REAL_REFUSED', note: `The tool server (${where}) answered HTTP ${c.status}${c.status === 429 ? ' (a rate limit)' : c.status >= 300 && c.status < 400 ? ' (a redirect, never followed)' : ''}.`, reply: { who: 'Tool server', text: `The tool server answered HTTP ${c.status}; the agent stopped there.` } };
+    }
+  }
   switch (c.kind) {
-    case 'deny': return { outcome: 'REAL_DENY', note: `The gateway answered 403: a policy DENY${audit?.decision ? ` (audit trail decision: ${audit.decision})` : ''}.`, reply: { who: 'Authorize', text: `Authorize denied this request (HTTP 403 from the Agent Gateway${audit?.decision ? `, decision ${audit.decision}` : ''}). Nothing was sent to the tool.` } };
+    case 'deny':
+      if (code === 'hitl_receipt_rejected') return { outcome: 'REAL_RECEIPT_REJECTED', note: 'The gateway answered 403: it refused the approval receipt (hitl_receipt_rejected), which is not a policy decision.', reply: { who: 'Gateway', text: 'The Agent Gateway refused the approval receipt (HTTP 403, hitl_receipt_rejected), which is not a policy decision. Nothing was sent to the tool.' } };
+      if (code === 'hitl_service_unavailable') return { outcome: 'REAL_UNREACHABLE', note: 'no decision: the gateway could not reach the HITL service', reply: { who: 'Gateway', text: 'No decision: the Agent Gateway could not reach the HITL service. The lab does not retry.' } };
+      return { outcome: 'REAL_DENY', note: `The gateway answered 403: a policy DENY${audit?.decision ? ` (audit trail decision: ${audit.decision})` : ''}.`, reply: { who: 'Authorize', text: `Authorize denied this request (HTTP 403 from the Agent Gateway${audit?.decision ? `, decision ${audit.decision}` : ''}). Nothing was sent to the tool.` } };
     case 'token': return { outcome: 'REAL_TOKEN_PROBLEM', note: `The gateway answered 401: a token problem${www ? ` (WWW-Authenticate: ${www})` : ''}.`, reply: { who: 'Gateway', text: `The Agent Gateway did not accept the delegated token (HTTP 401)${www ? `: ${www}` : ''}. Check the token exchange audience and scope.` } };
     case 'hold': {
-      const body = c.rpc?.error ?? c.body ?? null;
-      const challengeId = typeof body?.challengeId === 'string' ? body.challengeId : null;
-      const isStepUp = body?.error === 'step_up_required';
+      const h = holdInfo(c);
       return {
         outcome: 'REAL_HOLD',
-        ...(challengeId && !isStepUp ? { challengeId } : {}),
-        note: isStepUp
+        ...(h.challengeId && !h.stepUp ? { challengeId: h.challengeId } : {}),
+        note: h.stepUp
           ? 'The gateway answered 428: step-up (a stronger authentication) is required. This lab cannot complete a step-up, so the call is not retried.'
-          : `The gateway answered 428: a person must approve (challenge ${challengeId ? 'minted' : 'not minted'}). Approve on the phone and the lab retries with the receipt.`,
+          : `The gateway answered 428: a person must approve (challenge ${h.challengeId ? 'minted' : 'not minted'}). Approve on the phone and the lab retries with the receipt.`,
         reply: {
           who: 'Authorize',
           approval: {
-            head: isStepUp ? 'Held for step-up' : 'Held for approval',
-            body: isStepUp
+            head: h.stepUp ? 'Held for step-up' : 'Held for approval',
+            body: h.stepUp
               ? 'The Agent Gateway answered 428: this call needs step-up authentication. This lab cannot complete a step-up, so nothing was sent to the tool.'
               : 'The Agent Gateway answered 428: this call needs a person to approve it. Approve (or deny) on the phone: an approval is recorded with the HITL service and the call is retried with the verified receipt.',
           },
@@ -591,12 +856,12 @@ export function mapAnswer(c) {
       };
     }
     case 'unreachable': {
-      // Three different things, said apart (owner 2026-11-16: "no response" is not a malformed request, which would get a 4xx): the gateway answered 5xx, it sent nothing in time, or the connection failed.
-      const what = c.status ? `answered HTTP ${c.status} and did not complete the call` : c.timedOut ? `sent no HTTP response within ${Math.round((c.waitedMs ?? 0) / 1000)} s, so the lab stopped waiting` : 'could not be reached: the connection failed before any response';
+      if (code === 'hitl_service_unavailable') return { outcome: 'REAL_UNREACHABLE', note: 'no decision: the gateway could not reach the HITL service', reply: { who: 'Gateway', text: 'No decision: the Agent Gateway could not reach the HITL service. The lab does not retry.' } };
+      const w = what();
       const why = c.status ? 'It may be down or scaled down, or unable to get a decision from Authorize; its own answer is shown in the hop.' : c.timedOut ? 'A timeout is not an error answer: the gateway may be down, or still waiting on Authorize.' : 'Check the gateway URL and the network.';
-      return { outcome: 'REAL_UNREACHABLE', note: `The Agent Gateway ${what}. ${why} The lab does not retry.`, reply: { who: 'Gateway', text: `No decision: the Agent Gateway ${what}. ${why}` } };
+      return { outcome: 'REAL_UNREACHABLE', note: `The Agent Gateway ${w}. ${why} The lab does not retry.`, reply: { who: 'Gateway', text: `No decision: the Agent Gateway ${w}. ${why}` } };
     }
-    default: return { outcome: 'REAL_REFUSED', note: `The gateway answered HTTP ${c.status}${c.status >= 300 && c.status < 400 ? ' (a redirect, never followed)' : ''}.`, reply: { who: 'Gateway', text: `The Agent Gateway answered HTTP ${c.status}; the agent stopped there.` } };
+    default: return { outcome: 'REAL_REFUSED', note: `The gateway answered HTTP ${c.status}${c.status === 429 ? ' (a rate limit)' : c.status >= 300 && c.status < 400 ? ' (a redirect, never followed)' : ''}.`, reply: { who: 'Gateway', text: `The Agent Gateway answered HTTP ${c.status}; the agent stopped there.` } };
   }
 }
 
@@ -615,16 +880,28 @@ export function accountIds(payload) {
   const list = Array.isArray(payload) ? payload : Array.isArray(payload?.accounts) ? payload.accounts : [];
   return list.map((a) => (a && typeof a.id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(a.id) ? a.id : null)).filter(Boolean).slice(0, 2);
 }
-// The reply in the Agent's voice, from the real result: up to six plain fields, or the first sentence of text. Never more than 600 characters.
-export function replyText(tool, result) {
+// The reply in the Agent's voice, from the real result: up to six plain fields, or the first sentence of text. Never more than 600 characters. A payload that says
+// lab_invented (the lab's own tool server's data) gets that said in the reply, and the flag itself is not read out as a field.
+export const LAB_DATA_NOTE = ' (lab-invented data from the lab\'s own tool server)';
+// A UUID (the signed-in user's own sub is one) is an identifier, not a credential: it is kept whole while everything around it is masked as before.
+const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+function cleanKeepIds(text, max) {
+  const ids = [];
+  const held = String(text).replace(UUID_ANYWHERE, (m) => { ids.push(m); return `uidph${ids.length - 1}x`; });
+  return cleanFree(held, max + ids.length * 40).replace(/uidph(\d{1,3})x/g, (m, i) => ids[Number(i)] ?? m).slice(0, max);
+}
+export function replyText(tool, result, _opts = {}) {
   const p = toolPayload(result);
   if (typeof p === 'string') return cleanFree(`Here is what ${tool} returned: ${p}`, 600);
-  const flat = (o) => Object.entries(o || {}).filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v)).slice(0, 6).map(([k, v]) => `${k} ${v}`).join(', ');
-  if (Array.isArray(p)) return cleanFree(`${tool} returned ${p.length} ${p.length === 1 ? 'item' : 'items'}${p.length && typeof p[0] === 'object' ? `; the first: ${flat(p[0])}` : ''}.`, 600);
+  const labData = p && typeof p === 'object' && !Array.isArray(p) && p.lab_invented === true;
+  const flat = (o) => Object.entries(o || {}).filter(([k, v]) => k !== 'lab_invented' && ['string', 'number', 'boolean'].includes(typeof v)).slice(0, 6).map(([k, v]) => `${k} ${v}`).join(', ');
+  if (Array.isArray(p)) return cleanKeepIds(`${tool} returned ${p.length} ${p.length === 1 ? 'item' : 'items'}${p.length && typeof p[0] === 'object' ? `; the first: ${flat(p[0])}` : ''}.`, 600);
   if (p && typeof p === 'object') {
     const arr = Object.entries(p).find(([, v]) => Array.isArray(v));
     const head = flat(p);
-    return cleanFree(`Here is what ${tool} returned: ${head || (arr ? `${arr[1].length} ${arr[0]}` : 'an empty answer')}${head && arr ? ` (and ${arr[1].length} ${arr[0]})` : ''}.`, 600);
+    // "returned 5 (and 5 issues)" said the same number twice: the list is mentioned only when its length is not already one of the numbers in the head.
+    const said = Object.entries(p).some(([k, v]) => k !== 'lab_invented' && typeof v === 'number' && v === arr?.[1].length);
+    return cleanKeepIds(`Here is what ${tool} returned: ${head || (arr ? `${arr[1].length} ${arr[0]}` : 'an empty answer')}${head && arr && !said ? ` (and ${arr[1].length} ${arr[0]})` : ''}${labData ? LAB_DATA_NOTE : ''}.`, 600);
   }
   return `${tool} answered with no content.`;
 }

@@ -8,11 +8,14 @@
 // So exchange 1 (user + agent actor, agent scope) mints act, exchange 2 (the exchange-1 token, gateway scope) keeps it, and the OLD single exchange (the
 // user's token + the agent actor + the gateway scope) or an exchange 2 on a plain user token mints NO act: the bug this fake lets the tests pin.
 // (act: 'empty' mints a useless act: {} with no sub; 'blank' an act with an empty sub.)
+// A third resource, the tools resource (2026-11-16, the owner's "Appfire Work Suite Tools": audience appfire-work-tools, six scopes, act passed through, a
+// groups claim from state.tools.groups): exchange 2 for ONE tool scope mints for it. Every token is signed ES256 with a fixed public test key (kid fake-es-1),
+// its iss is this fake's own base (http://127.0.0.1:<port>/<env>/as) and discovery and /as/jwks serve it, so the lab's tool server can verify it for real.
 // state.full picks a variant: { signin: 'ok' | 'resume' | 'bad-password' | 'mfa' | 'echo-pw' | 'bad-state' | 'no-state',
-//   exchange: 'ok' | 'refuse' (the exchange for the agent scope) | 'refuse-2' (the exchange for the gateway scope) | 'echo' / 'echo-2' (the same refusals, but
+//   exchange: 'ok' | 'refuse-tools' (the exchange for a tool scope) | 'opaque-tools' (that exchange answers an opaque token) | 'refuse' (the exchange for the agent scope) | 'refuse-2' (the exchange for the gateway scope) | 'echo' / 'echo-2' (the same refusals, but
 //   PingOne's error text echoes the subject token and the agent's client secret, as a careless authorization server might) }.
 import http from 'node:http';
-import { createHash, randomBytes } from 'node:crypto';
+import { createECDH, createHash, createPrivateKey, randomBytes, sign } from 'node:crypto';
 
 export const ENV_ID = '11111111-2222-4333-8444-555555555555';
 export const CLIENT_ID = '66666666-7777-4888-8999-aaaaaaaaaaaa';
@@ -44,7 +47,24 @@ export const a2aSettings = (extra = {}) => ({
   AAG_A2A_INTERMEDIATE_SCOPE: A2A_INTERMEDIATE_SCOPE, AAG_A2A_GATEWAY_AUDIENCE: A2A_GATEWAY_AUD, AAG_A2A_SCOPE: A2A_SCOPE, ...extra,
 });
 export const USER_SUB = '99999999-aaaa-4bbb-8ccc-dddddddddddd';
-const jwt = (claims) => [b64u({ alg: 'RS256', typ: 'JWT', kid: 'fake-kid' }), b64u({ iss: `http://fake.invalid/${ENV_ID}/as`, iat: 1700000000, exp: 4102444800, ...claims }), 'ZmFrZXNpZ25hdHVyZWZvcnRlc3Rz'].join('.');
+// The tools resource of the owner's PingOne (names only): the six scopes, the audience and the premium-tier group.
+export const TOOLS_AUDIENCE = 'appfire-work-tools';
+export const TOOLS_SCOPES = ['issues:read', 'issues:write', 'security:read', 'release:read', 'deploy:read', 'admin:request'];
+export const TIER_GROUP = 'Software_EnterpriseTier';
+// A fixed public test key (the scalar protects nothing), built with createECDH + createPrivateKey like mockjwt.js.
+const ES_SCALAR = createHash('sha256').update('appfire fake pingone es256 test key (public, protects nothing)').digest();
+const ES_KEYS = (() => {
+  const ecdh = createECDH('prime256v1'); ecdh.setPrivateKey(ES_SCALAR);
+  const pub = ecdh.getPublicKey();
+  const jwk = { kty: 'EC', crv: 'P-256', x: pub.subarray(1, 33).toString('base64url'), y: pub.subarray(33, 65).toString('base64url') };
+  return { privateKey: createPrivateKey({ key: { ...jwk, d: ES_SCALAR.toString('base64url') }, format: 'jwk' }), publicJwk: { ...jwk, kid: 'fake-es-1', use: 'sig', alg: 'ES256' } };
+})();
+export const FAKE_PUBLIC_JWK = ES_KEYS.publicJwk;
+// A signed ES256 token. issuer: the base the fake serves (set once it listens).
+const signJwt = (issuer, claims) => {
+  const input = `${b64u({ alg: 'ES256', typ: 'JWT', kid: 'fake-es-1' })}.${b64u({ iss: issuer, iat: 1700000000, exp: 4102444800, ...claims })}`;
+  return `${input}.${sign('sha256', Buffer.from(input), { key: ES_KEYS.privateKey, dsaEncoding: 'ieee-p1363' }).toString('base64url')}`;
+};
 const basicOf = (id, secret) => `Basic ${Buffer.from(`${id}:${secret}`).toString('base64')}`;
 const claimsIn = (t) => { try { return JSON.parse(Buffer.from(String(t).split('.')[1], 'base64url').toString('utf8')); } catch { return null; } };
 const AT_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
@@ -52,12 +72,16 @@ const AT_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
 // behaviour: 'ok' | 'bad-secret' | 'discovery-500' | 'redirect' | 'huge' | 'slow' | 'html' | 'opaque'
 export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentScope = AGENT_SCOPE } = {}) {
   const seen = [];
+  let issuer = `http://fake.invalid/${ENV_ID}/as`; // the real one once the fake listens
+  const jwt = (claims) => signJwt(issuer, claims);
   const resources = {
     agent: { name: 'Fake agent resource', audience: AGENT_AUDIENCE, scopes: [agentScope], act: 'actor' },
     gateway: { name: 'Fake gateway resource', audience: AUDIENCE, scopes: [SCOPE], act: 'passthrough' },
+    tools: { name: 'Fake tools resource', audience: TOOLS_AUDIENCE, scopes: TOOLS_SCOPES, act: 'passthrough', groups: true },
   };
-  // agentGrants: the scopes the agent app may ask for (the owner setup script grants both).
-  const state = { behaviour, delayMs, sso: { mode: 'ok' }, full: { signin: 'ok', exchange: 'ok' }, a2a: { specialist: 'ok', exchange1: 'ok', exchange2: 'ok' }, resources, agentGrants: [agentScope, SCOPE] };
+  // agentGrants: the scopes the agent app may ask for (the owner setup script grants them all).
+  // tools.groups: what the tools resource's groups attribute puts in an exchanged token (settable per test; [] = a standard-tier user, null = no groups claim at all).
+  const state = { behaviour, delayMs, sso: { mode: 'ok' }, full: { signin: 'ok', exchange: 'ok' }, a2a: { specialist: 'ok', exchange1: 'ok', exchange2: 'ok' }, resources, agentGrants: [agentScope, SCOPE, ...TOOLS_SCOPES], tools: { groups: [] } };
   const flows = new Map(); // flow id -> { cookie, challenge, state, nonce, done }
   // The PingOne session (owner, 2026-11-16): a completed password sign-in sets the P1SSO cookie; authorize with a valid one answers COMPLETED with a code and no
   // password step. state.sso.mode: 'ok' | 'expired' (the cookie is no longer honoured: the password is asked for again).
@@ -177,8 +201,9 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
             const res = resourceOf(form.scope);
             if (!res) return send(400, { error: 'invalid_scope', error_description: 'fake: no resource owns that scope' });
             if (String(form.scope).split(' ').some((sc) => !state.agentGrants.includes(sc))) return send(400, { error: 'invalid_scope', error_description: 'fake: the agent app has no grant for that scope' });
-            if ((state.full.exchange === 'refuse' && res === resources.agent) || (state.full.exchange === 'refuse-2' && res === resources.gateway)) return send(400, { error: 'invalid_request', error_description: 'fake: exchange refused' });
+            if ((state.full.exchange === 'refuse' && res === resources.agent) || (state.full.exchange === 'refuse-2' && res === resources.gateway) || (state.full.exchange === 'refuse-tools' && res === resources.tools)) return send(400, { error: 'invalid_request', error_description: 'fake: exchange refused' });
             if ((state.full.exchange === 'echo' && res === resources.agent) || (state.full.exchange === 'echo-2' && res === resources.gateway)) return send(400, { error: `invalid_request ${form.subject_token}`, error_description: `fake echo: ${form.subject_token} ${AGENT_CLIENT_SECRET} ${String(form.subject_token).slice(0, 40)}` });
+            if (state.full.exchange === 'opaque-tools' && res === resources.tools) return send(200, { access_token: 'opaque-token-value-0123456789abcdef', issued_token_type: AT_TYPE, token_type: 'Bearer', expires_in: 900, scope: form.scope });
             const subject = [...issued.user, ...issued.exchange1, ...issued.delegated, ...issued.noAct].includes(form.subject_token) ? claimsIn(form.subject_token) : null;
             if (!subject || form.subject_token_type !== AT_TYPE) return send(400, { error: 'invalid_grant', error_description: 'fake: the subject token is not one this fake issued' });
             let actor = null;
@@ -188,15 +213,17 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
             }
             // The resource's act attribute decides: from the actor token (agent resource) or passed through from the subject token (gateway resource).
             const act = res.act === 'empty' ? {} : res.act === 'blank' ? { sub: '' } : res.act === 'actor' ? (actor ? { sub: actor.client_id } : null) : res.act === 'passthrough' ? (subject.act ?? null) : null;
-            const at = jwt({ sub: subject.sub, aud: res.audience, scope: form.scope, client_id: AGENT_CLIENT_ID, ...(act ? { act } : {}) });
+            const groups = res.groups && state.tools.groups !== null ? { groups: state.tools.groups } : {};
+            const at = jwt({ sub: subject.sub, aud: res.audience, scope: form.scope, client_id: AGENT_CLIENT_ID, ...groups, ...(act ? { act } : {}) });
             (res === resources.agent ? issued.exchange1 : act ? issued.delegated : issued.noAct).add(at);
             return send(200, { access_token: at, issued_token_type: AT_TYPE, token_type: 'Bearer', expires_in: 900, scope: form.scope });
           }
           return send(400, { error: 'unsupported_grant_type' });
         }
+        if (req.method === 'GET' && req.url === `/${ENV_ID}/as/jwks`) return send(200, { keys: [FAKE_PUBLIC_JWK] });
         if (req.method === 'GET' && req.url === `/${ENV_ID}/as/.well-known/openid-configuration`) {
           if (b === 'discovery-500') return send(500, { code: 'UNEXPECTED_ERROR', message: 'fake failure' });
-          return send(200, { issuer: `http://fake.invalid/${ENV_ID}/as`, token_endpoint: `http://fake.invalid/${ENV_ID}/as/token`, grant_types_supported: ['client_credentials', 'authorization_code', 'urn:ietf:params:oauth:grant-type:token-exchange'], token_endpoint_auth_methods_supported: ['client_secret_basic'], ignored_field: 'not shown' });
+          return send(200, { issuer, jwks_uri: `${issuer}/jwks`, token_endpoint: `${issuer}/token`, grant_types_supported: ['client_credentials', 'authorization_code', 'urn:ietf:params:oauth:grant-type:token-exchange'], token_endpoint_auth_methods_supported: ['client_secret_basic'], ignored_field: 'not shown' });
         }
         if (req.method === 'POST' && req.url === `/${ENV_ID}/as/token`) {
           const want = `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')}`;
@@ -210,13 +237,16 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
+  issuer = `http://127.0.0.1:${port}/${ENV_ID}/as`;
   return { seen, state, issued, port, base: `http://127.0.0.1:${port}/${ENV_ID}`, close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(r); }) };
 }
 
 export const settingsFor = () => ({ PINGONE_ENVIRONMENT_ID: ENV_ID, PINGONE_REGION: 'com', PINGONE_CLIENT_ID: CLIENT_ID, PINGONE_CLIENT_SECRET: CLIENT_SECRET });
 
-// Full Real settings for the fakes (fake values only). gatewayUrl: the fake gateway's URL (loopback http).
-export const fullSettingsFor = (gatewayUrl, extra = {}) => ({
+// Full Real settings for the fakes (fake values only). gatewayUrl: the fake gateway's URL (loopback http), or null for a lab with NO SE gateway (the three gateway
+// names are then left out: Real starts with the local provider only).
+export const fullSettingsFor = (gatewayUrl = null, extra = {}) => ({
   PINGONE_ENVIRONMENT_ID: ENV_ID, PINGONE_REGION: 'com', AAG_USER_CLIENT_ID: USER_CLIENT_ID, AAG_USER_CLIENT_SECRET: USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID: AGENT_CLIENT_ID,
-  AAG_AGENT_CLIENT_SECRET: AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME: DEMO_USERNAME, AAG_AGENT_GATEWAY_URL: gatewayUrl, AAG_GATEWAY_AUDIENCE: AUDIENCE, AAG_GATEWAY_SCOPE: SCOPE, ...extra,
+  AAG_AGENT_CLIENT_SECRET: AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME: DEMO_USERNAME,
+  ...(gatewayUrl ? { AAG_AGENT_GATEWAY_URL: gatewayUrl, AAG_GATEWAY_AUDIENCE: AUDIENCE, AAG_GATEWAY_SCOPE: SCOPE } : {}), ...extra,
 });

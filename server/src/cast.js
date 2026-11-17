@@ -17,7 +17,7 @@ export const TOOL_ROLES = { get_account_balance: 'read', create_transfer: 'write
 export const OPTIONAL_TOOL_ROLES = { get_branch_hours: 'public', show_mortgage: 'status', request_fee_waiver: 'request', get_weather: 'scan' };
 const OPTIONAL_ROLE_KEY = { public: 'castPublicTool', status: 'castStatusTool', request: 'castRequestTool', scan: 'castScanTool' };
 // Cast keys only some packs define. Everything else is required of every pack (a test pins both lists).
-export const OPTIONAL_CAST_KEYS = [...Object.values(OPTIONAL_ROLE_KEY), 'castUnit', 'castPerson', 'castMockOnly'];
+export const OPTIONAL_CAST_KEYS = [...Object.values(OPTIONAL_ROLE_KEY), 'castUnit', 'castPerson', 'castToolServer'];
 
 export const VERTICALS = {
   banking: {
@@ -36,14 +36,14 @@ export const VERTICALS = {
     castAsset: 'order', castAction: 'checkout', castGroup: 'premium-tier',
   },
   // The Appfire Work Suite (owner, 2026-11-16): Jira and Confluence work management. The write tool's `amount` is the NUMBER OF ISSUES in a bulk edit
-  // (castUnit); castPerson is what the signed-in human is called in the agent's instructions; castMockOnly marks a pack the SE gateway does not serve.
+  // (castUnit); castPerson is what the signed-in human is called in the agent's instructions; castToolServer marks a pack whose tools the lab's own tool
+  // server (the local provider, or an SE-hosted instance of it) serves: the SE Agent Gateway serves none of them (owner 2026-11-16, reversing "software is mock-only").
   software: {
     castBrand: 'Appfire Work Suite', castHost: 'appfire-work', castUser: 'maya.chen', castUser2: 'raj.patel', castOwner2: 'noor.haddad', castAgent: 'release-assistant', castAgent2: 'release-specialist', castAgent3: 'report-generalist',
     castAdmin: 'ivan.petrov', castMoney: 'projects and issues', castReadTool: 'get_my_issues', castWriteTool: 'bulk_update_issues', castSensitiveTool: 'get_project_security_settings', castA2aTool: 'get_release_summary',
     castAsset: 'project', castAction: 'bulk edit', castGroup: 'enterprise-tier',
     castPublicTool: 'list_marketplace_apps', castStatusTool: 'get_deployment_status', castRequestTool: 'request_admin_access', castScanTool: 'scan_repository', castUnit: 'issues', castPerson: 'user',
-    // The SE gateway serves no tool of this pack, so no use case runs Real (realGate); in Real mode they run on the labelled mock engine.
-    castMockOnly: 'mock',
+    castToolServer: 'work-suite',
   },
 };
 

@@ -51,7 +51,7 @@ test('owner 2026-11-09: the doctor says which file it reads (the app\'s own .env
     const at = async () => (await runChecks({ env: { AAG_ENV_FILE: f } })).find((x) => x.id === 'settings-file');
     const none = await at(); assert.equal(none.level, 'info'); assert.ok(none.detail.includes(`reads ${f} (AAG_ENV_FILE): not there`)); assert.match(none.detail, /copy \.env\.example to \.env/);
     fs.writeFileSync(f, 'PINGONE_ENVIRONMENT_ID=11111111-2222-4333-8444-555555555555\nPINGONE_CLIENT_SECRET=hunter2hunter2\n', { mode: 0o600 });
-    const partial = await at(); assert.equal(partial.level, 'pass'); assert.match(partial.detail, /full-Real settings missing: AAG_USER_CLIENT_ID, .*AAG_GATEWAY_SCOPE \(/); assert.doesNotMatch(partial.detail, /PINGONE_ENVIRONMENT_ID/, 'a set name is not listed');
+    const partial = await at(); assert.equal(partial.level, 'pass'); assert.match(partial.detail, /full-Real settings missing: AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME \(/); assert.doesNotMatch(partial.detail, /PINGONE_ENVIRONMENT_ID/, 'a set name is not listed');
     assert.ok(!/hunter2|11111111/.test(partial.detail), 'no value printed');
     fs.writeFileSync(f, 'PINGONE_ENVIRONMENT_ID=11111111-2222-4333-8444-555555555555\nPINGONE_CLIENT_ID=cid\nPINGONE_CLIENT_SECRET=hunter2hunter2\n', { mode: 0o600 });
     const full = await at(); assert.match(full.detail, /full-Real settings missing: AAG_USER_CLIENT_ID/, 'the old worker client is not the full-Real settings'); assert.ok(!/hunter2|11111111|cid\b/.test(full.detail));
@@ -114,4 +114,20 @@ test('step 3: health says runtime offline by default and live when the lab says 
     let body; h.router.stack[0].route.stack[0].handle({}, { set() {}, json(b) { body = b; } }); h.stop();
     assert.equal(body.schema, 'demo-health/1'); assert.equal(body.runtime, want);
   }
+});
+
+test('provider (owner 2026-11-16): the doctor passes with the setting named and fails on an invalid AAG_PROVIDER naming the setting only; the SE gateway is an info line, never a failure', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cal-doc-prov-'));
+  const f = path.join(dir, '.env');
+  try {
+    const at = async (text, id) => { fs.writeFileSync(f, text, { mode: 0o600 }); return (await runChecks({ env: { AAG_ENV_FILE: f } })).find((x) => x.id === id); };
+    const fullText = (extra, gw = null) => `${Object.entries(fullSettingsFor(gw, extra)).map(([k, v]) => `${k}=${v}`).join('\n')}\n`;
+    const dflt = await at('', 'provider'); assert.equal(dflt.level, 'pass'); assert.match(dflt.detail, /^AAG_PROVIDER is auto: /);
+    for (const v of ['se', 'local', 'LOCAL']) { const p = await at(`AAG_PROVIDER=${v}\n`, 'provider'); assert.equal(p.level, 'pass'); assert.match(p.detail, new RegExp(`^AAG_PROVIDER is ${v.toLowerCase()}: `)); }
+    const bad = await at('AAG_PROVIDER=sideways-value\n', 'provider'); assert.equal(bad.level, 'fail'); assert.match(bad.detail, /AAG_PROVIDER \(auto, se or local\)/); assert.ok(!bad.detail.includes('sideways-value'), 'the value is never printed');
+    const none = await at(fullText({}), 'gateway'); assert.equal(none.level, 'info'); assert.match(none.detail, /^SE gateway: not set \(banking, healthcare and retail stay on the lab's own steps\)$/);
+    const set = await at(fullText({}, 'https://gw.lab-test.net/mcp'), 'gateway'); assert.equal(set.level, 'info'); assert.equal(set.detail, 'SE gateway: set');
+    const live = await at(fullText({}), 'live'); assert.equal(live.level, 'pass'); assert.match(live.detail, /no SE gateway is set, so the software vertical uses the lab's own tool server on loopback; the netguard allows the PingOne host/);
+    assert.ok(!(await runChecks({ env: { AAG_ENV_FILE: f } })).some((c) => c.level === 'fail'), 'a missing gateway is not a failure');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

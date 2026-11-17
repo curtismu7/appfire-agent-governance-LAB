@@ -9,6 +9,7 @@ import { createLive, hostToAllow, liveConfig } from './live.js';
 import { createHealth } from './health.js';
 import { createWorkspaces } from './workspaces.js';
 import { allowBrainHost, brainConfig, createBrain } from './brain.js';
+import { createLocalServices } from './localServices.js';
 
 const guard = installNetguard(); // before anything else can open a socket
 
@@ -47,12 +48,21 @@ if (process.env.AAG_LAB_MODE === 'live' && mode !== 'live') console.log('[appfir
 // otherwise nothing. Mock runs never use them (a test asserts zero attempts).
 const allowHosts = fullOn ? real.hosts().filter((h) => !isLoopbackHost(h)) : [hostToAllow(live, liveRefused)].filter(Boolean);
 for (const h of allowHosts) guard.allowHost(h);
+// The lab's own tool server and approval service (owner 2026-11-16): ONE child process on 127.0.0.1, an ephemeral port nothing publishes, forked when Real is
+// configured, the build is not hosted and AAG_PROVIDER is not se. The lab never refuses to start because of it: a failed start leaves the local provider off.
+const caCerts = typeof process.env.NODE_EXTRA_CA_CERTS === 'string' && process.env.NODE_EXTRA_CA_CERTS.length <= 1024 ? process.env.NODE_EXTRA_CA_CERTS : undefined;
+const local = !hosted && fullOn && real.providerSetting() !== 'se' ? createLocalServices({ config: real.localConfig(), hosted, caCertsPath: caCerts }) : null;
+if (local) {
+  const started = await local.start();
+  if (!started.ok) console.error('[appfire-agent-governance-lab] local tool server did not start');
+  for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => { local.stop().finally(() => process.exit(0)); });
+}
 // The llama.cpp brain (Step 2, owner opt-in): one origin from AAG_BRAIN_URL, loopback or host.docker.internal only. Loopback is already allowed; from Docker the
 // netguard allows host.docker.internal and nothing else. Unset or invalid: no brain, and the page offers Scripted only.
 const brainCfg = brainConfig(process.env);
 allowBrainHost(guard, brainCfg);
 const brain = createBrain({ config: brainCfg });
-const app = createApp({ bind: host, openingMode: mode, workspaces: createWorkspaces({ defaultMode: mode }), live, real, brain, health: createHealth({ runtime: () => (liveOn ? 'live' : 'offline') }) });
+const app = createApp({ bind: host, openingMode: mode, workspaces: createWorkspaces({ defaultMode: mode }), live, real, local, brain, health: createHealth({ runtime: () => (liveOn ? 'live' : 'offline') }) });
 const { url } = await startHttpServer({ port: resolvePort(), host, app });
 console.log(`[appfire-agent-governance-lab] lab at ${url} (opens in ${mode} mode; ${hosted ? 'hosted build, mock only' : 'loopback'}; ${fullOn ? `full Real is on: outbound only to ${real.origins().join(' and ')}` : liveOn ? `Real (identity provider only) is on: outbound only to ${live.origin()}` : 'no outbound network'}${brain.configured() ? `; brain: ${brain.label()}` : ''})`);
 console.log(`[appfire-agent-governance-lab] health: ${url}api/health`);

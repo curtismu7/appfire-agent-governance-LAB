@@ -18,15 +18,17 @@ export class GatewayRefused extends Error {
   constructor(code, message) { super(message); this.code = code; }
 }
 
-// The gateway URL the settings name: https (http only on a loopback host, for the tests' fake), no credentials, no query or fragment.
-export function gatewayUrlProblem(raw) {
+// An MCP endpoint URL a setting names: https (http only on a loopback host, for the tests' fakes), no credentials, no query or fragment. `name` is the setting
+// the sentence names (never the value).
+export function urlProblem(raw, name) {
   let u;
-  try { u = new URL(String(raw || '')); } catch { return 'AAG_AGENT_GATEWAY_URL is not a URL'; }
-  if (u.username || u.password) return 'AAG_AGENT_GATEWAY_URL must not carry credentials';
-  if (u.search || u.hash) return 'AAG_AGENT_GATEWAY_URL must not carry a query or a fragment';
-  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLoopbackHost(u.hostname))) return 'AAG_AGENT_GATEWAY_URL must be https';
+  try { u = new URL(String(raw || '')); } catch { return `${name} is not a URL`; }
+  if (u.username || u.password) return `${name} must not carry credentials`;
+  if (u.search || u.hash) return `${name} must not carry a query or a fragment`;
+  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && isLoopbackHost(u.hostname))) return `${name} must be https`;
   return null;
 }
+export const gatewayUrlProblem = (raw) => urlProblem(raw, 'AAG_AGENT_GATEWAY_URL');
 
 export function assertNoTrusted(headers) {
   for (const k of Object.keys(headers)) {
@@ -38,10 +40,10 @@ export function assertNoTrusted(headers) {
 }
 
 // The headers of one gateway call. vertical is a known vertical id (checked by the caller); sessionId and protocol come from the gateway's own answer.
+// token may be null (UC24, the public call and the tokenless probe): the request then carries no authorization header and no x-token-validation either.
 export function gatewayHeaders({ token, traceparent, vertical, sessionId = null, protocol = null }) {
   const h = {
-    authorization: `Bearer ${token}`,
-    'x-token-validation': 'jwks',
+    ...(token ? { authorization: `Bearer ${token}`, 'x-token-validation': 'jwks' } : {}),
     traceparent,
     'x-active-vertical': vertical,
     'content-type': 'application/json',
@@ -110,7 +112,7 @@ export function classify(status) {
 }
 
 // One gateway session: initialize, then the notification the protocol asks for, then tools/list and tools/call with the session id the gateway gave.
-export function createGatewaySession({ url, token, vertical, nextTraceparent, fetchImpl = (...a) => globalThis.fetch(...a), timeoutMs = GATEWAY_TIMEOUT_MS, maxBytes = GATEWAY_MAX_BYTES }) {
+export function createGatewaySession({ url, token, vertical, nextTraceparent, provider = 'se', fetchImpl = (...a) => globalThis.fetch(...a), timeoutMs = GATEWAY_TIMEOUT_MS, maxBytes = GATEWAY_MAX_BYTES }) {
   const problem = gatewayUrlProblem(url);
   if (problem) throw new GatewayRefused('bad_url', problem);
   const target = new URL(url).toString();
@@ -124,7 +126,7 @@ export function createGatewaySession({ url, token, vertical, nextTraceparent, fe
     const body = JSON.stringify(sentBody);
     const at = new Date().toISOString();
     // sentBody: the JSON-RPC message exactly as sent; sessionId and protocol: the values in force for this call (the trace panel shows them, shortened).
-    const sent = { at, sentBody, sessionId, protocol };
+    const sent = { at, sentBody, sessionId, protocol, provider };
     let response; let read = { text: '', truncated: false };
     try {
       response = await fetchImpl(target, { method: 'POST', headers, body, redirect: 'manual', signal: AbortSignal.timeout(waitMs) });
@@ -136,7 +138,7 @@ export function createGatewaySession({ url, token, vertical, nextTraceparent, fe
     const sid = response.headers.get('mcp-session-id');
     if (method === 'initialize' && sid && /^[\x21-\x7e]{1,200}$/.test(sid)) sessionId = sid;
     const shown = {};
-    for (const k of ['content-type', 'www-authenticate', 'x-gw-audit-trail', 'mcp-session-id']) { const v = response.headers.get(k); if (v) shown[k] = v.slice(0, 2000); }
+    for (const k of ['content-type', 'www-authenticate', 'x-gw-audit-trail', 'mcp-session-id', 'retry-after']) { const v = response.headers.get(k); if (v) shown[k] = v.slice(0, 2000); }
     const rpc = read.truncated ? null : parseRpc(read.text, response.headers.get('content-type'), id);
     if (method === 'initialize' && rpc?.result && typeof rpc.result.protocolVersion === 'string' && /^[0-9-]{4,20}$/.test(rpc.result.protocolVersion)) protocol = rpc.result.protocolVersion;
     // A redirect is never followed: it is shown as an answer of its own ("other").
@@ -151,4 +153,20 @@ export function createGatewaySession({ url, token, vertical, nextTraceparent, fe
     callTool: (name, args) => send('tools/call', { name, arguments: args }, { waitMs: timeoutMs === GATEWAY_TIMEOUT_MS ? CALL_TIMEOUT_MS : timeoutMs }),
     sessionId: () => sessionId,
   };
+}
+
+// What a 428 (or any refusal) body says, read from every place a gateway or tool server may put it (C.4). `c` is what send() returned: c.rpc is the parsed JSON
+// object of the answer (a JSON-RPC envelope, or the plain `{ error, challengeId, ... }` PingGateway and the lab's tool server send). Returns { code, challengeId, stepUp }.
+// c.body is never read (send() does not set it).
+const CHALLENGE_ID = /^[A-Za-z0-9-]{1,128}$/;
+export function errorCodeOf(c) {
+  const err = c?.rpc?.error;
+  const pick = [typeof err === 'string' ? err : null, err?.data?.error, err?.error, err?.message, c?.rpc?.error_code];
+  return pick.find((v) => typeof v === 'string') ?? null;
+}
+export function holdInfo(c) {
+  const err = c?.rpc?.error;
+  const code = errorCodeOf(c);
+  const challengeId = [err?.data?.challengeId, err?.challengeId, c?.rpc?.challengeId, c?.rpc?.data?.challengeId].find((v) => typeof v === 'string' && CHALLENGE_ID.test(v)) ?? null;
+  return { code, challengeId, stepUp: code === 'step_up_required' };
 }

@@ -2,10 +2,11 @@
 // mint and carry act) and the fake Agent Gateway (MCP). Nothing here reaches a real PingOne or SE.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createReal, realConfig, assertAuthUrl, scrubError, REDIRECT_URI, PASSWORD_SHOWN } from '../src/real.js';
+import { createReal, realConfig, assertAuthUrl, scrubError, mapAnswer, REDIRECT_URI, PASSWORD_SHOWN } from '../src/real.js';
 import { createLive, liveConfig } from '../src/live.js';
 import { gatewayHeaders, TRUSTED_HEADERS, SENT_HEADERS, assertNoTrusted, parseAuditTrail, parseRpc, gatewayUrlProblem } from '../src/mcpClient.js';
 import { realGate, SE_MCP_TOOLS, toolArgs } from '../src/realGate.js';
+import { createProviders } from '../src/provider.js';
 import { MANIFEST, findUseCase } from '../src/manifest.js';
 import { loadCast } from '../src/cast.js';
 import { installNetguard } from '../src/netguard.js';
@@ -13,7 +14,9 @@ import { fullWanted, missingFull, FULL_KEYS } from '../src/settings.js';
 import { get, post, run, W, withServer } from './helpers.js';
 import { AGENT_AUDIENCE, AGENT_CLIENT_ID, AGENT_CLIENT_SECRET, AGENT_SCOPE, AUDIENCE, CLIENT_SECRET, DEMO_PASSWORD, DEMO_USERNAME, ENV_ID, SCOPE, USER_CLIENT_SECRET, fullSettingsFor, settingsFor, startFakePingOne } from './fakePingone.js';
 import { AUDIT_TRAIL, startFakeGateway } from './fakeGateway.js';
+import { HITL_SECRET, startFakeToolServer, stubLocal } from './fakeToolServer.js';
 import { findWords } from './wordScan.js';
+import { TIER_GROUP, TOOLS_AUDIENCE } from './fakePingone.js';
 import { A2A_GATEWAY_AUD, A2A_INTERMEDIATE_AUD, A2A_INTERMEDIATE_SCOPE, A2A_SCOPE, SPECIALIST_ID, SPECIALIST_SECRET, a2aSettings } from './fakePingone.js';
 
 const ENV = { ALLOW_MOCK_SIGNIN: '1' };
@@ -299,7 +302,7 @@ test('the exchange-2 token\'s aud is checked against AAG_GATEWAY_AUDIENCE: a dif
     const x = (await run(url, 'UC1', { vertical: 'banking' })).body.run;
     assert.match(x.hops[3].note, /The token's aud \(fake-gateway-audience\) is not AAG_GATEWAY_AUDIENCE.*Check which resource owns the gateway scope/);
     assert.match(x.tokens[3].notice, /is not AAG_GATEWAY_AUDIENCE/); assert.ok(gw.seen.length >= 3, 'the run went on');
-  }, { settings: { AAG_GATEWAY_AUDIENCE: 'https://some-other-audience.example/mcp' } });
+  }, { settings: { AAG_GATEWAY_AUDIENCE: 'https://some-other-audience.lab-test.net/mcp' } });
   await withFull(async (url) => {
     await toReal(url); await signIn(url);
     const x = (await run(url, 'UC1', { vertical: 'banking' })).body.run;
@@ -381,27 +384,57 @@ test('a sign-in is a token session per workspace; another workspace signs in fro
   });
 });
 
-test('use-case gating: only tools served through the SE gateway run Real; the rest run on the LABELLED MOCK engine in Real mode (owner 2026-11-16, reversing the 2026-11-13 refusal)', async () => {
+test('use-case gating: only tools a provider serves run Real; the rest run whole on the lab\'s own steps in Real mode (owner 2026-11-16, reversing the 2026-11-13 refusal)', async () => {
   const cast = loadCast('/nonexistent', 'banking');
-  const realIds = MANIFEST.usecases.filter((u) => realGate(u, cast).real).map((u) => u.id);
+  const GW = { gateway: true };
+  const realIds = MANIFEST.usecases.filter((u) => realGate(u, cast, GW).real).map((u) => u.id);
   // Owner 2026-11-13: UC7/UC8 (HITL with the SE gateway's real challenge pipeline) run Real too. 2026-11-16: UC33 (api-resource-server scaled up on SE)
   // and the third-party tool servers (UC30, UC31, UC41, UC42, UC-TOOL1) run Real; the gateway's own tools/list still decides at run time.
   assert.deepEqual(realIds, ['UC1', 'UC3', 'UC19', 'UC20', 'UC33', 'UC4', 'UC6', 'UC7', 'UC8', 'UC21', 'UC24', 'UC17', 'UC30', 'UC31', 'UC41', 'UC42', 'UC-TOOL1', 'UC28']);
-  const why = (id) => realGate(findUseCase(id), cast).reason;
-  // The software pack: the SE gateway serves none of its tools, so no use case runs Real, even the pass-through third-party ones (brave_news_search, code_search).
+  const why = (id, opts = GW) => realGate(findUseCase(id), cast, opts).reason;
+  // The banking, healthcare and retail result is the same for setting auto and se; no gateway (or AAG_PROVIDER=local) says why, with fixed words.
+  for (const opts of [{ gateway: true, setting: 'se' }, { gateway: true, setting: 'auto', tools: { se: false, local: true } }]) assert.deepEqual(MANIFEST.usecases.filter((u) => realGate(u, cast, opts).real).map((u) => u.id), realIds);
+  assert.equal(realGate(findUseCase('UC1'), cast, { gateway: false }).reason, 'the SE gateway is not set up here (AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE)');
+  assert.equal(realGate(findUseCase('UC1'), cast, { gateway: true, setting: 'local' }).reason, 'AAG_PROVIDER=local is set and the local tool server serves the software vertical only');
+  // The software pack (owner 2026-11-16: "software is mock-only" is reversed): the 19 use cases of the design run Real on the lab's own tool server.
   const soft = loadCast('/nonexistent', 'software');
-  assert.deepEqual(MANIFEST.usecases.filter((u) => realGate(u, soft).real).map((u) => u.id), [], 'no software use case runs Real');
-  for (const id of ['UC41', 'UC42', 'UC-TOOL1', 'UC1', 'UC7']) assert.match(realGate(findUseCase(id), soft).reason, /SE gateway serves no tool of this vertical/, id);
-  assert.match(realGate(findUseCase('UC9'), soft).reason, /guided page|SE gateway serves no tool/, 'a guided page keeps its own reason or the pack one');
-  assert.match(why('UC13'), /trusted-caller/); assert.match(why('UC18'), /trusted-caller/);
-  assert.equal(realGate(findUseCase('UC21'), cast).tool, 'get_sensitive_account_details', 'UC21 runs Real: the tier is the signed-in user\'s own PingOne group');
+  assert.equal(Object.hasOwn(soft, 'castMockOnly'), false); assert.equal(soft.castToolServer, 'work-suite');
+  const LOCAL = { tools: { se: false, local: true }, gateway: false, setting: 'auto' };
+  const softReal = MANIFEST.usecases.filter((u) => realGate(u, soft, LOCAL).real).map((u) => u.id).sort();
+  const NINETEEN = ['UC1', 'UC3', 'UC4', 'UC17', 'UC19', 'UC20', 'UC33', 'UC24', 'UC28', 'UC6', 'UC7', 'UC8', 'UC9', 'UC21', 'UC30', 'UC31', 'UC41', 'UC42', 'UC-TOOL1'].sort();
+  assert.deepEqual(softReal, NINETEEN, 'exactly the 19 of the design');
+  assert.ok(MANIFEST.usecases.filter((u) => realGate(u, soft, LOCAL).real).every((u) => realGate(u, soft, LOCAL).capability === 'tools'));
+  assert.deepEqual(['UC1', 'UC6', 'UC9', 'UC24', 'UC30', 'UC41'].map((id) => realGate(findUseCase(id), soft, LOCAL).tool), ['get_my_issues', 'bulk_update_issues', 'get_project_security_settings', 'list_marketplace_apps', 'scan_repository', 'brave_news_search']);
+  // UC9's flag (ff_authorize_group_policy) is about AI-DEMO2's policy: only the tools capability lets it through; every other flag still keeps a use case on its own steps.
+  assert.equal(realGate(findUseCase('UC9'), soft, LOCAL).real, true); assert.match(why('UC9'), /feature flag ff_authorize_group_policy/);
+  for (const id of ['UC25', 'UC14']) assert.match(realGate(findUseCase(id), soft, LOCAL).reason, /feature flag/, id);
+  // Out of scope and still on the lab's own steps, each with its OWN fixed reason (they do not change with the provider state).
+  const OUT = { UC5: /attack/, UC11: /attack/, UC12: /attack/, UC13: /trusted-caller/, UC14: /feature flag ff_rar/, UC14b: /attack/, UC18: /trusted-caller/, UC27: /human approval/, UC22: /human approval/, UC48: /human approval/, UC2: /A2A|agent-to-agent/, 'UC2.5': /A2A|agent-to-agent/, 'UC2.6': /staged/, 'UC2.7': /staged/, UC37: /staged/, UC10: /calls no tool/, UC34: /calls no tool/, UC35: /calls no tool/, UC25: /feature flag/, UC38: /personal-agent/, UC39: /Privilege/, UC40: /Privilege/, UC44: /personal-agent/, UC45: /personal-agent/ };
+  for (const [id, re] of Object.entries(OUT)) { const g = realGate(findUseCase(id), soft, LOCAL); assert.equal(g.real, false, id); assert.match(g.reason, re, id); }
+  assert.equal(realGate(findUseCase('UC9A'), soft, LOCAL).real, false, 'a guided page stays guided');
+  // Availability, fixed reasons, for the four provider states.
+  const states = [
+    [{ tools: { se: false, local: false }, setting: 'auto' }, "the lab's tool server is not running here and AAG_TOOLS_SE_URL is not set"],
+    [{ tools: { se: false, local: true }, setting: 'se' }, 'AAG_PROVIDER=se is set and AAG_TOOLS_SE_URL is not'],
+    [{ tools: { se: true, local: false }, setting: 'local' }, "AAG_PROVIDER=local is set and the lab's tool server is not running here"],
+  ];
+  for (const [opts, reason] of states) for (const id of NINETEEN) assert.equal(realGate(findUseCase(id), soft, opts).reason, reason, `${id} ${opts.setting}`);
+  for (const opts of [{ tools: { se: true, local: false }, setting: 'auto' }, { tools: { se: true, local: false }, setting: 'se' }, { tools: { se: false, local: true }, setting: 'local' }]) assert.equal(realGate(findUseCase('UC1'), soft, opts).real, true, JSON.stringify(opts));
+  for (const [id, re] of [['UC13', /trusted-caller/], ['UC18', /trusted-caller/]]) assert.match(why(id), re);
+  assert.equal(realGate(findUseCase('UC21'), cast, GW).tool, 'get_sensitive_account_details', 'UC21 runs Real: the tier is the signed-in user\'s own PingOne group');
   assert.match(why('UC22'), /approval/); assert.match(why('UC2'), /A2A/); assert.match(why('UC37'), /A2A/);
   assert.match(why('UC40'), /Privilege|ID-JAG/); assert.match(why('UC9'), /feature flag/);
-  assert.deepEqual(['UC33', 'UC30', 'UC41', 'UC-TOOL1'].map((id) => realGate(findUseCase(id), cast).tool), ['show_mortgage', 'get_weather', 'brave_news_search', 'code_search']);
-  for (const id of realIds) assert.ok(SE_MCP_TOOLS.has(realGate(findUseCase(id), cast).tool));
+  assert.deepEqual(['UC33', 'UC30', 'UC41', 'UC-TOOL1'].map((id) => realGate(findUseCase(id), cast, GW).tool), ['show_mortgage', 'get_weather', 'brave_news_search', 'code_search']);
+  for (const id of realIds) assert.ok(SE_MCP_TOOLS.has(realGate(findUseCase(id), cast, GW).tool));
   assert.deepEqual(toolArgs('get_weather', { args: { state: 'FL' } }), { state: 'FL' }); assert.deepEqual(toolArgs('get_weather', {}), { state: 'TX' });
   assert.deepEqual(toolArgs('brave_news_search', { args: { query: 'regional weather outlook' } }), { query: 'regional weather outlook' });
   assert.deepEqual(toolArgs('show_mortgage', {}), {});
+  // The software tool arguments of the design (B.8): every value is a string or number the table or the situation fixed.
+  assert.deepEqual(toolArgs('get_my_issues', {}), { limit: 5 }); assert.deepEqual(toolArgs('get_deployment_status', {}), { environment: 'production' });
+  assert.deepEqual(toolArgs('get_project_security_settings', {}), { project: 'PLAT' }); assert.deepEqual(toolArgs('get_release_summary', {}), {}); assert.deepEqual(toolArgs('list_marketplace_apps', {}), { limit: 5 });
+  assert.deepEqual(toolArgs('request_admin_access', {}), { role: 'project-admin', project: 'PLAT', reason: 'Lab request: approve the release' });
+  assert.deepEqual(toolArgs('scan_repository', { args: { repo: 'payroll' } }), { repo: 'payroll' }); assert.deepEqual(toolArgs('scan_repository', {}), { repo: 'platform' });
+  assert.deepEqual(toolArgs('bulk_update_issues', { amount: 2500 }), { project: 'PLAT', issue_count: 2500, field: 'status', value: 'Done' }); assert.equal(toolArgs('bulk_update_issues', {}).issue_count, 25, 'the default amount is 25 (PERMIT)');
   await withFull(async (url, { gw }) => {
     await toReal(url);
     const r = await run(url, 'UC2', { vertical: 'banking' });
@@ -531,9 +564,30 @@ test('netguard per mode: Mock runs make zero attempts with full Real configured;
 test('config and URL guards: bad settings name the setting; PingOne calls only to the four fixed paths; gateway URL https only', () => {
   const good = fullSettingsFor('https://gw.lab-test.net/mcp');
   assert.equal(realConfig(good, {}).problem, undefined);
-  for (const [k, v] of [['AAG_USER_CLIENT_ID', ''], ['AAG_AGENT_CLIENT_SECRET', 'a\nb'], ['AAG_AGENT_GATEWAY_URL', 'http://gw.lab-test.net/mcp'], ['AAG_AGENT_GATEWAY_URL', 'https://u:p@gw.lab-test.net/'], ['AAG_GATEWAY_SCOPE', 'a  b'], ['AAG_AGENT_SCOPE', 'a  b'], ['PINGONE_ENVIRONMENT_ID', 'x']]) {
+  for (const [k, v] of [['AAG_USER_CLIENT_ID', ''], ['AAG_AGENT_CLIENT_SECRET', 'a\nb'], ['AAG_AGENT_SCOPE', 'a  b'], ['PINGONE_ENVIRONMENT_ID', 'x'], ['AAG_PROVIDER', 'sideways'], ['AAG_TOOLS_AUDIENCE', 'a\nb'], ['AAG_TOOLS_TIER_GROUP', 'x'.repeat(121)]]) {
     assert.match(realConfig({ ...good, [k]: v }, {}).problem, new RegExp(k), `${k}=${JSON.stringify(v)}`);
   }
+  // The SE gateway trio is OPTIONAL (owner 2026-11-16): a bad or partial trio leaves Real configured, with no gateway and a problem that names the setting.
+  for (const [k, v] of [['AAG_AGENT_GATEWAY_URL', 'http://gw.lab-test.net/mcp'], ['AAG_AGENT_GATEWAY_URL', 'https://u:p@gw.lab-test.net/'], ['AAG_GATEWAY_SCOPE', 'a  b']]) {
+    const c = realConfig({ ...good, [k]: v }, {});
+    assert.equal(c.problem, undefined, `${k}: Real stays configured`); assert.equal(c.gateway, null); assert.match(c.gatewayProblem, new RegExp(k), `${k}=${JSON.stringify(v)}`);
+  }
+  const partial = realConfig({ ...good, AAG_GATEWAY_SCOPE: '' }, {});
+  assert.deepEqual([partial.problem, partial.gateway], [undefined, null]); assert.match(partial.gatewayProblem, /^the app \.env sets some of AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE but not AAG_GATEWAY_SCOPE$/);
+  const none = realConfig(fullSettingsFor(null), {});
+  assert.deepEqual([none.problem, none.gateway, none.gatewayProblem], [undefined, null, undefined], 'no gateway names at all: Real with the local provider only');
+  assert.deepEqual(realConfig(good, {}).gateway, { url: 'https://gw.lab-test.net/mcp', audience: AUDIENCE, scope: SCOPE });
+  // The new names: defaults, and a bad URL never reaches the netguard.
+  const dflt = realConfig(good, {});
+  assert.deepEqual([dflt.provider, dflt.toolsAudience, dflt.toolsTierGroup, dflt.toolsSeUrl, dflt.hitlUrl], ['auto', 'appfire-work-tools', 'Software_EnterpriseTier', null, null]);
+  const se = realConfig({ ...good, AAG_PROVIDER: 'LOCAL', AAG_TOOLS_SE_URL: 'https://tools.lab-test.net/mcp', AAG_HITL_SERVICE_URL: 'https://hitl.lab-test.net' }, {});
+  assert.equal(se.provider, 'local'); assert.equal(se.toolsSeUrl, 'https://tools.lab-test.net/mcp');
+  assert.deepEqual(createReal({ config: se, wanted: true }).hosts(), ['auth.pingone.com', 'gw.lab-test.net', 'tools.lab-test.net', 'hitl.lab-test.net']);
+  for (const [k, v] of [['AAG_TOOLS_SE_URL', 'http://tools.lab-test.net/mcp'], ['AAG_TOOLS_SE_URL', 'https://u:p@tools.lab-test.net/mcp'], ['AAG_HITL_SERVICE_URL', 'http://evil.lab-test.net'], ['AAG_HITL_SERVICE_URL', 'https://hitl.lab-test.net/x?y=1']]) {
+    const c = realConfig({ ...good, [k]: v }, {}); const key = k === 'AAG_TOOLS_SE_URL' ? 'toolsSe' : 'hitl';
+    assert.equal(c[`${key}Url`], null, `${k}: an invalid value is dropped`); assert.match(c[`${key}Problem`], new RegExp(k)); assert.ok(!createReal({ config: c, wanted: true }).hosts().some((h) => /evil|tools\.lab-test|hitl\.lab-test/.test(h)), `${k}: its host is never allowed`);
+  }
+  assert.deepEqual(createReal({ config: realConfig(fullSettingsFor(null, { AAG_TOOLS_SE_URL: 'https://203.0.113.9/mcp' }), {}), wanted: true }).hosts(), ['auth.pingone.com'], 'an IP literal is never allowed through the netguard');
   assert.equal(gatewayUrlProblem('http://127.0.0.1:5/mcp'), null, 'loopback http only for the fakes');
   const base = `https://auth.pingone.com/${ENV_ID}`;
   for (const ok of [`${base}/as/authorize?x=1`, `${base}/as/token`, `${base}/flows/abc-123`, `${base}/as/resume?flowId=a`]) assert.ok(assertAuthUrl(ok, base));
@@ -689,7 +743,8 @@ test('A2A Real: every failure stops before the gateway and says which step: the 
 test('A2A Real: only the plain two-agent hand-off (UC2, UC2.5) in the vertical the settings name; the agent card, protocol, mismatch probe and signed assertion stay mock', () => {
   const cast = loadCast(null, 'banking');
   for (const id of ['UC2', 'UC2.5']) {
-    assert.deepEqual(realGate(findUseCase(id), cast, { a2a: true }), { real: true, tool: 'get_portfolio_summary', a2a: true }, id);
+    assert.deepEqual(realGate(findUseCase(id), cast, { a2a: true, gateway: true }), { real: true, tool: 'get_portfolio_summary', a2a: true, capability: 'gateway' }, id);
+    assert.match(realGate(findUseCase(id), cast, { a2a: true, gateway: false }).reason, /SE gateway is not set up here/, `${id}: A2A needs the gateway`);
     assert.equal(realGate(findUseCase(id), cast, { a2a: false }).real, false, `${id}: off without the settings`);
     assert.match(realGate(findUseCase(id), cast, { a2a: false, a2aWhy: 'because' }).reason, /^because$/);
   }
@@ -818,3 +873,308 @@ test('P1 session: an explicit Sign out forgets the PingOne session; the next wor
   });
 });
 
+
+// ======================================================================================================================================================
+// The tool server provider (owner 2026-11-16): the software vertical runs Real on a tool server, the lab's own (local) or an SE-hosted one. These tests run the
+// whole lab against fakePingone.js and fakeToolServer.js, which speak the wire shapes of design-real-local.md B.3 to B.7. They are MAPPING tests: they prove the
+// lab's reading of those shapes, not Ping's behaviour and not the real local child (localE2E.test.js runs that).
+// ======================================================================================================================================================
+async function withTools(fn, { groups = [], tool = 'ok', reason, gateway = false, settings = {}, setup, env = ENV, signin = 'ok', exchange = 'ok', toolsSe = null } = {}) {
+  const p1 = await startFakePingOne(); p1.state.tools.groups = groups; p1.state.full = { signin, exchange };
+  if (setup) setup(p1);
+  const ts = await startFakeToolServer({ behaviour: tool, ...(reason ? { reason } : {}), isDelegated: (t) => p1.issued.delegated.has(t) });
+  const gw = gateway ? await startFakeGateway({ isDelegated: (t) => p1.issued.delegated.has(t) }) : null;
+  const real = createReal({ config: realConfig(fullSettingsFor(gw?.url ?? null, { ...(toolsSe ? { AAG_TOOLS_SE_URL: ts.url } : {}), ...settings }), { AAG_LIVE_TEST_BASE: p1.base }), missing: [], wanted: true });
+  const local = stubLocal(ts);
+  try { await withServer((url) => fn(url, { p1, ts, gw, real, local }), { env, real, local }); } finally { await p1.close(); await ts.close(); await gw?.close(); }
+}
+const SOFT = 'software';
+const runSoft = async (url, id, extra = {}, h = {}) => { const r = await run(url, id, { vertical: SOFT, ...extra }, { traceparent: TP, ...h }); assert.equal(r.status, 200, `${id}: ${JSON.stringify(r.body).slice(0, 300)}`); return r.body.run; };
+const signedIn = async (url) => { assert.equal((await toReal(url)).status, 200); assert.equal((await signIn(url)).status, 200); };
+const PROVIDER_KINDS = ['gateway-check', 'authorize-decision', 'tool-dispatched', 'tool-held', 'tool-refused', 'api-call'];
+// The honesty walk (C.5): in a tools run no WORD says gateway, Agent Gateway or Authorize, except inside "not PingOne Authorize". The values of label, title, note, fact,
+// narrative, text, head, body, by, outcome and decision are read; lane and kind values (gateway, gateway-check, authorize-decision) are data keys and are exempt.
+const WALKED = new Set(['label', 'title', 'note', 'fact', 'narrative', 'text', 'head', 'body', 'by', 'outcome', 'decision']);
+const vocabulary = (x) => {
+  const hits = [];
+  const walk = (v, key, where) => {
+    if (typeof v === 'string') { if (WALKED.has(key) && /Agent Gateway|gateway|Authorize/.test(v.split('not PingOne Authorize').join(''))) hits.push(`${where}.${key}: ${v.slice(0, 140)}`); }
+    else if (Array.isArray(v)) v.forEach((e, i) => walk(e, key, `${where}[${i}]`));
+    else if (v && typeof v === 'object') for (const [k, e] of Object.entries(v)) walk(e, k, `${where}.${k}`);
+  };
+  walk({ hops: x.hops.map(({ tokens: _t, ...h }) => h), reply: x.reply, narration: x.narration, tokens: x.tokens.map((t) => ({ label: t.label, notice: t.notice })) }, '', '$');
+  return hits;
+};
+const noChecked = (x) => assert.ok(!/"basis":"checked"|"outcome":"checked"/.test(JSON.stringify(x)), 'a Real decision is never `checked`');
+
+test('tools: UC1 on the software vertical runs Real on the local provider; exchange 2 asks ONE scope (no audience, no actor); the data says who answered; the words do not', async () => {
+  await withTools(async (url, { p1, ts, gw }) => {
+    await signedIn(url);
+    const x = await runSoft(url, 'UC1');
+    assert.equal(x.kind, 'real'); assert.equal(x.outcome, 'REAL_PERMIT'); assert.equal(x.reply.who, 'Agent');
+    assert.deepEqual([x.provider, x.providerWhy, x.real.provider], ['local', 'auto-se-not-configured', 'local']);
+    assert.deepEqual(x.hops.map((h) => h.kind), ['sign-in', 'actor-token', 'token-exchange', 'token-exchange', 'gateway-check', 'authorize-decision', 'tool-dispatched', 'api-call', 'agent-reply']);
+    assert.deepEqual(x.hops.slice(2, 4).map((h) => h.title), ['Exchange 1: act = agent', 'Exchange 2: for the tools']);
+    assert.match(x.hops[3].label, /^Token exchange 2: for the tools \(RFC 8693 at PingOne, the exchange-1 token as subject, no actor, the one scope this tool needs: issues:read\)$/);
+    // The form of exchange 2: the exchange-1 token as subject, the ONE scope the tool needs, nothing else.
+    const calls = tokenCalls(p1); const ex1 = x.tokens[2]; const delegated = x.tokens[3];
+    assert.deepEqual(calls.at(-1).form, { grant_type: TX, subject_token: ex1.raw, subject_token_type: 'urn:ietf:params:oauth:token-type:access_token', scope: 'issues:read' });
+    assert.equal(calls.at(-1).auth, BASIC_AGENT); assert.ok(calls.every((c) => c.form.audience === undefined && c.form.resource === undefined));
+    assert.deepEqual([delegated.claims.aud, delegated.claims.scope, delegated.claims.act], [TOOLS_AUDIENCE, 'issues:read', { sub: AGENT_CLIENT_ID }]);
+    assert.equal(gw, null);
+    // Who answered is DATA on every provider hop (and not on the PingOne hops).
+    // A hop that did NOT run (here the api-call hop) is answered by nobody, so it names no provider (it did before: a wrong label in the data).
+    for (const h of x.hops) {
+      const answered = PROVIDER_KINDS.includes(h.kind) && h.source === 'real';
+      if (answered) assert.deepEqual([h.provider, h.answeredBy], ['local', 'tool server (local)'], h.kind); else assert.deepEqual([h.provider, h.answeredBy], [undefined, undefined], `${h.kind} (${h.source})`);
+      assert.equal(h.capability, PROVIDER_KINDS.includes(h.kind) ? 'tools' : undefined, `${h.kind}: the path is named on the provider-side hops, run or not`);
+    }
+    assert.deepEqual(x.hops.map((h) => h.source), ['real', 'real', 'real', 'real', 'real', 'real', 'real', 'not-run', 'real']);
+    const [check, decide, tool, api] = x.hops.slice(4, 8);
+    assert.equal(check.title, 'Tool server (local): token and tool list'); assert.equal(check.fact, 'token accepted by the tool server (local)'); assert.deepEqual([check.from, check.to], ['agent', 'toolserver']); assert.match(check.label, /^Tool server \[local\]: initialize and tools\/list over MCP with the delegated token$/);
+    assert.deepEqual([decide.from, decide.to, decide.title, decide.fact], ['toolserver', 'toolserver', 'Lab policy (local)', 'lab policy decided'], 'a note on the tool server\'s own lane: no Authorize lane in a tools run');
+    assert.equal(decide.label, "Lab policy (local) decision: PERMIT, read from the tool server's answer to tools/call (not PingOne Authorize)");
+    assert.deepEqual(decide.decision, { outcome: 'PERMIT', by: 'lab policy (local), not PingOne Authorize', basis: 'observed' });
+    assert.deepEqual([tool.title, tool.label], ['Tool server (local)', 'Tool server [local]: tools/call get_my_issues']); assert.equal(tool.note, 'The tool server ran the tool. The data is lab-invented.');
+    assert.deepEqual([api.title, api.note, api.label], ['Tool data', 'Not run: this tool serves lab-invented data itself; no API sits behind it.', 'API [NOT RUN]']);
+    assert.match(x.reply.text, /^Here is what get_my_issues returned: signed_in_sub [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}, total 8, returned (\d+) \(lab-invented data from the lab's own tool server\)\.$/, 'the user\'s own sub is shown whole (a UUID is not a key), and the issue count is said once');
+    assert.ok(!x.reply.text.includes('[masked'), 'nothing in the reply is masked');
+    // The vendored catalog's gateway and policy-engine wording is replaced for a tool server (the catalog file is not edited): spec, fact and lanes name the tool server.
+    for (const h of [check, decide, tool]) assert.ok(!/gateway|policy engine|Authorize decision/i.test(JSON.stringify(h.spec)), `${h.kind}: the spec does not describe a gateway or a policy engine`);
+    assert.match(check.spec.why, /^The tool server checks the delegated token itself/); assert.match(decide.spec.why, /not PingOne Authorize/); assert.ok(check.spec.refs.length >= 1 && decide.spec.refs.length >= 1, 'the catalog\'s references are kept');
+    assert.deepEqual([tool.from, tool.to, api.from, api.to], ['toolserver', 'toolserver', 'toolserver', 'api']); assert.ok(x.hops.every((h) => h.from !== 'gateway' && h.to !== 'gateway' && h.to !== 'mcp'), 'no gateway lane in a tools run');
+    assert.deepEqual(x.gatewayTrace, [], 'a tool server\'s refusal is the lab\'s own rule: no "What Privilege did" panel');
+    assert.deepEqual(vocabulary(x), [], 'no gateway or Authorize word anywhere in a tools run'); assert.deepEqual(findWords(x, 'tools run'), []); noChecked(x); noSecretsInRun(x, 'tools run');
+    // What the tool server was sent: the delegated token and nothing trusted.
+    assert.deepEqual(ts.seen.filter((c) => c.url === '/mcp').map((c) => c.rpc.method), ['initialize', 'notifications/initialized', 'tools/list', 'tools/call']);
+    for (const c of ts.seen) { assert.equal(c.headers.authorization, `Bearer ${delegated.raw}`); for (const h of TRUSTED_HEADERS) assert.equal(c.headers[h], undefined); }
+    assert.deepEqual(ts.seen.at(-1).rpc.params, { name: 'get_my_issues', arguments: { limit: 5 } });
+  });
+});
+
+test('tools: the matrix of outcomes (permit, deny, edge rules, step-up, hold, unlisted) reads the lab\'s own policy and says so; no outcome says gateway or Authorize, and none is `checked`', async () => {
+  await withTools(async (url, { ts }) => {
+    await signedIn(url);
+    const outcomes = {};
+    for (const id of ['UC1', 'UC3', 'UC33', 'UC28', 'UC30', 'UC41', 'UC-TOOL1', 'UC6', 'UC7', 'UC8', 'UC31', 'UC42', 'UC9', 'UC21', 'UC24']) {
+      const x = await runSoft(url, id); outcomes[id] = x;
+      assert.equal(x.provider, 'local', id); assert.deepEqual(vocabulary(x), [], `${id}: the words`); assert.deepEqual(findWords(x, id), [], `${id}: the page's banned words`); noChecked(x); noSecretsInRun(x, id);
+      assert.deepEqual(x.gatewayTrace, [], id);
+      for (const h of x.hops.filter((hop) => PROVIDER_KINDS.includes(hop.kind))) assert.deepEqual([h.provider, h.answeredBy], h.source === 'real' && h.verdict !== 'error' ? ['local', 'tool server (local)'] : [undefined, undefined], `${id} ${h.kind} (${h.source})`);
+    }
+    for (const id of ['UC1', 'UC3', 'UC33', 'UC28', 'UC30', 'UC41', 'UC-TOOL1']) assert.equal(outcomes[id].outcome, 'REAL_PERMIT', id);
+    assert.deepEqual(['UC33', 'UC28', 'UC30', 'UC41', 'UC-TOOL1'].map((id) => ts.seen.filter((c) => c.rpc?.method === 'tools/call').map((c) => c.rpc.params.name).includes({ UC33: 'get_deployment_status', UC28: 'request_admin_access', UC30: 'scan_repository', UC41: 'brave_news_search', 'UC-TOOL1': 'code_search' }[id])), [true, true, true, true, true], 'each use case calls the tool of the design');
+    // The refusals: the lab's own policy, labelled so in the hop, the decision and the reply.
+    for (const [id, code] of [['UC6', 'access_denied'], ['UC31', 'repo_not_allowed'], ['UC42', 'blocked_term']]) {
+      const x = outcomes[id]; assert.equal(x.outcome, 'REAL_DENY', id); assert.equal(x.reply.who, 'Tool server');
+      assert.equal(x.reply.text, `The tool server refused this request (HTTP 403, ${code}) under the lab's own policy (local), not PingOne Authorize. Nothing was run.`, id);
+      const d = x.hops.find((h) => h.kind === 'authorize-decision'); assert.equal(d.decision.outcome, 'DENY'); assert.equal(d.decision.by, 'lab policy (local), not PingOne Authorize'); assert.equal(d.verdict, 'deny');
+      assert.match(d.note, /^The tool server answered 403: refused by lab policy \(local\), not PingOne Authorize: lab-[a-z-]+\.$/);
+      assert.deepEqual(x.hops.slice(-3).map((h) => [h.kind, h.source]), [['tool-refused', 'real'], ['api-call', 'not-run'], ['agent-reply', 'not-run']], `${id}: the tool hop ran as a refusal, the API and the reply did not`);
+    }
+    assert.equal(outcomes.UC42.hops.find((h) => h.kind === 'tool-refused').note, outcomes.UC42.hops.find((h) => h.kind === 'authorize-decision').note, 'the refused call is not echoed');
+    // Step-up: held, no challenge, nothing to retry. Hold: a challenge for the phone, never shown in a hop.
+    const up = outcomes.UC7; assert.equal(up.outcome, 'REAL_HOLD'); assert.equal(up.challenge, undefined); assert.deepEqual([up.reply.approval.head, up.reply.who], ['Held for step-up', 'Tool server']);
+    assert.equal(up.reply.approval.body, "The tool server answered 428: this call needs step-up authentication under its lab policy (local), not PingOne Authorize. This lab cannot complete a step-up, so nothing was run.");
+    assert.match(up.hops.find((h) => h.kind === 'tool-held').note, /^The tool server \(local\) answered 428: this write needs a stronger authentication, which the lab cannot complete, so the call is not retried\.$/);
+    const hold = outcomes.UC8; assert.equal(hold.outcome, 'REAL_HOLD'); assert.match(hold.challenge, /^[0-9a-f-]{36}$/); assert.equal(hold.reply.approval.head, 'Held for approval');
+    assert.match(hold.reply.approval.body, /under its lab policy \(local\), not PingOne Authorize\. Approve \(or deny\) on the phone: the answer is recorded with the lab's own approval service and the call is retried with the receipt\.$/);
+    assert.ok(!JSON.stringify(hold.hops).includes(hold.challenge), 'the hold\'s challenge id is in no hop (the 428 body says <kept on the server>)'); assert.match(JSON.stringify(hold.hops), /<kept on the server>/);
+    assert.equal(hold.hops.find((h) => h.kind === 'tool-held').verdict, 'held'); assert.equal(hold.hops.find((h) => h.kind === 'authorize-decision').decision.outcome, 'HITL_REQUIRED');
+    // A user outside the tier group: UC9 calls the hidden tool anyway and is DENIED by the lab's group rule; UC21 is not offered it and never calls it.
+    const nine = outcomes.UC9; assert.equal(nine.outcome, 'REAL_DENY');
+    assert.match(nine.hops.find((h) => h.kind === 'gateway-check').note, /get_project_security_settings is not among them; this use case calls it anyway/);
+    assert.match(nine.hops.find((h) => h.kind === 'authorize-decision').note, /group_required|lab-group-gate/); assert.match(nine.reply.text, /HTTP 403, group_required/);
+    const twenty1 = outcomes.UC21; assert.equal(twenty1.outcome, 'REAL_NOT_LISTED'); assert.equal(twenty1.reply.who, 'Tool server'); assert.equal(twenty1.groupsClaim, 'present', 'the token carried a groups claim (an empty list), so this IS a tier decision');
+    assert.equal(twenty1.reply.text, `The tool server did not offer get_project_security_settings to this user, so the agent never called it. Lab policy (local), not PingOne Authorize: the tool is offered only to the tier group ${TIER_GROUP}, and this delegated token's groups claim does not include it. Add the user to that group in PingOne, sign out, sign in again and run it again.`);
+    assert.deepEqual(twenty1.hops.map((h) => h.source).slice(4), ['real', 'not-run', 'not-run', 'not-run', 'not-run'], 'listing ran, nothing after it did');
+    assert.equal(ts.seen.filter((c) => c.rpc?.method === 'tools/call' && c.rpc.params.name === 'get_project_security_settings').length, 1, 'UC9 called it (once); UC21 never did');
+    assert.ok(!['REAL_NOT_LISTED'].includes(outcomes.UC9.outcome), 'a group_required 403 is never mapped to NOT LISTED');
+  });
+});
+
+test('tools: a member of the tier group gets PERMIT on UC9 and UC21; a token with no groups claim says ABSENT in UC21 and in the exchange-2 note', async () => {
+  await withTools(async (url) => {
+    await signedIn(url);
+    for (const id of ['UC9', 'UC21']) { const x = await runSoft(url, id); assert.equal(x.outcome, 'REAL_PERMIT', id); assert.deepEqual(vocabulary(x), [], id); assert.match(x.hops[3].note, new RegExp(`groups claim: \\["${TIER_GROUP}"\\]`)); }
+  }, { groups: [TIER_GROUP] });
+  await withTools(async (url) => {
+    await signedIn(url);
+    const x = await runSoft(url, 'UC21');
+    assert.equal(x.outcome, 'REAL_NOT_LISTED'); assert.equal(x.groupsClaim, 'absent', 'the run says the claim was missing, so the card can say no tier decision was readable');
+    assert.match(x.reply.text, /No tier decision can be read from this: the delegated token has NO groups claim \(UNVERIFIED that PingOne puts it there\)/); assert.ok(!/does not include it/.test(x.reply.text), 'absent is never worded as "not in the group"');
+    assert.match(x.hops[3].note, /groups claim: ABSENT \(check the tools resource's groups attribute\)/);
+    const nine = await runSoft(url, 'UC9'); assert.equal(nine.outcome, 'REAL_DENY', 'UC9 still calls it');
+  }, { groups: null });
+});
+
+test('tools: UC24 runs NO agent token and NO exchange; the public call and the protected probe carry no Authorization header; the probe is refused', async () => {
+  await withTools(async (url, { p1, ts }) => {
+    await signedIn(url);
+    const x = await runSoft(url, 'UC24');
+    assert.equal(x.outcome, 'REAL_PERMIT'); assert.deepEqual(x.hops.map((h) => h.kind), ['sign-in', 'gateway-check', 'tool-dispatched', 'tool-refused', 'agent-reply']);
+    assert.deepEqual(tokenCalls(p1).map((c) => c.form.grant_type), ['authorization_code'], 'the sign-in is the only PingOne call');
+    assert.ok(ts.seen.filter((c) => c.url === '/mcp').every((c) => c.headers.authorization === undefined && c.headers['x-token-validation'] === undefined), 'no authorization header and no x-token-validation');
+    assert.deepEqual(ts.seen.filter((c) => c.rpc?.method === 'tools/call').map((c) => c.rpc.params.name), ['list_marketplace_apps', 'get_my_issues']);
+    assert.deepEqual(x.hops.map((h) => h.verdict), ['ok', 'ok', 'ok', 'deny', 'ok']); assert.match(x.hops[3].note, /^Refused as it should be: the protected tool answered 401 with no token\.$/);
+    assert.match(x.reply.text, /lab-invented data from the lab's own tool server\)\. The protected tool get_my_issues was refused with no token \(HTTP 401\)\.$/);
+    assert.deepEqual(x.hops.slice(1, 4).map((h) => h.answeredBy), ['tool server (local)', 'tool server (local)', 'tool server (local)']);
+    assert.deepEqual(vocabulary(x), []); assert.deepEqual(findWords(x, 'UC24'), []); assert.equal(x.tokens.length, 1, 'only the user token from the sign-in');
+  });
+});
+
+test('tools: a token without act (or an opaque exchange-2 token) stops BEFORE the tool server; a refused exchange 2 names the tools scope; every string names the tool server', async () => {
+  const MSG = "the delegated token carries no act claim: check the agent:invoke resource's act attribute";
+  await withTools(async (url, { ts }) => {
+    await signedIn(url);
+    const x = await runSoft(url, 'UC1');
+    assert.equal(x.outcome, 'REAL_NO_ACT'); assert.ok(x.reply.text.startsWith('Stopped before the tool server, nothing was sent to it:')); assert.ok(x.reply.text.includes(MSG)); assert.match(x.reply.text, /passes the subject token's act through/);
+    assert.equal(ts.seen.length, 0, 'the tool server was never called'); assert.deepEqual(x.hops.map((h) => h.source), ['real', 'real', 'real', 'real', 'not-run', 'not-run', 'not-run', 'not-run', 'not-run']);
+    assert.deepEqual(x.hops.slice(4).map((h) => h.provider), [undefined, undefined, undefined, undefined, undefined], 'a hop that did not run names no provider: nothing answered it');
+    assert.deepEqual(x.hops.slice(4, 8).map((h) => h.capability), ['tools', 'tools', 'tools', 'tools'], 'it still says which path the run was on');
+    assert.deepEqual(x.hops.slice(4, 6).map((h) => h.label), ['Tool server [local] [NOT RUN]', 'Lab policy decision [NOT RUN]']); assert.deepEqual(vocabulary(x), []);
+  }, { setup: (p1) => { p1.state.resources.tools.act = 'absent'; } });
+  await withTools(async (url, { ts }) => {
+    await signedIn(url);
+    const x = await runSoft(url, 'UC1');
+    assert.equal(x.outcome, 'REAL_NO_ACT', 'an opaque token cannot show an act'); assert.match(x.hops[3].note, /not a JWT \(opaque\)/); assert.equal(ts.seen.length, 0); assert.deepEqual(vocabulary(x), []);
+  }, { exchange: 'opaque-tools' });
+  await withTools(async (url, { ts }) => {
+    await signedIn(url);
+    const x = await runSoft(url, 'UC1');
+    assert.equal(x.outcome, 'REAL_REFUSED'); assert.match(x.reply.text, /refused token exchange 2 \(HTTP 400: invalid_request\)\. Check that the agent app is granted the scope issues:read on the tools resource and that the resource exists\./);
+    assert.equal(ts.seen.length, 0); assert.deepEqual(x.hops.slice(3, 4).map((h) => [h.source, h.verdict]), [['real', 'deny']]); assert.deepEqual(vocabulary(x), []);
+  }, { exchange: 'refuse-tools' });
+});
+
+test('tools: a token problem names the reason; the clock and audience notes; jwks_unavailable and a down tool server are NO DECISION; a tool error is the tool\'s', async () => {
+  const cases = [
+    ['aud_mismatch', /^The tool server \(local\) answered 401: it did not accept the delegated token \(aud_mismatch\)\. The token's aud must be AAG_TOOLS_AUDIENCE\.$/],
+    ['token_expired', /\(token_expired\)\. This machine's clock may differ from PingOne's by more than 60 seconds\.$/],
+    ['token_not_yet_valid', /\(token_not_yet_valid\)\. This machine's clock may differ/],
+    ['act_sub_mismatch', /\(act_sub_mismatch\)\.$/], ['signature_invalid', /\(signature_invalid\)\.$/], ['kid_unknown', /\(kid_unknown\)\.$/],
+  ];
+  for (const [why, note] of cases) {
+    await withTools(async (url) => {
+      await signedIn(url);
+      const x = await runSoft(url, 'UC1');
+      assert.equal(x.outcome, 'REAL_TOKEN_PROBLEM', why); assert.equal(x.reply.who, 'Tool server'); assert.equal(x.reply.text, `The tool server did not accept the delegated token (HTTP 401, ${why}). Nothing was run.`);
+      assert.match(x.hops[4].note, note, why); assert.equal(x.hops[4].verdict, 'deny'); assert.deepEqual(vocabulary(x), [], why); assert.deepEqual(x.gatewayTrace, []);
+    }, { tool: 'token', reason: why });
+  }
+  await withTools(async (url) => {
+    await signedIn(url);
+    const x = await runSoft(url, 'UC1');
+    assert.equal(x.outcome, 'REAL_UNREACHABLE'); assert.equal(x.hops[4].note, "The tool server could not get your PingOne's signing keys (jwks_unavailable), so it made no decision.");
+    assert.equal(x.reply.text, "No decision: the tool server could not get your PingOne's signing keys. Check that its network reaches PingOne (and NODE_EXTRA_CA_CERTS if a proxy inspects TLS). Nothing was run.");
+    assert.equal(x.hops[4].verdict, 'error', 'no decision, not a denial'); assert.equal(x.hops[4].fact, 'no decision'); assert.deepEqual(vocabulary(x), []);
+    assert.deepEqual([x.hops[4].provider, x.hops[4].answeredBy], [undefined, undefined], 'nothing answered with a decision, so the hop names no provider');
+    assert.ok(x.hops.slice(4).every((h) => h.provider === undefined && h.answeredBy === undefined), 'and neither does any hop after it');
+  }, { tool: 'jwks' });
+  await withTools(async (url, { ts }) => {
+    await signedIn(url);
+    const x = await runSoft(url, 'UC1');
+    assert.equal(x.outcome, 'REAL_UNREACHABLE'); assert.equal(x.reply.text, 'No decision: the tool server answered HTTP 503 and did not complete the call.'); assert.equal(x.hops[4].note, 'The tool server (local) answered HTTP 503 and did not complete the call. The lab does not retry.');
+    assert.equal(ts.seen.filter((c) => c.rpc?.method === 'initialize').length, 1, 'never retried, never the other provider'); assert.deepEqual(vocabulary(x), []);
+    assert.ok(x.hops.slice(4).every((h) => h.provider === undefined && h.answeredBy === undefined), 'a tool server that answered 503 decided nothing: no hop names it as the one that answered');
+  }, { tool: 'down' });
+  await withTools(async (url) => {
+    await signedIn(url);
+    const x = await runSoft(url, 'UC1');
+    assert.equal(x.outcome, 'REAL_TOOL_ERROR'); assert.match(x.reply.text, /^The tool get_my_issues answered with an error: invalid arguments: limit\.$/); assert.deepEqual(vocabulary(x), []);
+  }, { tool: 'tool-error' });
+});
+
+test('tools: UC8 end to end on the local approval service: the hold, the phone (provider local), the retry with the receipt PERMITs; a denied or missing approval is a refused receipt, never a policy DENY', async () => {
+  await withTools(async (url, { ts }) => {
+    await signedIn(url);
+    const hold = await runSoft(url, 'UC8'); assert.equal(hold.outcome, 'REAL_HOLD');
+    const start = await (await post(url, '/api/approval/start', { kind: 'real', tool: 'bulk_update_issues', challengeId: hold.challenge, provider: hold.provider })).json();
+    assert.equal(start.ok, true); const id = start.approval.id;
+    assert.equal((await post(url, '/api/approval/start', { kind: 'real', challengeId: hold.challenge, provider: 'nowhere' })).status, 400, 'a fixed enum');
+    const decided = await (await post(url, '/api/approval/decide', { id, approved: true })).json();
+    assert.equal(decided.approval.state, 'approved'); assert.ok(!JSON.stringify(decided).includes(HITL_SECRET) && !JSON.stringify(decided).includes(hold.challenge));
+    const retry = await runSoft(url, 'UC8', { approvalId: id });
+    assert.equal(retry.outcome, 'REAL_PERMIT'); assert.equal(retry.hops.find((h) => h.kind === 'authorize-decision').decision.outcome, 'PERMIT');
+    const sent = ts.seen.filter((c) => c.rpc?.params?.name === 'bulk_update_issues').at(-1).rpc.params.arguments;
+    assert.equal(sent._hitl_challenge_id, hold.challenge, 'the retry echoes the receipt'); assert.deepEqual({ ...sent, _hitl_challenge_id: undefined }, { project: 'PLAT', issue_count: 300, field: 'status', value: 'Done', _hitl_challenge_id: undefined });
+    for (const x of [hold, retry]) { const text = JSON.stringify({ hops: x.hops, reply: x.reply, narration: x.narration }); assert.ok(!text.includes(HITL_SECRET) && !text.includes(hold.challenge), 'no hop, reply or narration holds the secret, the challenge id or the receipt'); assert.deepEqual(vocabulary(x), []); noChecked(x); }
+    assert.equal((await runSoft(url, 'UC8', { approvalId: id })).outcome, 'REAL_RECEIPT_REJECTED', 'a receipt is used once');
+    // A denied approval: the retry is a refused receipt (not a policy DENY), said as such.
+    const hold2 = await runSoft(url, 'UC8'); const s2 = (await (await post(url, '/api/approval/start', { kind: 'real', tool: 'bulk_update_issues', challengeId: hold2.challenge, provider: 'local' })).json()).approval.id;
+    assert.equal((await (await post(url, '/api/approval/decide', { id: s2, approved: false })).json()).approval.state, 'denied');
+    const refused = await runSoft(url, 'UC8', { approvalId: s2 });
+    assert.equal(refused.outcome, 'REAL_RECEIPT_REJECTED'); assert.equal(refused.reply.who, 'Tool server'); assert.equal(refused.reply.text, 'The tool server refused the approval receipt (HTTP 403, receipt_denied), which is not a policy decision. Nothing was run.');
+    assert.equal(refused.hops.find((h) => h.kind === 'tool-refused').note, 'The tool server answered 403: it refused the approval receipt (receipt_denied).'); assert.deepEqual(vocabulary(refused), []);
+  });
+});
+
+test('mapAnswer (the lab\'s reading of the wire shapes, not Ping\'s behaviour): the 428 shapes, the 403 receipt, the 503s, for the SE gateway and for a tool server', () => {
+  const hold = (rpc, extra = {}) => ({ kind: 'hold', status: 428, headers: {}, rpc, ...extra });
+  const CH = '6f1c9a52-0b7e-4d0e-9f1e-7c3f5a2d8b10';
+  // The three places a challenge id may sit, and a string error code at the top level (the plain JSON PingGateway and the tool server send).
+  for (const rpc of [{ error: 'approval_required', challengeId: CH }, { error: { data: { challengeId: CH } } }, { error: { challengeId: CH } }, { data: { challengeId: CH } }]) {
+    for (const cap of ['gateway', 'tools']) { const m = mapAnswer(hold(rpc), { capability: cap }); assert.equal(m.outcome, 'REAL_HOLD'); assert.equal(m.challengeId, CH, JSON.stringify(rpc)); assert.match(m.note, /challenge minted/); assert.equal(m.reply.approval.head, 'Held for approval'); }
+  }
+  assert.equal(mapAnswer(hold({ error: 'approval_required' }), { capability: 'tools' }).challengeId, undefined); assert.match(mapAnswer(hold({ error: 'approval_required' })).note, /challenge not minted/, 'none: not minted');
+  assert.equal(mapAnswer(hold({ error: 'approval_required', challengeId: 'bad id!' })).challengeId, undefined, 'only a plain id');
+  for (const cap of ['gateway', 'tools']) { const m = mapAnswer(hold({ error: 'step_up_required', challengeId: CH }), { capability: cap }); assert.equal(m.challengeId, undefined, 'step-up has no challenge'); assert.equal(m.reply.approval.head, 'Held for step-up'); }
+  assert.equal(mapAnswer(hold({ error: { data: { error: 'step_up_required' } } })).reply.approval.head, 'Held for step-up');
+  // 403: SE keeps DENY (with the audit decision) for any code but the receipt and HITL-service codes; a refused receipt is NOT a policy decision.
+  const deny = (rpc, headers = {}) => ({ kind: 'deny', status: 403, headers, rpc });
+  assert.equal(mapAnswer(deny({ error: 'access_denied' })).outcome, 'REAL_DENY'); assert.equal(mapAnswer(deny({ error: 'access_denied' })).reply.who, 'Authorize');
+  const rr = mapAnswer(deny({ error: 'hitl_receipt_rejected' })); assert.deepEqual([rr.outcome, rr.reply.who], ['REAL_RECEIPT_REJECTED', 'Gateway']); assert.match(rr.note, /refused the approval receipt \(hitl_receipt_rejected\), which is not a policy decision\./);
+  for (const c of [deny({ error: 'hitl_service_unavailable' }), { kind: 'unreachable', status: 503, headers: {}, rpc: { error: 'hitl_service_unavailable' } }]) { const m = mapAnswer(c); assert.equal(m.outcome, 'REAL_UNREACHABLE'); assert.equal(m.note, 'no decision: the gateway could not reach the HITL service'); }
+  assert.equal(mapAnswer(deny({ error: 'hitl_receipt_rejected', reason: 'receipt_pending' }), { capability: 'tools' }).outcome, 'REAL_RECEIPT_REJECTED');
+  const td = mapAnswer(deny({ error: 'group_required', reason: 'lab-group-gate' }), { capability: 'tools', provider: 'se' });
+  assert.deepEqual([td.outcome, td.reply.who], ['REAL_DENY', 'Tool server']); assert.match(td.note, /^The tool server answered 403: refused by the tool server's own policy \(SE\), which the lab cannot see: lab-group-gate\.$/, 'an SE-hosted tool server\'s rule is never called the lab\'s own');
+  assert.ok(!/lab policy|PingOne Authorize/.test(td.note + td.reply.text), 'no claim about whose policy an SE-hosted tool server applied');
+  const tl = mapAnswer(deny({ error: 'group_required', reason: 'lab-group-gate' }), { capability: 'tools', provider: 'local' }); assert.match(tl.note, /refused by lab policy \(local\), not PingOne Authorize: lab-group-gate\./);
+  // 503 jwks_unavailable and the others; a rate limit; any other status.
+  assert.equal(mapAnswer({ kind: 'unreachable', status: 503, headers: {}, rpc: { error: 'jwks_unavailable' } }, { capability: 'tools' }).note, "The tool server could not get your PingOne's signing keys (jwks_unavailable), so it made no decision.");
+  assert.match(mapAnswer({ kind: 'unreachable', status: 503, headers: {}, rpc: { error: 'other' } }, { capability: 'tools', provider: 'local' }).note, /^The tool server \(local\) answered HTTP 503 and did not complete the call\. The lab does not retry\.$/);
+  assert.equal(mapAnswer({ kind: 'other', status: 429, headers: {} }, { capability: 'tools', provider: 'se' }).note, 'The tool server (SE) answered HTTP 429 (a rate limit).');
+  assert.equal(mapAnswer({ kind: 'other', status: 429, headers: {} }, { capability: 'tools' }).outcome, 'REAL_REFUSED'); assert.equal(mapAnswer({ kind: 'other', status: 418, headers: {} }, { capability: 'tools' }).reply.text, 'The tool server answered HTTP 418; the agent stopped there.');
+  // Nothing a body says is echoed as words except fixed codes; control characters and long text are dropped.
+  const odd = mapAnswer(deny({ error: 'x'.repeat(200), reason: 'a b\nc' }), { capability: 'tools' }); assert.match(odd.note, /: no reason given\.$/); assert.ok(!odd.reply.text.includes('xxxxx'));
+});
+
+test('tools: AAG_PROVIDER=se with an SE-hosted tool server (AAG_TOOLS_SE_URL) answers as "tool server (SE)"; the (local) words never appear for it', async () => {
+  await withTools(async (url, { ts }) => {
+    await signedIn(url);
+    const x = await runSoft(url, 'UC6');
+    assert.deepEqual([x.provider, x.providerWhy], ['se', 'forced']); assert.equal(x.outcome, 'REAL_DENY'); assert.ok(x.hops.filter((h) => PROVIDER_KINDS.includes(h.kind) && h.source === 'real').every((h) => h.answeredBy === 'tool server (SE)'));
+    const dec = x.hops.find((h) => h.kind === 'authorize-decision');
+    assert.equal(dec.decision.by, 'the tool server (SE); the lab cannot see which policy it applied', 'an SE-hosted server is not claimed to be the lab\'s policy'); assert.equal(dec.fact, 'denied'); assert.equal(dec.title, 'Tool server decision (SE)');
+    assert.ok(!/lab policy|not PingOne Authorize/i.test(JSON.stringify({ hops: x.hops.map(({ tokens: _t, ...h }) => ({ ...h, spec: undefined })), reply: x.reply })), 'no lab-policy claim anywhere in an SE-hosted tool server\'s run');
+    assert.ok(!/\(local\)|\[local\]/.test(JSON.stringify({ hops: x.hops, reply: x.reply })), 'no (local) in an SE answer'); assert.deepEqual(vocabulary(x), []);
+    assert.match(x.hops[4].label, /^Tool server \[SE\]: /); assert.equal(ts.seen.filter((c) => c.rpc?.method === 'initialize' && !c.headers.authorization).length, 0, 'a forced provider is used as is: no probe');
+  }, { toolsSe: true, settings: { AAG_PROVIDER: 'se' } });
+});
+
+test('mcpClient: SENT_HEADERS and TRUSTED_HEADERS are unchanged byte for byte; a tokenless call sends no authorization and no x-token-validation and still passes assertNoTrusted; retry-after is shown', async () => {
+  assert.deepEqual(SENT_HEADERS, ['authorization', 'x-token-validation', 'mcp-session-id', 'mcp-protocol-version', 'traceparent', 'x-active-vertical', 'content-type', 'accept']);
+  assert.deepEqual(TRUSTED_HEADERS, ['x-internal-gateway-secret', 'x-authz-simulated', 'x-act-client-id', 'x-may-act-sub', 'x-demo-force-actor']);
+  for (const token of [null, undefined, '']) {
+    const h = gatewayHeaders({ token, traceparent: TP, vertical: 'software', sessionId: 'abc-123', protocol: '2025-06-18' });
+    assert.deepEqual(Object.keys(h).sort(), ['accept', 'content-type', 'mcp-protocol-version', 'mcp-session-id', 'traceparent', 'x-active-vertical']);
+    assert.ok(!('authorization' in h) && !('x-token-validation' in h)); assert.doesNotThrow(() => assertNoTrusted(h));
+  }
+  const { createGatewaySession } = await import('../src/mcpClient.js');
+  const fetchImpl = async () => new Response('{"error":"jwks_unavailable"}', { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '5' } });
+  const gs = createGatewaySession({ url: 'http://127.0.0.1:9/mcp', token: 'T', vertical: 'software', nextTraceparent: () => TP, provider: 'local', fetchImpl });
+  const c = await gs.initialize(); assert.equal(c.headers['retry-after'], '5'); assert.equal(c.provider, 'local', 'each call result says which provider the session was made for');
+});
+
+test('holdInfo reads the hold from every place a provider puts it, and c.body is never read', async () => {
+  const { holdInfo, errorCodeOf } = await import('../src/mcpClient.js');
+  const CH = 'abc-123';
+  assert.deepEqual(holdInfo({ rpc: { error: 'approval_required', challengeId: CH } }), { code: 'approval_required', challengeId: CH, stepUp: false });
+  assert.deepEqual(holdInfo({ rpc: { error: { data: { challengeId: CH, error: 'approval_required' } } } }), { code: 'approval_required', challengeId: CH, stepUp: false });
+  assert.deepEqual(holdInfo({ rpc: { error: { error: 'step_up_required', challengeId: CH } } }), { code: 'step_up_required', challengeId: CH, stepUp: true });
+  assert.deepEqual(holdInfo({ rpc: { error: { message: 'step_up_required' } } }), { code: 'step_up_required', challengeId: null, stepUp: true });
+  assert.equal(holdInfo({ rpc: { data: { challengeId: CH } } }).challengeId, CH); assert.equal(holdInfo({ rpc: { error_code: 'x' } }).code, 'x');
+  for (const bad of ['has space', 'x'.repeat(129), '', 7, null, {}]) assert.equal(holdInfo({ rpc: { challengeId: bad } }).challengeId, null, String(bad));
+  assert.deepEqual(holdInfo({ body: { error: 'step_up_required', challengeId: CH } }), { code: null, challengeId: null, stepUp: false }, 'c.body is not read');
+  assert.deepEqual(holdInfo({}), { code: null, challengeId: null, stepUp: false }); assert.equal(errorCodeOf(null), null);
+});

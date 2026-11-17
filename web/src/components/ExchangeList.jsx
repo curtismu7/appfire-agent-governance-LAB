@@ -71,12 +71,13 @@ function Detail({ e, tokOpen, onTok }) {
   );
 }
 
-export function ExchangeList({ request, response }) {
+export function ExchangeList({ request, response, answeredBy = null }) {
   const list = exchangesOf({ request, response });
   const [open, setOpen] = useState(() => openByDefault(list));
   const [tok, setTok] = useState(() => new Set());
   return (
     <div className="xch">
+      {typeof answeredBy === "string" && answeredBy.trim() && <p className="xch__muted" data-testid="xch-answered-by">Answered by: {visible(answeredBy.trim())}</p>}
       <div className="xch__bar">
         <span className="xch__muted">{list.filter((e) => open.has(e.n)).length} of {list.length} calls open</span>
         <button type="button" className="xch__link" onClick={() => setOpen(new Set(list.map((e) => e.n)))}>Open all</button>

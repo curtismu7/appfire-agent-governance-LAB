@@ -53,11 +53,24 @@ function tokensIn(v, out = [], depth = 0) {
 }
 const statusesIn = (res) => (res && typeof res === "object" ? [res.status, ...(Array.isArray(res.calls) ? res.calls.map((c) => c?.status) : [])].filter((n) => Number.isFinite(n)) : []);
 
+// The provider's own words for a hop it answered. A hop that did not run, or whose call got no answer (verdict "error"), was answered by nobody: it names no one,
+// even if a stale or hand-built hop carries the string.
+export function answeredByOf(hop) {
+  if (!hop || typeof hop.answeredBy !== "string" || !hop.answeredBy.trim()) return null;
+  if (hop.source === "not-run" || hop.verdict === "skip" || hop.verdict === "error") return null;
+  return hop.answeredBy.trim();
+}
+
 export function factsOf(hop) {
   const facts = [];
+  // Who answered (owner 2026-11-16: the data says it, never a chip): the server's own words for the pick, first in the list. Absent on a hop the lab ran itself.
+  const by = answeredByOf(hop);
+  if (by) facts.push({ kind: "info", label: "Answered by", value: by });
   const sts = [...new Set(statusesIn(hop.response))];
   for (const n of sts.slice(0, 3)) facts.push({ kind: statusState(n), label: "HTTP", value: String(n) });
   if (hop.decision?.outcome) facts.push({ kind: /^permit/i.test(hop.decision.outcome) ? "ok" : /^deny/i.test(hop.decision.outcome) ? "bad" : "warn", label: "decision", value: String(hop.decision.outcome) });
+  // A decision the lab's own rule produced says so ("lab policy (local), not PingOne Authorize"): shown as the server wrote it.
+  if (typeof hop.decision?.by === "string" && hop.decision.by.trim()) facts.push({ kind: "info", label: "Decided by", value: hop.decision.by.trim() });
   // The result of the hop first (its response), then what it was given (its request): the first claim of each kind wins.
   const seen = new Set();
   for (const raw of [...tokensIn(hop.response), ...tokensIn(hop.request)]) {
