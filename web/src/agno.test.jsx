@@ -701,6 +701,8 @@ describe("quickConfig rules", () => {
 });
 
 describe("resume after a hand-off", () => {
+  // The turn shows in the DOM before the passive save effect (App.jsx:112) has written it, so wait for the stored outcome before the tab "goes away".
+  const stored = () => waitFor(() => expect(JSON.parse(window.sessionStorage.getItem(`cal.resume.${workspaceId()}`)).turns[0].outcome).toBe("PERMIT"));
   test("Back from a2a-lab restores the chat (words and outcomes, not the run), adds a note, selects the use case and cleans the address bar", async () => {
     await boot();
     const u = userEvent.setup();
@@ -708,9 +710,10 @@ describe("resume after a hand-off", () => {
     await within(await screen.findByTestId("turn")).findByTestId("turn-answer");
     await u.click(within(screen.getByTestId("wtt-away")).getByTestId("wtt-UC2.6"));
     await waitFor(() => expect(screen.getAllByTestId("turn")).toHaveLength(2));
-    const stored = window.sessionStorage.getItem(`cal.resume.${workspaceId()}`);
-    expect(stored).not.toMatch(/eyJ|"hops"|"tokens"|"raw"/);
-    expect(JSON.parse(stored).turns.map((t) => [t.ucId, t.status, t.outcome])).toEqual([["UC1", "done", "PERMIT"], ["UC2.6", "handoff", undefined]]);
+    // The chip's turn is added from a timer (typeAndSend, 260 ms), outside act, so the save effect (App.jsx:112) can run a tick after the turn shows: wait for it.
+    const saved = () => window.sessionStorage.getItem(`cal.resume.${workspaceId()}`);
+    await waitFor(() => expect(JSON.parse(saved()).turns.map((t) => [t.ucId, t.status, t.outcome])).toEqual([["UC1", "done", "PERMIT"], ["UC2.6", "handoff", undefined]]));
+    expect(saved()).not.toMatch(/eyJ|"hops"|"tokens"|"raw"/);
     cleanup(); // the tab goes to the other app ...
     window.history.replaceState(null, "", "/?returned=a2a-lab&uc=UC2.6"); // ... and comes Back
     await boot();
@@ -731,10 +734,12 @@ describe("resume after a hand-off", () => {
     const u = userEvent.setup();
     await u.click(screen.getByTestId("wtt-UC1"));
     await screen.findByTestId("turn-answer");
+    await stored();
     cleanup(); await boot(); // plain reload: no ?returned
     expect(screen.queryAllByTestId("turn")).toHaveLength(0);
     await u.click(screen.getByTestId("wtt-UC1"));
     await screen.findByTestId("turn-answer");
+    await stored();
     for (let i = 0; i < 2; i++) { cleanup(); window.history.replaceState(null, "", "/?returned=a2a-lab&uc=UC1"); await boot(); }
     expect(screen.getAllByTestId("turn")).toHaveLength(1);
     expect(screen.getAllByTestId("turn-note")).toHaveLength(1);
@@ -745,6 +750,7 @@ describe("resume after a hand-off", () => {
     const u0 = userEvent.setup();
     await u0.click(screen.getByTestId("wtt-UC1"));
     await screen.findByTestId("turn-answer");
+    await stored();
     cleanup();
     window.history.replaceState(null, "", "/?returned=evil-app&uc=UC1");
     await boot();
