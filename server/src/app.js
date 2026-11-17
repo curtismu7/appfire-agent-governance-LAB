@@ -112,6 +112,10 @@ export function createApp({
   // scheme) and nothing else that names a proxy or a client address, the pair is dropped before the live guard runs. Any other
   // proxy header, or a mismatch, keeps the headers whole and Real stays refused — an untrusted caller cannot forge the pair.
   const realCtx = (req) => ({ env, bind, headers: trustedProxyHeaders(req.headers, proxyOrigin()) });
+  // The opening mode is derived once at start-up, but the live guard decides per request (a proxy header, say). A workspace that sits on Real answers on the
+  // lab's own steps for a request the guard refuses, so the page is never left with only refusals and no control to leave them. An explicit body.mode is
+  // never changed by this (it keeps its 403).
+  const modeFor = (req, m) => (m === 'live' && liveRefusal(realCtx(req)) ? 'mock' : m);
   // vertical: absent means the default; present must be a known id. Returns the id, or null after answering.
   const verticalOf = (v, res) => {
     if (v === undefined) return DEFAULT_VERTICAL;
@@ -136,11 +140,11 @@ export function createApp({
     noStore(res);
     const realAvailable = realRefusal(req) === null;
     res.json({
-      mode: openingMode, modes: MODES, simulated: true,
+      mode: modeFor(req, openingMode), modes: MODES, simulated: true,
       version: (() => { try { return JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version || null; } catch { return null; } })(),
       hosted: isHosted(env), hostedBanner: isHosted(env) ? HOSTED_BANNER : null, // the hosted build (mock only) and the banner the page shows for it
       total: MANIFEST.meta.total, counts: MANIFEST.meta.counts, sourceRef: MANIFEST.source, personas: PERSONAS, verticals: verticalList(),
-      source: workspaces.peek('default').mode === 'live' ? 'real' : 'mock', // rule 19: the default workspace's current source
+      source: modeFor(req, workspaces.peek('default').mode) === 'live' ? 'real' : 'mock', // rule 19: the default workspace's current source
       realAvailable, // rule 19: whether Real (this app's live PingOne path) is configured
       guards: { mockSignIn: mockSignInRefusal(mockCtx(req)) === null ? 'allowed' : 'refused', live: realAvailable ? 'allowed' : 'refused' },
       shelfUrl: shelfInfo(env).shelfUrl, // the header Shelf button uses this one (a proxy-mounted page cannot reach /api/shelf with cookies omitted)
@@ -290,7 +294,7 @@ export function createApp({
     noStore(res);
     const s = workspaces.peek(id);
     const why = realRefusal(req);
-    res.json({ workspace: id, mode: s.mode, modes: MODES, live: why === null ? 'allowed' : 'refused', liveReason: why });
+    res.json({ workspace: id, mode: modeFor(req, s.mode), modes: MODES, live: why === null ? 'allowed' : 'refused', liveReason: why });
   });
 
   // ---- The approval service (owner 2026-11-13): the mock phone, reusable for any hold ----
@@ -350,7 +354,7 @@ export function createApp({
     const id = ws(req, res); if (!id) return;
     noStore(res);
     const s = workspaces.peek(id);
-    res.json({ workspace: id, mode: s.mode, count: s.runs.length, max: MAX_RUNS, runs: s.runs });
+    res.json({ workspace: id, mode: modeFor(req, s.mode), count: s.runs.length, max: MAX_RUNS, runs: s.runs });
   });
 
   api.post('/run/:id', jsonWrites, async (req, res, next) => {
@@ -369,7 +373,7 @@ export function createApp({
       if (body.said !== undefined && (typeof body.said !== 'string' || body.said.length > 400)) return res.status(400).json({ error: 'bad_said', detail: 'said must be a string of at most 400 characters' });
       // The agent's instructions (Mock only: a Real run sends no instructions to anything). Free text: cleaned like `said`.
       if (body.instructions !== undefined && (typeof body.instructions !== 'string' || body.instructions.length > MAX_INSTRUCTIONS)) return res.status(400).json({ error: 'bad_instructions', detail: `instructions must be a string of at most ${MAX_INSTRUCTIONS} characters` });
-      const requested = body.mode === undefined ? workspaces.peek(id).mode : modeOf(body.mode);
+      const requested = body.mode === undefined ? modeFor(req, workspaces.peek(id).mode) : modeOf(body.mode);
       if (!requested) return res.status(400).json({ error: 'bad_mode', detail: 'mode must be mock or live' });
       if (!isFullVertical(vertical)) return res.status(501).json({ error: 'vertical_stub', detail: 'this vertical is a data stub: it has a name and no pack yet' });
       // The mock engine's run. `gate` is set when this is a Real-mode request for a use case that cannot run Real: it runs here, labelled.
@@ -408,7 +412,7 @@ export function createApp({
             return await runMock(gate);
           }
           const session = await real.ensureSession(id, traceparent);
-          if (!session) return res.status(401).json({ error: 'sign_in_required', detail: 'Sign in first: Real runs as you. Use Sign in (pi.flow, the username is filled in for you).' });
+          if (!session) return res.status(401).json({ error: 'sign_in_required', detail: 'Sign in first: this run is made as you. Use Sign in (pi.flow, the username is filled in for you).' });
           let run;
           // Owner 2026-11-13: body.approvalId carries an APPROVED HITL session id; the lab swaps it for the gateway's
           // challenge id (server-side only) so the retry discharges the consent. The approval must belong to this

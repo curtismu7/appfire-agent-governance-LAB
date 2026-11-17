@@ -40,8 +40,9 @@ const liveRefused = liveRefusal({ env: process.env, bind: host, headers: {} });
 const fullOn = real.configured() && liveRefused === null;
 // The mode a new workspace opens in: an explicit AAG_LAB_MODE, else Real when the full Real settings are complete and nothing refuses it, else the engine.
 // An identity-provider-only worker client keeps opening on the engine.
-const mode = openingMode(process.env, { hosted, realFull: real.configured(), liveRefusal: liveRefused });
 const liveOn = fullOn || (live.configured() && liveRefused === null);
+const mode = openingMode(process.env, { hosted, realFull: real.configured(), liveRefusal: liveRefused, liveUsable: liveOn });
+if (process.env.AAG_LAB_MODE === 'live' && mode !== 'live') console.log('[appfire-agent-governance-lab] AAG_LAB_MODE=live is set but Real is not usable here (settings incomplete or a guard refuses it): opening on the lab\'s own steps. Run npm run doctor.');
 // The netguard: in full Real, the PingOne auth host and the Agent Gateway host (loopback is always allowed); in the old path, the one PingOne host;
 // otherwise nothing. Mock runs never use them (a test asserts zero attempts).
 const allowHosts = fullOn ? real.hosts().filter((h) => !isLoopbackHost(h)) : [hostToAllow(live, liveRefused)].filter(Boolean);

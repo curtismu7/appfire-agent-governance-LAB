@@ -215,6 +215,18 @@ test('rule 11: a mock run is refused (403) unless ALLOW_MOCK_SIGNIN=1, IDP is mo
   });
 });
 
+test('a workspace that opened on Real answers on the lab\'s own steps for a request the live guard refuses; an explicit body.mode keeps its 403', async () => {
+  const workspaces = createWorkspaces({ defaultMode: 'live' });
+  await withServer(async (url) => {
+    const proxied = { 'x-forwarded-for': '203.0.113.9' };
+    assert.equal((await (await get(url, '/api/mode')).json()).mode, 'live', 'a plain request sees the opening Real');
+    const m = await (await get(url, '/api/mode', proxied)).json();
+    assert.equal(m.mode, 'mock', 'a refused request is told the lab\'s own steps'); assert.equal(m.live, 'refused');
+    assert.equal((await (await get(url, '/api/info', proxied)).json()).source, 'mock');
+    const direct = await run(url, 'UC1', { mode: 'live' }, proxied); assert.equal(direct.status, 403); assert.equal(direct.body.error, 'live_not_allowed');
+  }, { workspaces, env: { ...MOCK_OK, ALLOW_MOCK_SIGNIN: '1' } });
+});
+
 test('live mode: selecting it is refused (403) unless every guard is satisfied; when satisfied but the lab has no PingOne settings a live run is refused honestly (503)', async () => {
   await withServer(async (url) => {
     const before = await (await get(url, '/api/mode')).json();

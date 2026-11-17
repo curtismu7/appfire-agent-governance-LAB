@@ -138,3 +138,14 @@ test('banner: /api/info and the served page carry the hosted banner; the local b
     }, { webDist: dist });
   } finally { fs.rmSync(dist, { recursive: true, force: true }); }
 });
+
+test('the hosted talk track never claims a live call: its sign-in and approval-service sentences are conditional and say the copy reaches no tenant', async () => {
+  await withServer(async (url) => {
+    const story = await (await get(url, '/api/story?vertical=banking')).json();
+    const real = story.talkTrack.find((e) => e.id === 'real');
+    assert.match(real.say, /^When you sign in with PingOne/); assert.match(real.say, /hosted copy reaches no tenant/);
+    const hitl = story.talkTrack.find((e) => e.id === 'theme-hitl');
+    assert.match(hitl.say, /signed in with PingOne, the approval is also recorded with the HITL service/);
+    assert.doesNotMatch(JSON.stringify(story.talkTrack), /This is live|Real mode/);
+  }, { env: HOSTED, bind: '0.0.0.0' });
+});

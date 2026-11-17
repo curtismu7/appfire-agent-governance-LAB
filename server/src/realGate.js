@@ -69,7 +69,7 @@ export function toolArgs(tool, { vertical, accounts = [], amount, args }) {
   const amt = Number.isFinite(amount) ? amount : 25;
   switch (tool) {
     case 'get_account_balance': return { account_id: a0 };
-    case 'create_transfer': return { from_account_id: a0, to_account_id: a1, amount: amt, description: 'Customer Agent LAB (Real)' };
+    case 'create_transfer': return { from_account_id: a0, to_account_id: a1, amount: amt, description: 'Customer Agent LAB' };
     case 'request_fee_waiver': return { account_id: a0, reason: 'Customer request' };
     case 'get_branch_hours': return { vertical };
     case 'pay_bill': case 'checkout': return { amount: amt };

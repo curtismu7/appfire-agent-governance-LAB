@@ -2,8 +2,12 @@ import { NEEDS_LABELS, TRACK_LABELS, noIds, notRunText, outcomeState, pickFullPa
 import { InventedTag, Json, Tag } from "./Bits";
 import GatewayTrace from "../gateway-trace/GatewayTrace";
 
-// The one sentence under the "What Privilege did" heading, the same whatever ran (the panel keeps its checked / observed / inferred tags).
-const GATEWAY_BASIS = "The gateway's checks, in the order they ran.";
+// The sentence under the "What Privilege did" heading says what the decisions rest on (rule 25: an inferred decision is never presented as one the gateway
+// reported). It follows the run's source and never names a mode.
+const GATEWAY_BASIS = {
+  real: "The requests and responses are exact. The gateway answers with a status and a body, not a per-check breakdown, so decisions marked \"inferred\" are read from the outcome; the gateway log is the authoritative record.",
+  lab: "These decisions were computed by the lab's own gateway steps, in the order a gateway runs them.",
+};
 
 // The honest refusal text for each answer the API can give instead of a run. The server's own detail is shown as it is.
 const REFUSAL = {
@@ -83,10 +87,15 @@ export function RunResult({ run }) {
 // The one line a screen reader hears when a run finishes.
 const announce = (run) => `${run.useCase?.title || "Run"} finished: ${run.outcome}${run.kind === "real" || run.kind === "live" ? "" : run.kind === "guided" ? ", guided, not computed" : run.matchesExpected ? ", matches the catalog label" : ", differs from the catalog label"}.`;
 
-export default function RunPanel({ uc, vertical, verticals, persona, setPersona, personas, onRun, running, result, mode }) {
+export default function RunPanel({ uc, vertical, verticals, persona, setPersona, personas, onRun, running, result, mode, realLevel = null }) {
   if (!uc) return <section className="panel" data-testid="run-empty"><h2 className="panel__title">Run a use case</h2><p className="muted">Pick a use case on the left. Then choose a vertical pack and a persona, and Run.</p></section>;
   const v = verticals.find((x) => x.id === vertical);
   const stub = v?.pack === "stub";
+  // The persona and the lab's inputs matter only for a run on the lab's own steps. A run that goes through the gateway is made as the person who signed in, and
+  // the identity-provider-only path uses no persona; a use case the gateway cannot serve keeps both, even while the workspace opens on Real.
+  const asSignedIn = mode === "live" && realLevel === "full" && uc.realGate?.real === true;
+  const idpOnly = mode === "live" && realLevel !== "full";
+  const personaUnused = asSignedIn || idpOnly;
   return (
     <section className="panel" aria-label="Run a use case" data-testid="run-panel">
       <p className="muted" data-testid="run-track">{TRACK_LABELS[uc.track] || uc.track}</p>
@@ -100,10 +109,10 @@ export default function RunPanel({ uc, vertical, verticals, persona, setPersona,
       <p className="muted">Trigger in the product: <code>{noIds(triggerText(uc.trigger))}</code></p>
       <p className="muted">Expected outcome (the catalog's label): <Tag state={outcomeState(uc.expectedOutcome)}>{uc.expectedOutcome}</Tag> {uc.tool && <>Tool in this vertical: <code>{uc.tool}</code></>}</p>
       {uc.live?.status === "needs-build" && <p className="muted">{noIds(uc.live.message)}</p>}
-      {mode !== "live" && <Inputs uc={uc} />}
+      {!personaUnused && <Inputs uc={uc} />}
       <div className="runbar">
-        {mode === "live" && <p className="muted" data-testid="live-persona-note">{uc.realGate?.real ? (uc.id === "UC21" ? "This run uses the person who signed in; the persona is not used. Your tier is your PingOne group: add or remove your user from the premium-tier group in PingOne, Sign out, and sign in again, then run this again." : "This run uses the person who signed in; the persona is not used.") : "This run reaches the identity provider only; the persona is not used."}</p>}
-        {mode !== "live" && (
+        {personaUnused && <p className="muted" data-testid="live-persona-note">{asSignedIn ? (uc.id === "UC21" ? "This run uses the person who signed in; the persona is not used. Your tier is your PingOne group: add or remove your user from the premium-tier group in PingOne, Sign out, and sign in again, then run this again." : "This run uses the person who signed in; the persona is not used.") : "This run reaches the identity provider only; the persona is not used."}</p>}
+        {!personaUnused && (
           <label className="field">Persona <InventedTag />
             <select value={persona} onChange={(e) => setPersona(e.target.value)} data-testid="persona">
               {personas.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -119,7 +128,7 @@ export default function RunPanel({ uc, vertical, verticals, persona, setPersona,
       {result && !result.ok && <Refusal result={result} verticals={verticals} />}
       {result?.ok && <RunResult run={result.body.run} />}
       {/* "What Privilege did" (rule 25): the gateway calls of THIS run, under its result. A run that never reached a gateway (a guided page, a refusal before it) has none, so nothing is drawn. */}
-      {result?.ok && result.body.run.gatewayTrace?.length > 0 && <GatewayTrace exchanges={result.body.run.gatewayTrace} source={result.body.run.kind === "real" ? "real" : "mock"} basisNote={GATEWAY_BASIS} />}
+      {result?.ok && result.body.run.gatewayTrace?.length > 0 && <GatewayTrace exchanges={result.body.run.gatewayTrace} source={result.body.run.kind === "real" ? "real" : "mock"} basisNote={result.body.run.kind === "real" ? GATEWAY_BASIS.real : GATEWAY_BASIS.lab} />}
     </section>
   );
 }

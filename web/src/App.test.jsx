@@ -709,7 +709,7 @@ describe("decision card and the session walkthrough (agenda)", () => {
     expect(card.getAttribute("data-verdict")).toBe("allowed");
     expect(screen.getByTestId("decision-word").textContent).toBe("ALLOWED");
     expect(screen.getByTestId("decision-fields").querySelectorAll("dt")).toHaveLength(5);
-    expect(card.compareDocumentPosition(screen.getByTestId("hop-sources")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card.compareDocumentPosition(screen.getByTestId("evidence-why")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   test("a denied run says DENIED and that nothing was dispatched; a guided run says it decided nothing", async () => {
@@ -966,7 +966,7 @@ describe("agent instructions and privilege settings", () => {
 
   test("the panel has one note, the same whatever the mode: the override phrases are lab-invented and policy decides from the call", () => {
     render(<AgentInstructions config={INSTR} text={null} onText={() => {}} />);
-    expect(screen.getByTestId("instructions-note").textContent).toBe("The agent obeys override phrases (LAB-INVENTED). Policy decides from the call, never from the instructions.");
+    expect(screen.getByTestId("instructions-note").textContent).toBe("The agent obeys override phrases (LAB-INVENTED) on the lab's own steps and in Compare, not on a run made as the signed-in person. Policy decides from the call, never from the instructions.");
   });
 
   test("a steered run says so on the decision card, and the card still reports the policy's decision", async () => {

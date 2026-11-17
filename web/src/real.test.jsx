@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
+import RunPanel from "./components/RunPanel";
 import { forgetWorkspace } from "./workspace";
 import { FULL_INFO, INFO, denyBody, mockApi, mockInRealBody, noActBody, realBody } from "./testFixtures";
 
@@ -177,5 +178,46 @@ describe("the demo guide", () => {
     const guide = await screen.findByTestId("demo-guide");
     expect(within(guide).queryByTestId("guide-real-help")).toBeNull();
     expect(guide.textContent).not.toMatch(/Runs Mock|Runs Real|mock engine|every hop says MOCK/);
+  });
+});
+
+describe("the persona and the lab's inputs follow the run that will be made, not the workspace's opening mode", () => {
+  const props = (uc, over = {}) => ({ uc, vertical: "banking", verticals: [{ id: "banking", label: "Appfire Platform", pack: "full" }], persona: "standard", setPersona: () => {}, personas: ["standard", "premium"], onRun: () => {}, running: false, result: null, ...over });
+  const base = { id: "UC12", title: "t", track: "foundations", buyerStory: "s", pingOneSolution: "p", productRoles: {}, trigger: { type: "chip", text: "x" }, expectedOutcome: "PERMIT", needs: [], labInputs: { amount: 600 }, live: { status: "idp-only", message: "m" } };
+  test("a use case the gateway serves, in a full Real lab, runs as the signed-in person: no persona, no inputs, the note says so", () => {
+    render(<RunPanel {...props({ ...base, realGate: { real: true } }, { mode: "live", realLevel: "full" })} />);
+    expect(screen.getByTestId("live-persona-note").textContent).toBe("This run uses the person who signed in; the persona is not used.");
+    expect(screen.queryByTestId("persona")).toBeNull(); expect(screen.queryByTestId("lab-inputs")).toBeNull();
+  });
+  test("a use case the gateway cannot serve, in a full Real lab, runs on the lab's own steps: the persona and the inputs stay, and there is no note", () => {
+    render(<RunPanel {...props({ ...base, realGate: { real: false, reason: "r" } }, { mode: "live", realLevel: "full" })} />);
+    expect(screen.queryByTestId("live-persona-note")).toBeNull();
+    expect(screen.getByTestId("persona")).toBeTruthy(); expect(screen.getByTestId("lab-inputs")).toBeTruthy();
+  });
+  test("the identity-provider-only path says it reaches the identity provider only", () => {
+    render(<RunPanel {...props({ ...base, realGate: { real: false, reason: "r" } }, { mode: "live", realLevel: "idp-only" })} />);
+    expect(screen.getByTestId("live-persona-note").textContent).toBe("This run reaches the identity provider only; the persona is not used.");
+    expect(screen.queryByTestId("persona")).toBeNull();
+  });
+});
+
+describe("the sidebar's gateway line", () => {
+  test("is not drawn while the page is on Real: a placeholder host would read as the gateway a run calls", async () => {
+    await boot();
+    expect(screen.queryByTestId("gateway-status")).toBeNull();
+  });
+});
+
+describe("edited Agent instructions", () => {
+  test("are sent with a run whatever the workspace's opening mode; the server decides which runs obey them", async () => {
+    const u = await boot({ signedIn: true });
+    await u.click(screen.getByTestId("uc-UC1"));
+    await u.click((await screen.findByTestId("instructions")).querySelector("summary"));
+    await u.click(screen.getByTestId("instructions-preset-poisoned"));
+    await runIt(u);
+    const posts = api.calls.filter((c) => c.path === "/api/run/UC1" && c.method === "POST");
+    expect(posts).toHaveLength(1);
+    expect(typeof posts[0].body.instructions).toBe("string");
+    expect(screen.getByTestId("instructions-note").textContent).toMatch(/not on a run made as the signed-in person/);
   });
 });

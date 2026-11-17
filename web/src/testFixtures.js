@@ -157,6 +157,8 @@ export function mockApi(state = {}) {
       s.signedIn = true; return json(200, { signedIn: true, user: { name: "lab-demo-user" }, steps: [] });
     }
     if (path === "/api/signout") { s.signedIn = false; return json(200, { signedIn: false }); }
+    if (path === "/api/approval/start" && method === "POST") { const b = JSON.parse(opts.body); return json(200, { ok: true, approval: { id: "ap-1", state: "pending", kind: b.kind, tool: b.tool, amount: b.amount, description: b.description } }); }
+    if (path === "/api/approval/status") return json(200, { approval: { id: "ap-1", state: "pending" } });
     if (path === "/api/instructions") return json(200, INSTR);
     if (path === "/api/diagram") return json(200, DIAGRAM);
     if (path === "/api/shelf") return json(200, { shelfUrl: null }); // ShelfLink: null -> the button renders nothing

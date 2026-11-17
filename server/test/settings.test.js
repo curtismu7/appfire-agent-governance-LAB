@@ -42,7 +42,9 @@ test('openingMode (owner 2026-11-16): explicit mock|live wins; unset or empty is
     assert.equal(openingMode({ ...unset, AAG_DEPLOY_MODE: 'hosted' }, real), 'mock', 'hosted by the environment too');
   }
   assert.equal(openingMode({ AAG_LAB_MODE: 'mock' }, real), 'mock', 'explicit mock wins over complete Real settings');
-  assert.equal(openingMode({ AAG_LAB_MODE: 'live' }, { realFull: false }), 'live', 'explicit live is unchanged (and checks nothing)');
+  assert.equal(openingMode({ AAG_LAB_MODE: 'live' }, { realFull: false }), 'live', 'explicit live with nothing said about usability is unchanged');
+  assert.equal(openingMode({ AAG_LAB_MODE: 'live' }, { realFull: false, liveUsable: false }), 'mock', 'explicit live with no usable Real path opens on the lab\'s own steps (the page has no control to leave a refused Real)');
+  assert.equal(openingMode({ AAG_LAB_MODE: 'live' }, { realFull: false, liveUsable: true }), 'live', 'explicit live with a usable path (the identity-provider-only client too) wins');
   assert.throws(() => openingMode({ AAG_LAB_MODE: 'prod' }, real), /not available/);
   assert.throws(() => openingMode({ AAG_DEPLOY_MODE: 'hosted', AAG_LAB_MODE: 'live' }, real), /mock only/, 'hosted plus an explicit live still throws');
 });

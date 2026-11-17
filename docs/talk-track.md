@@ -26,7 +26,7 @@ Run a low-risk read: the decision card says ALLOWED, the tool ran and nobody was
 
 ## Step 6 · A higher-risk request is denied, constrained or approved
 
-The read you just saw needed nobody. Now the writes: “MFA step-up” (a bulk edit above the first threshold) stops for a second factor. “MFA + HITL consent” (a smaller bulk edit) stops for an actual human: approve it on the phone: the approval is recorded with the HITL service and the call is retried with the verified receipt. A bulk edit above the limit is refused outright. A claim that someone 'already approved it' changes nothing: only a verified approval counts. The thresholds are the lab's own — the point is the model: controlled autonomy, not a person approving every step.
+The read you just saw needed nobody. Now the writes: “MFA step-up” (a bulk edit above the first threshold) stops for a second factor. “MFA + HITL consent” (a smaller bulk edit) stops for an actual human: approve it on the phone and the call is retried with the verified approval (signed in with PingOne, the approval is also recorded with the HITL service). A bulk edit above the limit is refused outright. A claim that someone 'already approved it' changes nothing: only a verified approval counts. The thresholds are the lab's own — the point is the model: controlled autonomy, not a person approving every step.
 
 ## Step 6 · Limiting damage from a manipulated agent
 
@@ -36,13 +36,13 @@ Run “confused-deputy actor injection” (a forged actor claim is refused), “
 
 Run “Agent observability and traceability”, then open Run history: every run is a record — which agent acted, on whose behalf, which tool or MCP server it tried, what policy decision applied, and whether access was allowed, denied or escalated. Every hop carries its raw request, response and a W3C traceparent. When Doug's CISO org asks what an agent did and who allowed it, the answer is a query, not an investigation.
 
-## This is live, not slides
+## What runs when you sign in
 
-Sign in (pi.flow): “Delegated access” and the other use cases the gateway serves run the actual chain — the agent's own token, two RFC 8693 exchanges at PingOne, the SE Agent Gateway, a PingOne Authorize decision and the tool itself. The two approval use cases add the real HITL loop: the gateway mints a challenge, you approve on the phone, the approval is recorded with the HITL service and the call is retried with the verified receipt. The SE gateway hosts only some verticals' tools: pick one it serves for the full chain (the vertical menu notes which).
+When you sign in with PingOne, “Delegated access” and the other use cases the gateway serves run the actual chain — the agent's own token, two RFC 8693 exchanges at PingOne, the SE Agent Gateway, a PingOne Authorize decision and the tool itself. The two approval use cases then add a human-approval loop: the gateway mints a challenge, you approve on the phone, the approval is recorded with the HITL service and the call is retried with the verified receipt. The SE gateway hosts only some verticals' tools, so the other use cases keep running on the lab's own steps. Sign in appears only on a local lab with the PingOne settings filled in; the hosted copy reaches no tenant.
 
 ## What the lab does not call
 
-HIVE is Appfire's platform and is never called: its side of the split is represented, not run. The thresholds, personas and amounts are the lab's own (lab-invented). The step-up second factor is not completed here, and the use cases that need a feature flag or a trusted-caller header say why they stay on the lab's own steps.
+HIVE is Appfire's platform and is never called: its side of the split is represented, not run. The thresholds, personas and amounts are the lab's own (lab-invented). The step-up second factor is not completed here, and a use case that needs a feature flag or a trusted-caller header keeps running on the lab's own steps (the picker tags the flag).
 
 ## Why it matters: governed agent autonomy for Appfire
 

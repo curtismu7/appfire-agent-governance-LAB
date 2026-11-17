@@ -174,7 +174,7 @@ function gatewayCheck(ctx, { again = false, key = 'gateway-check' } = {}) {
   const sig = ctx.event === 'tampered-intent-token' ? { ok: false } : verifyMockJwt(tok.raw);
   const overload = ctx.event === 'rate-limit-burst' ? (ctx.sit.burst || GATEWAY.rateLimit + 1) : 1;
 
-  if (ctx.event === 'introspection-down') fail('DENY_503', 503, 'validation_unavailable', 'the token validation endpoint did not answer ; the gateway fails closed');
+  if (ctx.event === 'introspection-down') fail('DENY_503', 503, 'validation_unavailable', 'the token validation endpoint did not answer; the gateway fails closed');
   else if (!sig.ok) fail('DENY_401', 401, 'invalid_signature', 'the token signature does not verify');
   else pass('signature');
   if (!verdict) { if (claims.aud && ![ctx.urls.mcp, 'customer-app-mock'].includes(claims.aud)) fail('DENY_401', 401, 'invalid_audience', 'aud does not name this gateway'); else pass('aud'); }

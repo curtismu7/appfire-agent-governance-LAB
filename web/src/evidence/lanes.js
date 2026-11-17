@@ -20,7 +20,7 @@ export const ACTORS = {
   credentials: { label: "Credential store", initials: "CS", lane: "credentials", role: "Holds the downstream credential that is swapped in for the call.", sees: "the stored credential", never: "the user token" },
   llm: { label: "Agent model", initials: "LM", lane: "llm", role: "The agent's model. It reads the request and proposes a tool call; the policy decides whether it runs.", sees: "the customer's words and the tools it may call", never: "any token or secret" },
   api: { label: "Resource server", initials: "RS", lane: "api", role: "The back-end API behind the tool. It checks the delegated token itself and returns the data.", sees: "the delegated token and the request", never: "the user's password or the agent secret" },
-  hive: { label: "HIVE (not called)", initials: "HV", lane: "neutral", represented: true, role: "Appfire's platform. It manages back-end data policy and which MCP servers may be used. This lab never calls it: its side is represented, not run, so no step in any run touches this lane.", sees: "nothing: the lab never calls it", never: "nothing: the lab never calls it" },
+  hive: { label: "HIVE (not called)", initials: "HV", lane: "neutral", represented: true, role: "Appfire's platform. It manages back-end data policy and which MCP servers may be used. This lab never calls it: its side is represented, not run, so no step in any run touches this lane.", sees: "nothing: the lab never calls it", never: "any call from this lab" },
   database: { label: "Database", initials: "DB", lane: "database", role: "The back end's own data store. Only the API talks to it.", sees: "the API's queries", never: "any token" },
 };
 

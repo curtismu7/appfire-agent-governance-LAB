@@ -235,7 +235,7 @@ export default function App() {
     // A typed or chip turn tells the server what was said and which brain actually picked the use case ("llama" only when llama.cpp did;
     // a fallback is "scripted"). A picked or previewed run sends neither.
     const typed = turn && turn.how !== "picked" ? { said: String(turn.said).slice(0, 400), brain: turn.how === "llm" ? "llama" : "scripted" } : {};
-    const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(mode !== "live" && instrEdit !== null ? { instructions: instrEdit } : {}), ...(extra ?? {}) }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
+    const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(instrEdit !== null ? { instructions: instrEdit } : {}), ...(extra ?? {}) }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
     if (mine !== runSeq.current) return; // a Reset or a newer run took over
     setRunning(false);
     // Real runs as the person: no sign-in yet opens the Sign in dialog, and the run goes again once it succeeds.
@@ -464,7 +464,7 @@ export default function App() {
             <div className="agno" data-several={several ? "true" : undefined}>
               {!presenter && (
                 <Rail storageKey="aag.setup" label="Setup">
-                <SetupSidebar onNewChat={() => { dropPick(); setTurns([]); setSelHop(null); }} host={cast.castHost} several={several} setSeveral={setSeveral} agent={cast.castAgent}
+                <SetupSidebar onNewChat={() => { dropPick(); setTurns([]); setSelHop(null); }} host={mode !== "live" || (realLevel === "full" && uc?.realGate?.real === false) ? cast.castHost : null} several={several} setSeveral={setSeveral} agent={cast.castAgent}
                   vertical={vertical} verticals={verticals} onVertical={setVertical} sessions={sessions} onSession={pick}
                   brain={cfg.brain} brainInfo={brainInfo} onBrain={(b) => setCfg((c) => ({ ...c, brain: b }))}>
                   <UseCasePicker catalog={catalog} selectedId={selectedId} onPick={pick} failed={!catalog && !!error} keep={several ? isHandoff : null} />
@@ -487,7 +487,7 @@ export default function App() {
                     {uc && (
                       <details className="ucpanel" open ref={runRef} data-testid="uc-panel">
                         <summary>{uc.title}: inputs, persona, Run and the raw result</summary>
-                        <RunPanel uc={uc} vertical={vertical} verticals={verticals} persona={persona} setPersona={setPersona} personas={personas} onRun={run} running={busy} result={result} mode={mode} />
+                        <RunPanel uc={uc} vertical={vertical} verticals={verticals} persona={persona} setPersona={setPersona} personas={personas} onRun={run} running={busy} result={result} mode={mode} realLevel={realLevel} />
                       </details>
                     )}
                   </EvidenceColumn>

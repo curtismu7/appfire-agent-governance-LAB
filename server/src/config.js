@@ -23,9 +23,11 @@ export function modeFrom(env = process.env) {
 // The opening mode (owner, 2026-11-16: "everything should be real mode"). An explicit AAG_LAB_MODE=mock|live wins and keeps modeFrom's validation (hosted +
 // live throws). Unset or empty: live only when the full Real settings are present, this is not the hosted build and nothing refuses Real (the live guard);
 // otherwise mock. Pure: index.js passes what it already computed.
-export function openingMode(env = process.env, { hosted = deployModeFrom(env) === 'hosted', realFull = false, liveRefusal = null } = {}) {
+// An explicit live is honoured only while some Real path is usable (liveUsable: the full chain or the identity-provider-only client, with no refusing guard);
+// otherwise the page, which has no control to leave Real, would show nothing but refusals, so the lab opens on its own steps and index.js says so.
+export function openingMode(env = process.env, { hosted = deployModeFrom(env) === 'hosted', realFull = false, liveRefusal = null, liveUsable = true } = {}) {
   const raw = env.AAG_LAB_MODE;
-  if (raw !== undefined && raw !== '') return modeFrom(env);
+  if (raw !== undefined && raw !== '') { const m = modeFrom(env); return m === 'live' && liveUsable === false ? 'mock' : m; }
   return !hosted && realFull === true && !liveRefusal ? 'live' : 'mock';
 }
 export const defaultMode = () => modeFrom(process.env);

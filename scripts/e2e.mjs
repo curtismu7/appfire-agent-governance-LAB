@@ -53,6 +53,69 @@ const overlapScript = `(() => {
   return { labels: labels.length, overlaps };
 })()`;
 
+// The fixed neutral banner lines (owner 2026-11-16: the page never says how it runs; one honesty line stays, first on every page).
+const BANNER_LOCAL = "HIVE, Appfire's platform, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.";
+const BANNER_HOSTED = "Hosted copy. HIVE, Appfire's platform, is represented and never called. Thresholds, personas and amounts are the lab's own (lab-invented). No tenant or live system is reached.";
+
+// There is no Mock | Real control on the page any more. The lab opens in Real when Real is fully configured; tests and scripts switch a tab's workspace with
+// POST /api/mode (the server contract of rule 19, unchanged) and reopen the page, then read the hidden data-mode marker (no words, "mock" or "live").
+const modeMarker = (page, want) => page.locator(want ? `[data-testid="mode"][data-mode="${want}"]` : '[data-testid="mode"][data-mode]:not([data-mode=""])');
+const modeCall = (page, source) => page.evaluate(async (src) => {
+  const r = await fetch('/api/mode', { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace': sessionStorage.getItem('cal.workspace') || '' }, body: JSON.stringify({ source: src }) });
+  return { status: r.status, body: await r.json().catch(() => null) };
+}, source);
+const switchMode = async (page, source) => {
+  const r = await modeCall(page, source);
+  await page.goto(new URL('/', page.url()).href); // the same tab (the same workspace id), back on the Agent page
+  await modeMarker(page, source === 'real' ? 'live' : 'mock').waitFor({ state: 'attached', timeout: 15000 });
+  await page.getByTestId('uc-UC1').waitFor();
+  return r;
+};
+// The run bodies the page received, so a check can read the data (hop.source, run.mode, run.realGate) the page no longer shows.
+const watchRuns = (page) => {
+  const runs = [];
+  page.on('response', async (r) => { if (r.request().method() === 'POST' && /\/api\/run\//.test(r.url())) { try { runs.push((await r.json()).run || null); } catch { runs.push(null); } } });
+  return { runs, next: async (n) => { for (let i = 0; i < 100 && !runs.slice(n).some(Boolean); i++) await sleep(50); return runs.slice(n).filter(Boolean).pop() || null; } };
+};
+
+// NO-MOCK-WORDS (owner 2026-11-16): everything a person can read or hear on a page, text, aria-label, title, placeholder, alt, an input's value and option
+// text (own text nodes of every visible element stand in for innerText, so the data panes can be skipped by element). The words banned are mock, simulat*,
+// offline, engine and scripted. The EXCEPTIONS are named so each one shows up in review:
+//   DATA     JSON panes, hop URL lines and decoded claim values show the wire (idp.mock.example, customer-app-mock, kid mock-key-1): data, not labels.
+//   Q3       "lab-simulated" (the UC15 chip and its message) is an honesty admission the owner kept.
+//   Q4       the brain's name "Scripted" and the hand-off app id mock-authorize are names the owner kept.
+//   RULE 5   the diagram's "Simulate" control keeps the rulebook's name for it.
+//   TERM     "policy engine" is a product term.
+//   CATALOG  the vendored hop catalog (server/src/vendor/hop-catalog.json) has three teaching sentences that say "(mock)" or "the engine"; they change upstream in
+//            AI-DEMO-Standalone first and the labs re-vendor, so until then they are named here.
+//   PROMPT   the banking pack's What to type chips are the catalog's own text, verbatim ("simulate an agent identity mismatch"); a test pins them.
+const WORDS = /mock|simulat|offline|\bengine\b|scripted/i;
+const EXCEPTIONS = [/lab-simulated/gi, /\bScripted\b/g, /mock-authorize/g, /\bSimulate\b/g, /policy engine/gi, /scripted intent match \(mock\)/gi, /A DENY proves the engine answered/g, /Nothing here was decided by the engine/g, /simulate an? (forged )?agent (identity mismatch|in the delegation chain)/gi];
+const SCAN = `(() => {
+  const DATA = ['.jsonbox', '.json', '.jwire', '.http__url', '.http__line', '.fact__v', '[data-testid="claim-diff"]', '[data-testid="sdp-kv"]', 'script', 'style'];
+  const ATTRS = ['aria-label', 'title', 'placeholder', 'alt'];
+  const out = [];
+  const add = (where, text) => { if (text && text.trim()) out.push({ where, text: text.trim() }); };
+  add('document title', document.title);
+  for (const el of document.body.querySelectorAll('*')) {
+    if (DATA.some((s) => el.closest(s))) continue;
+    const opt = el.tagName === 'OPTION' || el.tagName === 'OPTGROUP';
+    if (!opt && el.checkVisibility && !el.checkVisibility()) continue;
+    const where = el.tagName.toLowerCase() + (el.getAttribute('data-testid') ? '[' + el.getAttribute('data-testid') + ']' : '');
+    add(where + ' text', [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(' '));
+    for (const a of ATTRS) add(where + ' ' + a, el.getAttribute(a));
+    if (/^(INPUT|TEXTAREA)$/.test(el.tagName) && el.type !== 'password') add(where + ' value', el.value);
+  }
+  return out;
+})()`;
+let wordsRead = 0;
+const walk = async (page, label) => {
+  const items = await page.evaluate(SCAN);
+  wordsRead += items.length;
+  const bad = items.filter(({ text }) => WORDS.test(EXCEPTIONS.reduce((s, re) => s.replace(re, ''), text))).map(({ where, text }) => `${where}: ${text.slice(0, 90)}`);
+  check(bad.length === 0, `${label}: no mock, simulated, offline, engine or scripted word anywhere a person can read (${items.length} strings read${bad.length ? `; ${bad.slice(0, 4).join(' | ')}` : ''})`);
+};
+
 // Live mode (step 3) is driven against a FAKE PingOne on loopback: a second lab instance with NO opt-in and no IDP pin (option a, owner 2026-11-10: the
 // settings alone make Real available), a temp settings file (mode 600, fake values) and AAG_LIVE_TEST_BASE pointing at the fake. The toggle is switched
 // Mock -> Real -> Mock -> Real in one page against the one running server: no restart. No real tenant is touched; the real PingOne path is UNVERIFIED and owner-run.
@@ -116,10 +179,10 @@ try {
 
       await page.goto(`${base}/`);
       await t('uc-UC1').waitFor();
-      // the banner says both modes until the story has loaded; wait for it to settle on the mode before reading it
-      await page.waitForFunction(() => document.querySelector('[data-testid="banner"]').textContent.startsWith('SIMULATED, MOCK mode'), null, { timeout: 60000 }).catch(() => {});
-      check((await t('banner').innerText()).startsWith('SIMULATED, MOCK mode'), `${tag}: the banner says SIMULATED, MOCK mode`);
-      check((await t('mode').innerText()).includes('Mode: mock'), `${tag}: the header shows Mode: mock`);
+      // one neutral line, the same whatever the lab runs on; the page carries no Mock | Real control and no mode chip, only a hidden data-mode marker
+      await modeMarker(page).waitFor({ state: 'attached', timeout: 60000 });
+      check((await t('banner').innerText()) === BANNER_LOCAL && (await t('banner').getAttribute('data-state')) === 'info', `${tag}: the banner is the one neutral line (HIVE represented, the lab's own numbers)`);
+      check((await modeMarker(page, 'mock').count()) === 1 && (await t('mode-select').count()) === 0 && (await t('mode-real').count()) === 1 && (await page.locator('[data-testid^="qc-mode-"], [data-testid="real-hosted-note"], [data-testid="real-vertical-note"]').count()) === 0, `${tag}: no Mock | Real control or mode chip; the hidden marker says mock (no .env), and the rule-19 marker is there`);
       check(/^Workspace: w-[0-9a-f]{16}$/.test(await t('workspace').innerText()), `${tag}: the header shows the workspace id`);
       check((await page.getByRole('tab').allInnerTexts()).join('|') === 'Agent|Run history|Diagram|Talk track', `${tag}: the side nav holds only the agent's own areas`);
       check((await page.evaluate(() => document.documentElement.getAttribute('data-theme'))) === null, `${tag}: Auto theme sets no data-theme`);
@@ -132,11 +195,11 @@ try {
       }
 
       await pick('UC1'); await t('run').click(); await t('result').waitFor();
-      check((await t('outcome').innerText()) === 'PERMIT' && (await t('matches').innerText()).includes('matches the catalog label'), `${tag}: UC1 runs, PERMIT, engine matches the catalog label`);
+      check((await t('outcome').innerText()) === 'PERMIT' && (await t('matches').innerText()).includes('matches the catalog label'), `${tag}: UC1 runs, PERMIT, matches the catalog label`);
       const evCount = await t('evidence-count').innerText();
       check((await page.getByTestId(/^row-\d+$/).count()) === 16 && evCount.includes('16 hops') && evCount.includes('+5 not in this run'), `${tag}: the Sequence draws the 16 hops that ran; 5 more are not in this path (AI-DEMO2's reel order) and the count says so (${evCount})`);
       check((await t('hop').count()) === 0 && (await t('hops-toggle').count()) === 0 && !(await page.locator('.sq-actors').first().isVisible()) && !(await page.locator('.sq-prog').first().isVisible()), `${tag}: one hop view only: no second list of collapsed hops, no actor tiles or progress bar above the Sequence`);
-      check((await t('sequence-view').innerText()).includes('Mock IdP'), `${tag}: a mock run names its identity provider Mock IdP`);
+      check((await t('sequence-view').innerText()).includes('Identity provider'), `${tag}: the run names its identity provider as the Identity provider`);
       check(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/.test(await t('run-traceparent').innerText()), `${tag}: the run has a W3C traceparent`);
       if (name === 'phone') {
         const gwLane = page.getByRole('button', { name: 'Gateway actor details (top)' });
@@ -148,15 +211,17 @@ try {
       }
       await t('evtab-tokens').click();
       const token = t('token').first();
-      check((await token.getByTestId('mock-tag').innerText()) === 'MOCK' && /^eyJ/.test(await token.getByTestId('token-raw').innerText()) && (await token.getByTestId('token-claims').innerText()).includes('sub'), `${tag}: the token is labelled MOCK, shown raw and decoded`);
+      check((await token.getByTestId('mock-tag').count()) === 0 && /^eyJ/.test(await token.getByTestId('token-raw').innerText()) && (await token.getByTestId('token-claims').innerText()).includes('sub'), `${tag}: the token carries no MOCK chip, and is shown raw and decoded`);
+      if (tag === 'desktop-light') await walk(page, `${tag}: the tokens tab after a run`);
       await t('evtab-sequence').click();
+      if (tag === 'desktop-light') await walk(page, `${tag}: the agent page after a run`);
       check((await t('nav-page-consent').count()) === 1, `${tag}: UC1 brought in the Consent and step-up page`);
       await pick('UC7'); await t('run').click(); await t('result').waitFor();
       check((await t('outcome').innerText()) === 'STEP_UP' && (await t('nav-page-approval').count()) === 1, `${tag}: UC7 is STEP_UP and brings in Human approval`);
-      // The hold opens the mock phone (owner 2026-11-13); deny it so the run can continue.
+      // The hold opens the phone (owner 2026-11-13); deny it so the run can continue.
       await t('mp-deny').click(); await t('mp-outcome').waitFor();
-      check((await t('mp-outcome').innerText()).includes('Denied'), `${tag}: UC7's hold opened the mock phone and a deny was recorded`);
-      // The persona the engine needs is selected by the use case itself: the default Run of UC21 permits and UC9 denies, as the README says.
+      check((await t('mp-outcome').innerText()).includes('Denied'), `${tag}: UC7's hold opened the phone and a deny was recorded`);
+      // The persona the use case needs is selected by the use case itself: the default Run of UC21 permits and UC9 denies, as the README says.
       await pick('UC21');
       check((await t('persona').inputValue()) === 'premium', `${tag}: picking UC21 selects the premium persona it needs`);
       await t('run').click(); await t('result').waitFor();
@@ -165,9 +230,9 @@ try {
       check((await t('persona').inputValue()) === 'standard', `${tag}: picking UC9 selects the standard persona`);
       await t('run').click(); await t('result').waitFor();
       check((await t('outcome').innerText()) === 'DENY_403' && (await t('matches').innerText()).includes('matches the catalog label'), `${tag}: UC9 with its default persona is DENY_403 and matches the catalog label`);
-      // What Privilege did (rule 25): UC9 reached the simulated gateway, so its trace sits under the Run result; the refusal is the first FAIL decision, checked by the engine.
+      // What Privilege did (rule 25): UC9 reached the gateway, so its trace sits under the Run result; the refusal is the first FAIL decision, and the basis line says the lab computed the decisions.
       const gwPanel = t('gateway-trace');
-      check((await gwPanel.count()) === 1 && (await gwPanel.getByRole('heading', { name: 'What Privilege did' }).count()) === 1 && /^Simulated/.test(await t('gateway-trace-basis').innerText()), `${tag}: UC9's Run shows the What Privilege did panel, simulated`);
+      check((await gwPanel.count()) === 1 && (await gwPanel.getByRole('heading', { name: 'What Privilege did' }).count()) === 1 && (await t('gateway-trace-basis').innerText()) === "These decisions were computed by the lab's own gateway steps, in the order a gateway runs them.", `${tag}: UC9's Run shows the What Privilege did panel with the neutral basis line`);
       check((await page.evaluate(() => { const r = document.querySelector('[data-testid="result"]'); const g = document.querySelector('[data-testid="gateway-trace"]'); return Boolean(r && g && (r.compareDocumentPosition(g) & Node.DOCUMENT_POSITION_FOLLOWING)); })) === true, `${tag}: the panel is under the Run result`);
       // keyboard and landmarks: focus stays on Run, one main landmark holding the tabpanel, no dangling aria-controls, Cmd/Ctrl+P is not presenter mode
       await t('run').focus(); await page.keyboard.press('Enter');
@@ -193,9 +258,9 @@ try {
       await t('vertical').selectOption('banking'); await pick('UC1'); await t('run').click(); await t('result').waitFor();
       check((await t('outcome').innerText()) === 'PERMIT' && (await page.getByTestId('evidence-column').innerText()).includes('get_account_balance'), `${tag}: banking is still selectable and runs its own read tool`);
       await t('vertical').selectOption('software');
-      await page.waitForFunction(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.disabled === true);
-      const realOptionTitle = await page.evaluate(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '');
-      check(/^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME, AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE in this app's \.env/.test(realOptionTitle) && (await t('mode').innerText()).includes('mock'), `${tag}: with no .env Real is disabled, its tooltip says what to fill in, and the page stays Mock`);
+      // With no .env Real is refused by the server contract (rule 19: POST /api/mode answers 409 and says what to fill in), and the page stays on the lab's own steps.
+      const refusedReal = await modeCall(page, 'real');
+      check(refusedReal.status === 409 && /^Real is not configured: fill PINGONE_ENVIRONMENT_ID, AAG_USER_CLIENT_ID, AAG_USER_CLIENT_SECRET, AAG_AGENT_CLIENT_ID, AAG_AGENT_CLIENT_SECRET, AAG_DEMO_USERNAME, AAG_AGENT_GATEWAY_URL, AAG_GATEWAY_AUDIENCE, AAG_GATEWAY_SCOPE in this app's \.env/.test(refusedReal.body?.message || '') && (await modeMarker(page, 'mock').count()) === 1, `${tag}: with no .env Real is refused (HTTP 409), the answer says what to fill in, and the page stays on its own steps`);
       check((await overflow()) <= 0, `${tag}: the agent page does not scroll sideways (${await overflow()} px)`);
       if (tag === 'desktop-light') await page.screenshot({ path: path.join(shots, 'run.png'), fullPage: true });
 
@@ -214,7 +279,7 @@ try {
         check((await overflow()) <= 0, `${tag}: the diagram page does not scroll sideways`);
       }
       check(requests.slice(before).some((u) => u.includes('/api/diagram?') && u.includes('name=gateway-refusals')), `${tag}: the diagram was loaded by name from the server`);
-      // The Compare page: two runs side by side in Mock, with a risk strip in each decision card, and no sideways scroll at any viewport.
+      // The Compare page: two runs side by side, with a risk strip in each decision card, and no sideways scroll at any viewport.
       await page.evaluate(() => { window.location.hash = '#compare'; });
       await t('page-compare').waitFor();
       for (let i = 0; i < 60 && !((await t('decision-card').count()) === 2 && (await t('compare-running').count()) === 0); i++) await sleep(200);
@@ -445,7 +510,7 @@ try {
     await ctx.close();
   }
 
-  // ---- Live mode against the fake PingOne -------------------------------------------------------------------------------------------
+  // ---- The identity-provider-only path against the fake PingOne (the lab opens on its own steps here; the tab is switched with POST /api/mode) -------------------------------------------------------------------------------------------
   for (const [width, height, name] of [[1280, 900, 'desktop'], [375, 800, 'phone']]) {
     for (const scheme of ['light', 'dark']) {
       const tag = `live-${name}-${scheme}`;
@@ -457,24 +522,25 @@ try {
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
       const t = (id) => page.getByTestId(id);
+      const watch = watchRuns(page);
+      const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
       const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       await page.goto(`${liveBase}/`);
       await t('uc-UC1').waitFor();
-      const liveTitle = await page.evaluate(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '');
-      check(liveTitle.includes('identity provider only'), `${tag}: Live is allowed (the title says what a live run does: identity provider only) (got: ${liveTitle || '(empty)'})`);
-      await t('mode-select').selectOption('real'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: live'));
-      await page.waitForFunction(() => document.querySelector('[data-testid="banner"]').textContent.startsWith('REAL mode'));
-      check((await t('banner').getAttribute('data-state')) === 'live' && (await t('mode').innerText()).includes('identity provider only'), `${tag}: the banner and the chip say LIVE, identity provider only`);
-      check((await t('mode-msg').innerText()).includes('two real calls'), `${tag}: selecting Live says what a run does`);
+      await modeMarker(page, 'mock').waitFor({ state: 'attached' });
+      check((await t('mode-select').count()) === 0 && (await t('banner').innerText()) === BANNER_LOCAL, `${tag}: an identity-provider-only worker client keeps the lab on its own steps at first, with no mode control and the same neutral banner`);
+      const toReal = await switchMode(page, 'real');
+      check(toReal.status === 200 && toReal.body?.source === 'real' && (await t('banner').innerText()) === BANNER_LOCAL && (await t('banner').getAttribute('data-state')) === 'info', `${tag}: POST /api/mode real is allowed, the marker says live, and the banner is the same neutral line`);
       await t('search').fill('UC7'); await page.locator('[data-testid="uc-UC7"]').click(); await t('search').fill('');
       check(await t('live-persona-note').isVisible() && (await t('persona').count()) === 0 && (await t('lab-inputs').count()) === 0, `${tag}: the persona and the lab inputs are hidden in live and the note says why`);
       await t('run').click(); await t('result').waitFor();
-      check((await t('outcome').innerText()) === 'LIVE_OK' && (await t('live-note-tag').innerText()) === 'live, identity provider only' && (await t('matches').count()) === 0, `${tag}: UC7 live is LIVE_OK, labelled identity provider only, with no engine-match claim`);
-      check((await page.getByTestId(/^row-\d+$/).count()) === 2 && (await t('hop-source').evaluateAll((els) => els.map((e) => e.getAttribute('data-source')))).join() === 'real,real' && (await t('hop-sources').innerText()).includes('identity provider only'), `${tag}: two hops, both REAL (identity provider only), none MOCK`);
+      const liveRun = await watch.next(0);
+      check((await t('outcome').innerText()) === 'LIVE_OK' && (await t('live-note-tag').count()) === 0 && (await t('matches').count()) === 0, `${tag}: UC7 here is LIVE_OK, with no source chip and no catalog-match claim`);
+      check((await page.getByTestId(/^row-\d+$/).count()) === 2 && (await t('hop-source').count()) === 0 && (await t('hop-sources').count()) === 0 && liveRun?.hops?.map((h) => h.source).join() === 'real,real', `${tag}: two hops, no source chip on the page, and both hops are source real in the data`);
       await t('evtab-tokens').click();
       check((await t('token-raw').innerText()) === FAKE_TOKEN && (await t('token-claims').innerText()).includes(CLIENT_ID), `${tag}: the token is shown raw (owner 2026-11-14: not redacted) and its claims are decoded`);
       const not = await t('not-run').innerText();
-      check(not.includes('Not run in live mode') && not.includes('authorize-decision') && not.includes('identity provider only') && (await t('not-run').getByRole("listitem").count()) >= 1, `${tag}: the steps that were not run are listed`);
+      check(not.startsWith('Not run (') && not.includes('authorize-decision') && not.includes('identity provider only') && (await t('not-run').getByRole("listitem").count()) >= 1, `${tag}: the steps that were not run are listed`);
       check((await t('nav-page-approval').count()) === 0, `${tag}: a live run of UC7 opens no extra page`);
       const text = await page.locator('body').innerText();
       check(![CLIENT_SECRET, Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')].some((x) => text.includes(x)), `${tag}: the page holds no client secret (the token is shown, the secret never is)`);
@@ -488,24 +554,26 @@ try {
       await t('evtab-tokens').click();
       check(denied && (await t('tokens').count()) === 0 && (await t('no-tokens').count()) === 1, `${tag}: a refused client secret shows a deny hop and no token`);
       await t('nav-runs').click(); await t('history').waitFor();
-      check((await t('history-row').count()) === 2 && (await t('history-row').first().innerText()).includes('n/a (live)'), `${tag}: run history lists both live runs`);
+      check((await t('history-row').count()) === 2 && (await t('history-row').first().innerText()).includes('n/a'), `${tag}: run history lists both runs`);
       await t('nav-diagram').click(); await page.locator('.react-flow__node').first().waitFor();
       check((await overflow()) <= 0, `${tag}: the diagram page in live does not scroll sideways`);
-      await t('mode-select').selectOption('mock'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: mock'));
-      const seenBefore = fake.seen.length;
-      await t('nav-agent').click(); await t('run').click();
+      const toMock = await switchMode(page, 'mock');
+      const seenBefore = fake.seen.length; const runsBefore = watch.runs.length;
+      await t('nav-agent').click(); await pick('UC7'); await t('run').click();
+      const ownRun = await watch.next(runsBefore);
       await page.waitForFunction(() => { const o = document.querySelector('[data-testid="outcome"]'); return o && !o.textContent.startsWith('LIVE_'); });
-      check((await t('banner').getAttribute('data-state')) === 'mock' && (await t('refusal').count()) === 0 && fake.seen.length === seenBefore, `${tag}: back in Mock without a restart, a mock run signs in with the mock persona and runs (outcome ${await t('outcome').innerText()}), no call to the fake`);
-      await t('mode-select').selectOption('real'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: live'));
-      check((await t('banner').getAttribute('data-state')) === 'live', `${tag}: and Real again, same server, no restart`);
-      await t('mode-select').selectOption('mock'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: mock'));
+      check(toMock.status === 200 && ownRun?.mode === 'mock' && (await t('refusal').count()) === 0 && fake.seen.length === seenBefore, `${tag}: back on the lab's own steps without a restart, a run signs in with the demo persona and runs (outcome ${await t('outcome').innerText()}), no call to the fake`);
+      if (await t('mp-deny').isVisible().catch(() => false)) { await t('mp-deny').click(); await t('mp-outcome').waitFor(); }
+      const again = await switchMode(page, 'real');
+      check(again.status === 200 && (await modeMarker(page, 'live').count()) === 1, `${tag}: and the identity-provider-only path again, same server, no restart`);
+      await switchMode(page, 'mock');
       check(external.filter((u) => !u.startsWith(liveBase)).length === 0, `${tag}: the browser made no request to another origin (${external.length})`);
       check(errors.every((e) => /status of (403|409)/.test(e)), `${tag}: no unexpected console error (${errors.filter((e) => !/status of (403|409)/.test(e)).slice(0, 2).join(' | ')})`);
       await ctx.close();
     }
   }
 
-  // ---- Full Real against the fakes: sign in through the modal (pi.flow), run a Real use case, see REAL hops and the reply, a DENY, then Mock ----
+  // ---- Full Real against the fakes: the lab OPENS in Real (the settings are complete); sign in through the modal (pi.flow), run a use case through the gateway, see the reply, a DENY, then the lab's own steps ----
   for (const [width, height, name, scheme] of [[1280, 900, 'desktop', 'light'], [375, 800, 'phone', 'dark']]) {
     const tag = `full-${name}-${scheme}`;
     // A clean slate: an explicit Sign out also forgets the lab's PingOne session (owner 2026-11-16), so this case starts signed out whatever ran before.
@@ -519,18 +587,23 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
+    const watch = watchRuns(page);
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     await page.goto(`${fullBase}/`);
     await t('uc-UC1').waitFor();
-    await page.waitForFunction(() => (document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '').includes('sign-in (pi.flow)'), null, { timeout: 10000 });
-    check((await page.evaluate(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.getAttribute('title') || '')).includes('sign-in (pi.flow)'), `${tag}: Real is available and its title says what a run does`);
-    await t('mode-select').selectOption('real'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('real: sign-in, token exchange, Agent Gateway'));
-    check(await t('sign-in').isVisible(), `${tag}: Real shows the Sign in button`);
+    await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
+    check((await t('mode-select').count()) === 0 && (await t('banner').innerText()) === BANNER_LOCAL && (await t('sign-in').isVisible()), `${tag}: with the full settings the lab opens in Real by itself (marker live, no mode control, the same neutral banner) and shows the Sign in button`);
+    // The default software vertical is served by the lab's own steps even though the lab opened in Real: the persona and the inputs stay and there is no note about a person who signed in.
+    await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
+    check((await t('persona').count()) === 1 && (await t('lab-inputs').count()) === 1 && (await t('live-persona-note').count()) === 0 && (await t('gateway-status').count()) === 1, `${tag}: a use case the gateway does not serve keeps its persona and inputs while the lab opens in Real (software), with no sign-in note`);
     // Real needs the Banking vertical (the SE gateway serves no software tools): software is the default, so the Real checks pick banking first
     await t('vertical').selectOption('banking');
     await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
     await t('run').click();
     await t('signin-dialog').waitFor();
+    await walk(page, `${tag}: the sign-in dialog`);
+    check((await t('refusal').count()) === 0 || !/\breal\b/i.test(await t('refusal').innerText()), `${tag}: the signed-out refusal never names Real as a mode`);
+    check(await t('persona').count() === 0 && await t('live-persona-note').isVisible(), `${tag}: banking UC1 goes through the gateway as the signed-in person: no persona, the note says so`);
     check((await t('signin-username').inputValue()) === DEMO_USERNAME && (await t('signin-username').getAttribute('readonly')) !== null, `${tag}: a Real run before sign-in opens the Sign in modal with the username filled in, read-only`);
     check((await t('signin-password').getAttribute('type')) === 'password' && (await t('signin-dialog').getAttribute('role')) === 'dialog', `${tag}: the modal is a dialog with a password field`);
     const geo = await page.evaluate(() => {
@@ -550,22 +623,22 @@ try {
     const tab2 = await ctx.newPage();
     await tab2.goto(`${fullBase}/`);
     await tab2.getByTestId('uc-UC1').waitFor();
-    await tab2.getByTestId('mode-select').selectOption('real');
-    await tab2.getByTestId('who').waitFor({ timeout: 10000 });
+    await tab2.getByTestId('who').waitFor({ timeout: 10000 }); // a new tab opens in Real by itself
     check((await tab2.getByTestId('who').innerText()).includes(DEMO_USERNAME) && (await tab2.getByTestId('signin-dialog').count()) === 0 && fullP1.seen.filter((c) => c.method === 'POST' && /\/flows\//.test(c.url)).length === passwordsBefore, `${tag}: a second tab is signed in from the PingOne session: the header names the user, no dialog, no password sent again`);
     await tab2.close();
     const authz = fullP1.seen.filter((x) => x.url.includes('/as/authorize'));
     check(authz.length >= 1 && authz.every((x) => new URL(x.url, 'http://x').searchParams.get('response_mode') === 'pi.flow' && new URL(x.url, 'http://x').searchParams.get('code_challenge_method') === 'S256'), `${tag}: the sign-in was pi.flow with PKCE S256`);
     check(navs.length === 1 && navs[0].startsWith(fullBase), `${tag}: the page never navigated (no redirect login): ${navs.join(' | ')}`);
-    const srcs = await t('hop-source').evaluateAll((els) => els.map((e) => e.getAttribute('data-source')));
-    check(srcs.length === 9 && srcs.every((x) => x === 'real'), `${tag}: Where each hop ran lists nine hops (two token exchanges), every one REAL (${srcs.join(',')})`);
+    const realRun = await watch.next(0);
+    const srcs = (realRun?.hops || []).map((h) => h.source);
+    check(srcs.length === 9 && srcs.every((x) => x === 'real') && (await t('hop-source').count()) === 0 && (await t('hop-sources').count()) === 0, `${tag}: nine hops (two token exchanges), every one source real in the data, and no source chip or "where each hop ran" list on the page (${srcs.join(',')})`);
     const seqText = await t('sequence-view').innerText();
-    check((await page.getByTestId(/^row-\d+$/).count()) === 9 && seqText.includes('PingOne') && !seqText.includes('Mock IdP'), `${tag}: the Sequence draws all nine hops and names the identity provider PingOne, not Mock IdP`);
+    check((await page.getByTestId(/^row-\d+$/).count()) === 9 && seqText.includes('PingOne'), `${tag}: the Sequence draws all nine hops and names the identity provider PingOne`);
     await t('row-3').click();
     const exDetail = await t('step-detail').innerText();
     check(/eyJ[\w-]+\.[\w-]+\.[\w-]+/.test(exDetail) && !exDetail.includes('[redacted') && exDetail.includes('act.sub'), `${tag}: the exchange step shows the real tokens whole (nothing redacted) and its key facts name the act`);
-    const titles = await t('hop-source').evaluateAll((els) => els.map((e) => e.textContent));
-    check(titles[2].includes('Exchange 1: act = agent') && titles[3].includes('Exchange 2: for the gateway'), `${tag}: the two exchanges are named in Where each hop ran (${titles.slice(2, 4).join(' | ')})`);
+    const titles = realRun.hops.map((h) => h.title || h.label);
+    check(titles[2].includes('Exchange 1: act = agent') && titles[3].includes('Exchange 2: for the gateway') && /Exchange 1: act = agent/.test(await t('sequence-view').innerText()), `${tag}: the two exchanges are named in the run and in the Sequence (${titles.slice(2, 4).join(' | ')})`);
     const tx = fullP1.seen.filter((x) => x.method === 'POST' && x.url.endsWith('/as/token')).map((x) => Object.fromEntries(new URLSearchParams(x.body))).filter((f) => f.grant_type === 'urn:ietf:params:oauth:grant-type:token-exchange');
     check(tx.length === 2 && tx[0].actor_token && !tx[1].actor_token && tx.every((f) => f.audience === undefined) && tx[0].scope === 'agent:invoke' && tx[1].scope === 'fake:mcp:invoke', `${tag}: PingOne saw exchange 1 (user + agent actor, agent:invoke) and exchange 2 (no actor, no audience, the gateway scope)`);
     check(fullGw.seen.every((c) => fullP1.issued.delegated.has(c.headers.authorization.slice(7))), `${tag}: every gateway call carried the exchange-2 token, which has act`);
@@ -592,62 +665,173 @@ try {
     fullGw.state.behaviour = 'down';
     await t('run').click();
     await page.waitForFunction(() => document.querySelector('[data-testid="outcome"]')?.textContent === 'REAL_UNREACHABLE', null, { timeout: 20000 });
-    check((await t('turn-answer-text').last().innerText()).includes('answered HTTP 503 and did not complete the call'), `${tag}: a 503 says SE is down or scaled down; switch to Mock`);
-    // A use case that cannot run Real (UC2, agent-to-agent) runs on the labelled mock engine inside Real mode: the gateway is not called, every hop is MOCK, and the run says why.
-    const gwFallback = fullGw.seen.length;
+    check((await t('turn-answer-text').last().innerText()).includes('answered HTTP 503 and did not complete the call'), `${tag}: a 503 is an honest refusal saying the service did not complete the call, with no advice to leave Real`);
+    // A use case the gateway cannot serve (UC2, agent-to-agent) runs whole on the lab's own steps inside a Real page: the gateway is not called, the page shows it like any
+    // other run (no label, no notice), and the data says so (run.realGate, hop.source).
+    const gwFallback = fullGw.seen.length; const rn = watch.runs.length;
     await t('search').fill('UC2'); await page.locator('[data-testid="uc-UC2"]').click(); await t('search').fill('');
     await t('run').click();
-    await t('mock-in-real').waitFor({ timeout: 20000 });
-    const fsrc = await t('hop-source').evaluateAll((els) => els.map((e) => e.getAttribute('data-source')));
-    check(fullGw.seen.length === gwFallback && fsrc.length > 0 && fsrc.every((x) => x === 'mock' || x === 'not-run'), `${tag}: in Real mode a use case that cannot run Real runs on the mock engine: no gateway call, every hop MOCK (${new Set(fsrc).size} source kinds)`);
-    check(/cannot run Real.*every hop is MOCK/.test(await t('mock-in-real').innerText()), `${tag}: the run says why it cannot run Real and that every hop is MOCK`);
-    const seen = fullGw.seen.length;
-    await t('mode-select').selectOption('mock'); await page.waitForFunction(() => document.querySelector('[data-testid="mode"]').textContent.includes('Mode: mock'));
+    const fbRun = await watch.next(rn);
+    await t('result').waitFor({ timeout: 20000 });
+    const fsrc = (fbRun?.hops || []).map((h) => h.source);
+    check(fullGw.seen.length === gwFallback && fbRun?.realGate?.real === false && fbRun?.mode === 'mock' && fsrc.length > 0 && fsrc.every((x) => x === 'mock' || x === 'not-run') && (await t('mock-in-real').count()) === 0 && (await t('hop-source').count()) === 0, `${tag}: a use case the gateway cannot serve runs whole on the lab's own steps in a Real page: no gateway call, realGate.real false, every hop source mock or not-run in the data, and nothing on the page says so (${new Set(fsrc).size} source kinds)`);
+    await walk(page, `${tag}: a whole-run fallback shown like any other run`);
+    const seen = fullGw.seen.length; const rn2 = watch.runs.length;
+    const toOwn = await switchMode(page, 'mock');
+    await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
     await t('run').click();
+    const ownRun = await watch.next(rn2);
     await page.waitForFunction(() => { const o = document.querySelector('[data-testid="outcome"]'); return o && !o.textContent.startsWith('REAL_'); });
-    const msrc = await t('hop-source').evaluateAll((els) => els.map((e) => e.getAttribute('data-source')));
-    check(fullGw.seen.length === seen && msrc.length > 0 && msrc.every((x) => x === 'mock' || x === 'not-run'), `${tag}: back in Mock without a restart: no gateway call and every hop MOCK`);
+    const msrc = (ownRun?.hops || []).map((h) => h.source);
+    check(toOwn.status === 200 && ownRun?.mode === 'mock' && fullGw.seen.length === seen && msrc.length > 0 && msrc.every((x) => x === 'mock' || x === 'not-run'), `${tag}: switched with POST /api/mode, no restart: the run is on the lab's own steps, no gateway call, every hop source mock or not-run`);
     check(external.length === 0, `${tag}: the browser made no request to another origin (${external.length})`);
     check(errors.every((e) => /status of (401|403|409)/.test(e)), `${tag}: no unexpected console error (${errors.filter((e) => !/status of (401|403|409)/.test(e)).slice(0, 2).join(' | ')})`);
     await ctx.close();
   }
 
-  // ---- The hosted build: Real is disabled with a note (a click or Enter makes no /api/mode request, no error, the page stays Mock) ----------
+  // ---- NO-MOCK-WORDS (owner 2026-11-16): a Real-configured lab, opened in Real, walked page by page with runs on it ----------------------------------------
+  // One use case the gateway cannot serve (it runs whole on the lab's own steps), one held use case with the phone open, one guided page, then a use case through
+  // the gateway; after the runs, the four evidence tabs, a step detail, the RFC column, the Why list, Compare, the Demo guide, Quick Config, Presenter and the talk
+  // track. Everything a person can read must pass the word scan (see EXCEPTIONS above for the named ones).
+  {
+    const tag = 'no-mock-words';
+    await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
+    fullGw.seen.length = 0; fullGw.state.behaviour = 'ok';
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
+    const t = (id) => page.getByTestId(id);
+    const watch = watchRuns(page);
+    const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
+    // Run the picked use case; when Real asks for the sign-in, sign in (the dialog is walked once); return the run the page received.
+    let dialogWalked = false;
+    const runIt = async () => {
+      const n = watch.runs.length;
+      await t('run').click();
+      for (let i = 0; i < 200 && !watch.runs.slice(n).some(Boolean); i++) {
+        if (await t('signin-dialog').isVisible().catch(() => false)) {
+          if (!dialogWalked) { dialogWalked = true; await walk(page, `${tag}: the sign-in dialog`); }
+          await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {});
+        }
+        await sleep(100);
+      }
+      const run = await watch.next(n);
+      await sleep(400);
+      return run;
+    };
+    await page.goto(`${fullBase}/`);
+    await t('uc-UC1').waitFor();
+    await modeMarker(page, 'live').waitFor({ state: 'attached', timeout: 15000 });
+    check(true, `${tag}: the lab is opened in Real (marker live, nothing on the page says so)`);
+    await walk(page, `${tag}: the Agent page before any run`);
+
+    // an engine use case: the software pack has no tool at the gateway, so the whole run is the lab's own steps
+    await pick('UC2');
+    let run = await runIt();
+    check(run?.realGate?.real === false && run?.mode === 'mock', `${tag}: UC2 in the software pack runs whole on the lab's own steps (data: realGate.real false)`);
+    await walk(page, `${tag}: an engine run, Sequence tab`);
+    for (const v of ['reel', 'topology', 'tokens', 'sequence']) {
+      await t(`evtab-${v}`).click(); await sleep(400);
+      if (v !== 'sequence') await walk(page, `${tag}: an engine run, ${v} tab`);
+    }
+    await t('row-2').click(); await t('step-detail').waitFor();
+    await walk(page, `${tag}: the step detail`);
+    if (await t('rfc-toggle').count()) { await t('rfc-toggle').click(); await sleep(300); await walk(page, `${tag}: the step detail with the RFC column`); await t('rfc-toggle').click(); }
+    check((await t('evidence-why').count()) >= 1, `${tag}: the Why list is on the page and was read in the scans above`);
+
+    // a held use case with the phone dialog open
+    await pick('UC7');
+    run = await runIt();
+    await t('mp-deny').waitFor({ timeout: 10000 });
+    await walk(page, `${tag}: a held use case with the phone open`);
+    await t('mp-deny').click(); await t('mp-outcome').waitFor();
+    await walk(page, `${tag}: after the phone answer`);
+
+    // a guided page
+    await pick('UC-LEARN2');
+    await t('run').click(); await t('guided-note').waitFor();
+    await walk(page, `${tag}: a guided page`);
+
+    // a use case through the gateway (banking: the SE gateway serves its tools)
+    await t('vertical').selectOption('banking');
+    await pick('UC1');
+    run = await runIt();
+    check(run?.kind === 'real' && run.mode === 'live' && (run.hops || []).length > 0 && run.hops.every((h) => h.source === 'real' || h.source === 'not-run'), `${tag}: UC1 in the banking pack ran through the gateway (data: every hop source real)`);
+    await walk(page, `${tag}: a run through the gateway`);
+    await t('evtab-tokens').click(); await sleep(300);
+    await walk(page, `${tag}: the tokens of a run through the gateway`);
+    await t('evtab-sequence').click(); await t('row-3').click(); await t('step-detail').waitFor();
+    await walk(page, `${tag}: a step detail of a run through the gateway`);
+    await t('vertical').selectOption('software');
+
+    // Compare, the Demo guide, Quick Config, Presenter, the talk track
+    await page.evaluate(() => { window.location.hash = '#compare'; });
+    await t('page-compare').waitFor();
+    for (let i = 0; i < 60 && !((await t('decision-card').count()) === 2 && (await t('compare-running').count()) === 0); i++) await sleep(200);
+    await walk(page, `${tag}: Compare`);
+    await t('back-to-chat').click(); await t('nav-agent').click(); await t('uc-UC1').waitFor();
+    await t('help-link').click(); await t('demo-guide').waitFor();
+    await walk(page, `${tag}: the Demo guide`);
+    await page.keyboard.press('Escape'); await t('demo-guide').waitFor({ state: 'detached' }).catch(() => {});
+    await t('qc-open').click(); await t('quick-config').waitFor();
+    await walk(page, `${tag}: Quick Config`);
+    await t('qc-close').click();
+    await page.keyboard.press('p'); await t('presenter-say').waitFor();
+    await walk(page, `${tag}: Presenter mode`);
+    await page.keyboard.press('Escape'); await t('nav').waitFor();
+    await t('nav-talk').click(); await t('talk-track').waitFor();
+    await walk(page, `${tag}: the talk track`);
+    await t('nav-runs').click(); await t('history').waitFor();
+    await walk(page, `${tag}: Run history`);
+    await t('nav-diagram').click(); await page.locator('.react-flow__node').first().waitFor();
+    await walk(page, `${tag}: the Diagram page`);
+    check(errors.length === 0, `${tag}: no unexpected console error (${errors.slice(0, 2).join(' | ')})`);
+    await ctx.close();
+  }
+
+  // ---- The hosted build: no Mock | Real control, the hosted banner, runs on the lab's own steps; the server still refuses Real ----------
   for (const [width, height, name] of [[1280, 900, 'desktop'], [375, 800, 'phone']]) {
     for (const scheme of ['light', 'dark']) {
       const tag = `hosted-${name}-${scheme}`;
       const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: scheme });
       const page = await ctx.newPage();
-      const external = []; const errors = []; let watch = false; const modeCalls = [];
+      const external = []; const errors = []; let watching = false; const modeCalls = [];
       page.on('request', (r) => {
         if (!r.url().startsWith(hostedBase) && !/^(data|blob):/.test(r.url())) external.push(r.url());
-        if (watch && new URL(r.url()).pathname === '/api/mode') modeCalls.push(`${r.method()} ${r.url()}`);
+        if (watching && new URL(r.url()).pathname === '/api/mode' && r.method() !== 'GET') modeCalls.push(`${r.method()} ${r.url()}`);
       });
       page.on('pageerror', (e) => errors.push(e.message));
-      page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+      page.on('console', (m) => { if (m.type() === 'error' && !/status of 409/.test(m.text())) errors.push(m.text()); });
       const t = (id) => page.getByTestId(id);
+      const watch = watchRuns(page);
       const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       await page.goto(`${hostedBase}/`);
       await t('uc-UC1').waitFor();
-      await page.waitForFunction(() => document.querySelector('[data-testid="mode-select"] option[value="real"]')?.disabled === true);
-      await t('mode').filter({ hasText: 'Mode: mock' }).waitFor({ state: 'attached' });
-      const real = t('mode-select').locator('option[value="real"]');
-      check(await real.evaluate((o) => o.disabled), `${tag}: Real is disabled (disabled and aria-disabled)`);
-      check(await t('real-hosted-note').isVisible() && (await t('real-hosted-note').innerText()) === 'Mock only on the hosted copy. Run the lab locally for Real.', `${tag}: the note beside Real is shown`);
-      watch = true;
-      await t('mode-select').focus();
-      await t('mode-select').selectOption('real').catch(() => {});
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(400);
-      check(modeCalls.length === 0, `${tag}: a click and Enter on Real made no /api/mode request (${modeCalls.join(' | ')})`);
-      check((await t('mode-msg').count()) === 0 && (await t('mode').innerText()).includes('Mode: mock'), `${tag}: no error shown and the page stays Mock`);
-      check((await overflow()) <= 0, `${tag}: the shell bar with the note fits the ${width}px viewport`);
+      await modeMarker(page, 'mock').waitFor({ state: 'attached' });
+      check((await t('banner').innerText()) === BANNER_HOSTED && (await t('banner').getAttribute('data-state')) === 'hosted', `${tag}: the hosted banner is the neutral hosted line (data-state hosted)`);
+      check((await t('mode-select').count()) === 0 && (await t('real-hosted-note').count()) === 0 && (await t('mode-real').count()) === 1, `${tag}: no Mock | Real control and no hosted Real note; only the rule-19 marker`);
+      watching = true;
+      await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
+      await t('run').click(); await t('result').waitFor();
+      const hostedRun = await watch.next(0);
+      check((await t('outcome').innerText()) === 'PERMIT' && hostedRun?.mode === 'mock' && modeCalls.length === 0, `${tag}: a use case runs on the hosted copy (PERMIT, no /api/mode write by the page: ${modeCalls.join(' | ')})`);
+      await walk(page, `${tag}: the hosted page after a run`);
+      const refused = await modeCall(page, 'real');
+      check(refused.status === 409 && (await modeMarker(page, 'mock').count()) === 1, `${tag}: the server still refuses Real on the hosted build (HTTP ${refused.status}), the marker stays mock`);
+      check((await overflow()) <= 0, `${tag}: the hosted page fits the ${width}px viewport`);
       if (tag === 'hosted-phone-dark' || tag === 'hosted-desktop-light') await page.screenshot({ path: path.join(shots, `${tag}.png`), fullPage: false });
       check(external.length === 0, `${tag}: the browser made no request to another origin (${external.length})`);
       check(errors.length === 0, `${tag}: no console error (${errors.slice(0, 2).join(' | ')})`);
       await ctx.close();
     }
   }
+  // The hosted HTML carries the banner before any script runs: the same prefix the deploy script and the image workflow grep for.
+  const hostedHtml = await (await fetch(`${hostedBase}/`)).text();
+  const deploySh = fs.readFileSync(path.join(root, 'deploy', 'k8s', 'deploy.sh'), 'utf8'); const imageYml = fs.readFileSync(path.join(root, '.github', 'workflows', 'image.yml'), 'utf8');
+  check(/banner">Hosted copy\. HIVE/.test(hostedHtml) && deploySh.includes('banner">Hosted copy\\. HIVE') && imageYml.includes('banner">Hosted copy\\. HIVE'), 'hosted: the served HTML opens its banner with the text deploy.sh and image.yml grep for');
+  console.log(`INFO  the word scan read ${wordsRead} strings in all`);
 } finally { if (browser) await browser.close(); server.kill(); liveServer.kill(); hostedServer.kill(); fullServer.kill(); await fake.close(); await fullP1.close(); await fullGw.close(); fs.rmSync(settingsDir, { recursive: true, force: true }); fs.rmSync(noEnvDir, { recursive: true, force: true }); }
 console.log(`\n${checks - failures} of ${checks} checks passed`);
 process.exit(failures ? 1 : 0);

@@ -70,7 +70,7 @@ export default function MockPhone({ approval, onClose, onDecided, onError, reope
         <div className="mp__island" aria-hidden="true" />
         <div className="mp__clock" aria-hidden="true"><span className="mp__date">Lock screen</span><span className="mp__time">9:41</span></div>
         <div className="mp__card">
-          <p className="mp__app"><span className="mp__icon" aria-hidden="true">P</span>PingOne Approve<span className="mp__now">now</span></p>
+          <p className="mp__app"><span className="mp__icon" aria-hidden="true">P</span>Approval phone<span className="mp__now">now</span></p>
           <h3>{view?.tool ? `Approve ${view.tool}?` : 'Approve this request?'}</h3>
           {view?.description && <p className="mp__desc">{view.description}</p>}
           {money && <p className="mp__amount">{money}</p>}

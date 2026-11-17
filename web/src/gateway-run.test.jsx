@@ -39,14 +39,14 @@ beforeEach(() => { window.location.hash = ""; window.sessionStorage.clear(); win
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("What Privilege did on the Run page", () => {
-  test("nothing is drawn before a run; Run shows the panel under the Run result, with the one neutral basis sentence and the decisions as `checked`", async () => {
+  test("nothing is drawn before a run; Run shows the panel under the Run result, with the lab-computed basis sentence and the decisions as `checked`", async () => {
     const run = runBody("UC1").run;
     const u = await boot({ runAnswer: answer({ ok: true, run: { ...run, gatewayTrace: [{ step: 4, title: "Gateway check: tools/call get_account_balance", status: 200, trace: mockTrace() }] } }) });
     expect(screen.queryByTestId("gateway-trace")).toBeNull();
     await runIt(u);
     const panel = await screen.findByTestId("gateway-trace");
     expect(within(panel).getByRole("heading", { name: "What Privilege did" })).toBeTruthy();
-    expect(screen.getByTestId("gateway-trace-basis").textContent).toBe("The gateway's checks, in the order they ran.");
+    expect(screen.getByTestId("gateway-trace-basis").textContent).toBe("These decisions were computed by the lab's own gateway steps, in the order a gateway runs them.");
     const ex = within(panel).getByTestId("trace-4");
     expect(ex.textContent).toMatch(/Gateway check: tools\/call get_account_balance/);
     expect(within(panel).getByTestId("trace-4-decisions").textContent).toMatch(/Signature.*Scope/);
@@ -72,12 +72,12 @@ describe("What Privilege did on the Run page", () => {
     expect(screen.queryByTestId("gateway-trace")).toBeNull();
   });
 
-  test("a Real-source trace: the same basis sentence, inferred decisions marked inferred and observed ones observed", async () => {
+  test("a Real-source trace: the basis sentence keeps the inferred-decision caveat, inferred decisions marked inferred and observed ones observed", async () => {
     const run = realBody("UC1", { stopAt: 5, outcome: "REAL_DENY" }).run;
     const u = await boot({ mode: "live", live: "allowed", full: true, signedIn: true, password: "x-typed-7", info: { ...INFO, ...FULL_INFO }, realAnswer: () => ({ ok: true, run: { ...run, gatewayTrace: [{ step: 3, title: "tools/call get_account_balance", status: 403, trace: realTrace() }] } }) });
     await runIt(u);
     const panel = await screen.findByTestId("gateway-trace");
-    expect(screen.getByTestId("gateway-trace-basis").textContent).toBe("The gateway's checks, in the order they ran.");
+    expect(screen.getByTestId("gateway-trace-basis").textContent).toBe("The requests and responses are exact. The gateway answers with a status and a body, not a per-check breakdown, so decisions marked \"inferred\" are read from the outcome; the gateway log is the authoritative record.");
     const list = within(panel).getByTestId("trace-3-decisions");
     expect(list.textContent).toMatch(/inferred from the outcome/);
     expect(list.textContent).toMatch(/observed in the response/);

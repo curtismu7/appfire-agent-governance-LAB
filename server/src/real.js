@@ -543,7 +543,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     }
     push({ kind: 'api-call', label: 'API: the call behind the tool, made by the SE MCP server (seen only through its result)', from: 'mcp', to: 'api', verdict: 'ok', traceparent: last.traceparent, note: 'The lab does not see this call itself: the MCP server makes it with its own token and hands back the result.', request: { note: 'made by the SE MCP server, not by this lab' }, response: { content: contentShown(result) } });
     const text = replyText(tool, result);
-    push({ kind: 'agent-reply', label: 'Agent reply: written from the real tool result', from: 'agent', to: 'page', verdict: 'ok', traceparent: tp(), request: {}, response: { reply: text } });
+    push({ kind: 'agent-reply', label: 'Agent reply: written from the tool result', from: 'agent', to: 'page', verdict: 'ok', traceparent: tp(), request: {}, response: { reply: text } });
     return { outcome: 'REAL_PERMIT', reply: { who: 'Agent', text } };
   }
 

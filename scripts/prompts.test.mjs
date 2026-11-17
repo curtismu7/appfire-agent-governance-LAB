@@ -38,7 +38,7 @@ const EXPECT = {
     'check the security settings of the Billing project for group entitlement': 'UC9', 'check the security settings of the Billing project for tier access': 'UC21',
     'Check for unusual activity in my recent Jira changes': 'UC34', 'Explain why my last blocked bulk edit was denied and walk me through the token chain': 'UC35',
     'Which Marketplace apps work with Jira Cloud?': 'UC24', 'hand off the release summary to the release specialist': 'UC2',
-    'simulate an unregistered agent summarising my release': 'UC2.6', 'let an unregistered release bot approve this deployment for me': 'UC13',
+    'send an unregistered agent to summarise my release': 'UC2.6', 'let an unregistered release bot approve this deployment for me': 'UC13',
     'Can you give me site admin on our Jira site?': 'UC28',
     // the five software extras: allowed and refused third-party tool call, another person's private project, forged approval, lower human-approval rung
     'run the code-scanner MCP server on the Platform repository': 'UC30', 'ask the code-scanner MCP server to scan the Payroll repository': 'UC31',

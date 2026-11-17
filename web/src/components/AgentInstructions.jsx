@@ -22,9 +22,9 @@ export default function AgentInstructions({ config, text, onText }) {
             <button key={p.id} type="button" aria-pressed={shown === p.text} onClick={() => onText(p.id === "default" ? null : p.text)} data-testid={`instructions-preset-${p.id}`}>{p.title}</button>
           ))}
         </div>
-        {found.length > 0 && <p className="instr__found" data-testid="instructions-found">Override phrases found: {found.join(", ")}. The agent will propose a risky write instead of what the customer asks; policy decides from the call.</p>}
+        {found.length > 0 && <p className="instr__found" data-testid="instructions-found">Override phrases found: {found.join(", ")}. On the lab's own steps the agent will propose a risky write instead of what the customer asks; policy decides from the call.</p>}
         <p className="muted instr__note" data-testid="instructions-note">
-          The agent obeys override phrases (LAB-INVENTED). Policy decides from the call, never from the instructions.
+          The agent obeys override phrases (LAB-INVENTED) on the lab's own steps and in Compare, not on a run made as the signed-in person. Policy decides from the call, never from the instructions.
         </p>
       </div>
     </details>
