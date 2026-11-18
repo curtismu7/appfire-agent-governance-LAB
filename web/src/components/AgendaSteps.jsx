@@ -1,8 +1,9 @@
+import { keepButtons } from "../demoSet";
 import { DEMO_GUIDE, TOPICS, buttonKey, guideStep, topicOfStep } from "../demoGuide";
 
 // The session's seven steps as a bar of pills, shown in presenter mode: where you are in the walkthrough, what to say, and the Run buttons for this step.
 // It only selects a step and starts runs through the same handler as the demo guide; it holds no state of its own.
-export default function AgendaSteps({ step, onStep, onRun, onCompare, activeUc, cast, prompts }) {
+export default function AgendaSteps({ step, onStep, onRun, onCompare, activeUc, cast, prompts, only = false }) {
   const raw = DEMO_GUIDE[step] || DEMO_GUIDE[0];
   const at = DEMO_GUIDE.indexOf(raw);
   const now = guideStep(raw, { cast, prompts }); // the words for the vertical on screen
@@ -32,7 +33,7 @@ export default function AgendaSteps({ step, onStep, onRun, onCompare, activeUc, 
         <p className="agenda__say">{now.say}</p>
         <div className="agenda__run">
           <button type="button" onClick={() => onStep(at - 1)} disabled={at <= 0} data-testid="agenda-prev">‹ Previous</button>
-          {now.ucs.map((b) => (b.compare ? (
+          {(only ? keepButtons(now.ucs, cast) : now.ucs).map((b) => (b.compare ? (
             <button key={buttonKey(b)} type="button" className="primary" onClick={() => onCompare?.({ preset: b.compare, stepId: now.id })} data-testid={`agenda-${buttonKey(b)}`}>{b.label}</button>
           ) : (
             <button key={buttonKey(b)} type="button" className="primary" onClick={() => onRun?.({ uc: b.uc, stepId: now.id })} aria-pressed={activeUc === b.uc} data-testid={`agenda-run-${b.uc}`}>

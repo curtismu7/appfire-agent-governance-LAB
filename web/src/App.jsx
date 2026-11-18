@@ -10,6 +10,7 @@ import AgentColumn, { statusOf } from "./components/AgentColumn";
 import EvidenceColumn from "./components/EvidenceColumn";
 import FullPageEvidence from "./components/FullPageEvidence";
 import QuickConfig from "./components/QuickConfig";
+import { SET_KEY, activeSet, promptsInSet, savedSet } from "./demoSet";
 import SetupSidebar, { VerticalSelect } from "./components/SetupSidebar";
 import Rail from "./rail/Rail";
 import { getJson, postJson, resetWorkspace } from "./api";
@@ -73,6 +74,8 @@ export default function App() {
   const [persona, setPersona] = useState(resumed?.persona || "standard");
   const [catalog, setCatalog] = useState(null);
   const [prompts, setPrompts] = useState([]);
+  const [setChoice, setSetChoiceState] = useState(savedSet); // "demo": only the eight cases of today's demo; "all": every use case (the whole catalog stays loaded either way)
+  const setSetChoice = (c) => { setSetChoiceState(c); try { window.localStorage.setItem(SET_KEY, c); } catch { /* storage blocked */ } };
   const [instrConfig, setInstrConfig] = useState(null); // the default instructions, the presets and the override phrases (GET /api/instructions)
   const [instrEdit, setInstrEdit] = useState(null); // the edited instructions, or null while the default is in use
   const [selectedId, setSelectedId] = useState(resumed?.selectedId ?? null);
@@ -208,6 +211,8 @@ export default function App() {
   const evTurn = evRun ? [...turns].reverse().find((t) => t.result?.ok && t.result.body.run === evRun) : null;
   const why = evRun && uc ? reasoningOf(evTurn ? { ...evTurn, uc } : { uc, how: "picked" }, evRun) : null;
   const cast = story?.cast || {};
+  const demoIds = activeSet(cast, setChoice); // the eight while "Today's demo" is on, else null (everything)
+  const promptsShown = promptsInSet(prompts, demoIds);
   const userId = persona === "premium" ? cast.castUser2 : cast.castUser;
   const verticals = info?.verticals || [];
   const stub = verticalInfo ? verticalInfo.pack !== "full" : false;
@@ -474,13 +479,13 @@ export default function App() {
       <main className="content" id="main" tabIndex={-1}>
         <div id={`panel-${current}`} role="tabpanel" aria-labelledby={extraKey ? "tab-more" : `tab-${current}`}>
           {error && <p className="app-error" role="alert">Could not load the lab ({error}). Is the server running?</p>}
-          {presenter && <AgendaSteps step={agendaStep} onStep={(i) => setAgendaStep(Math.max(0, Math.min(DEMO_GUIDE.length - 1, i)))} onRun={guideRun} onCompare={guideCompare} activeUc={guideRunning} cast={cast} prompts={prompts} />}
+          {presenter && <AgendaSteps step={agendaStep} onStep={(i) => setAgendaStep(Math.max(0, Math.min(DEMO_GUIDE.length - 1, i)))} onRun={guideRun} onCompare={guideCompare} activeUc={guideRunning} cast={cast} prompts={prompts} only={Boolean(demoIds)} />}
           {presenter && sayNotes.length > 0 && (
             <aside className="say" data-testid="presenter-say" aria-label="Talk track">
               {sayNotes.map((t) => <p key={t.id}><strong>{t.title}.</strong> {t.say}</p>)}
             </aside>
           )}
-          {current === "agent" && page === "compare" && <ComparePage key={comparePreset || "first"} vertical={vertical} startPreset={comparePreset} cast={cast} prompts={prompts} onBack={() => { setComparePreset(null); select("agent"); }} />}
+          {current === "agent" && page === "compare" && <ComparePage key={`${comparePreset || "first"}${demoIds ? "-demo" : ""}`} vertical={vertical} startPreset={comparePreset} cast={cast} prompts={prompts} only={Boolean(demoIds)} onBack={() => { setComparePreset(null); select("agent"); }} />}
           {current === "agent" && page && page !== "compare" && (
             <FullPageEvidence page={page} onPage={select} onBack={() => select("agent")} catalog={catalog} selectedId={selectedId} failed={!catalog && !!error}
               onPickRun={(id) => { pick(id); const u = allUc.find((x) => x.id === id); startRun(u, null, personaFor(u) || persona); }}
@@ -492,13 +497,14 @@ export default function App() {
                 <Rail storageKey="aag.setup" label="Setup">
                 <SetupSidebar onNewChat={() => { dropPick(); setTurns([]); setSelHop(null); }} host={mode !== "live" || (realLevel === "full" && uc?.realGate?.real === false) ? cast.castHost : null} several={several} setSeveral={setSeveral} agent={cast.castAgent}
                   vertical={vertical} verticals={verticals} onVertical={setVertical} sessions={sessions} onSession={pick}
-                  brain={cfg.brain} brainInfo={brainInfo} onBrain={(b) => setCfg((c) => ({ ...c, brain: b }))}>
-                  <UseCasePicker catalog={catalog} selectedId={selectedId} onPick={pick} failed={!catalog && !!error} keep={several ? isHandoff : null} />
+                  brain={cfg.brain} brainInfo={brainInfo} onBrain={(b) => setCfg((c) => ({ ...c, brain: b }))}
+                  demoSet={casesFor(cast) ? { choice: setChoice, onChoice: setSetChoice, total: catalog?.total } : null}>
+                  <UseCasePicker catalog={catalog} selectedId={selectedId} onPick={pick} failed={!catalog && !!error} keep={demoIds || several ? (u) => (!demoIds || demoIds.has(u.id)) && (!several || isHandoff(u)) : null} />
                 </SetupSidebar>
                 </Rail>
               )}
               <div className="work">
-                <AgentColumn agent={cast.castAgent} brand={cast.castBrand} userId={userId} vertical={vertical} verticalLabel={verticalLabel} verticals={verticals} stub={stub} prompts={prompts} turns={shownTurns}
+                <AgentColumn agent={cast.castAgent} brand={cast.castBrand} userId={userId} vertical={vertical} verticalLabel={verticalLabel} verticals={verticals} stub={stub} prompts={promptsShown} turns={shownTurns}
                   status={busy ? "running" : statusOf(lastTurn)} onSay={say} onHop={onHop} onPreview={preview} running={busy}
                   person={cast.castPerson || "customer"} fare={Boolean(cast.castFareRule)} step={presenter ? DEMO_GUIDE[agendaStep] || DEMO_GUIDE[0] : null} onNextStep={() => setAgendaStep((i) => Math.max(0, Math.min(DEMO_GUIDE.length - 1, i + 1)))}
                   instructions={<AgentInstructions config={instrConfig} text={instrEdit} onText={setInstrEdit} />} />
@@ -529,7 +535,7 @@ export default function App() {
         </div>
       </main>
       <SignInDialog isOpen={signOpen} username={signin?.username} onClose={() => { setSignOpen(false); pendingRun.current = null; }} onSignedIn={afterSignIn} />
-      <DemoGuide isOpen={guideOpen} onClose={() => setGuideOpen(false)} onRun={guideRun} onCompare={(s) => { setGuideOpen(false); guideCompare(s); }} activeUc={guideRunning} catalog={catalog} cast={cast} prompts={prompts} />
+      <DemoGuide isOpen={guideOpen} onClose={() => setGuideOpen(false)} onRun={guideRun} onCompare={(s) => { setGuideOpen(false); guideCompare(s); }} activeUc={guideRunning} catalog={catalog} cast={cast} prompts={prompts} only={Boolean(demoIds)} />
       {phoneApproval && <MockPhone approval={phoneApproval} onDecided={onPhoneDecided} onClose={() => {}} approvedSentence={phoneApproval.kind !== "real" && last?.run?.fareRule ? FARE_PHONE_APPROVED : undefined} />}
     </div>
   );
