@@ -1250,7 +1250,7 @@ test('airline Real, read and status: UC1 asks ONE scope (trips:read), UC33 fligh
     assert.equal(x.booking, undefined); assert.equal(x.constrained, undefined); airlineChecks(x, 'UC1');
     const ex2 = tokenCalls(p1).at(-1); assert.equal(ex2.form.scope, 'trips:read'); assert.equal(ex2.form.audience, undefined); assert.equal(ex2.form.actor_token, undefined);
     const delegated = x.tokens.at(-1); assert.deepEqual([delegated.claims.aud, delegated.claims.scope, delegated.claims.act], [TOOLS_AUDIENCE, 'trips:read', { sub: AGENT_CLIENT_ID }]);
-    assert.match(x.reply.text, /^Here is what get_airline_bookings returned: .*[^)]\.$/);
+    assert.match(x.reply.text, /^You have 2 upcoming trips(: .+)?\. Your balance is [\d,]+ miles\.$/, 'a plain sentence'); assert.ok(!/get_airline_bookings|signed_in_sub|returned/.test(x.reply.text), 'no tool name and no subject id in the reply');
     const st = await runAir(url, 'UC33'); assert.equal(st.outcome, 'REAL_PERMIT'); airlineChecks(st, 'UC33');
     assert.equal(tokenCalls(p1).at(-1).form.scope, 'flights:read'); assert.deepEqual(callsOf(ts, 'get_flight_status').at(-1).rpc.params.arguments, { flight: 'LK 214' });
     const fee = await runAir(url, 'UC28'); assert.equal(fee.outcome, 'REAL_PERMIT'); airlineChecks(fee, 'UC28'); assert.equal(tokenCalls(p1).at(-1).form.scope, 'fees:request');
@@ -1458,7 +1458,15 @@ test('airline Real: bookingOf reads the judged fare from the 200 or the 428 body
   // A hostile or foreign answer: only the pinned fields are read out, whatever else it carries.
   const rec = { passport_last4: '4471', known_traveller_number: 'on file (hidden)', card_last4: '4821', note: 'n', passport: '123456789', password_hint: 'hunter2', lab_invented: true };
   const text = replyText('sensitive_passenger_record', { structuredContent: rec });
-  assert.ok(text.includes('passport_last4 4471') && !/123456789|hunter2|password_hint|passport 1/.test(text), text);
+  assert.ok(text.includes('passport ending 4471') && text.includes('card ending 4821') && !/123456789|hunter2|password_hint|passport 1|get_|_last4/.test(text), text);
+  // The airline read tools answer in plain sentences from the pinned, type-checked fields; any other shape falls back to the generic text.
+  const say = (tool, o) => replyText(tool, { structuredContent: o });
+  assert.equal(say('get_airline_bookings', { signed_in_sub: 'abc', total: 1, returned: 1, miles: 1234, trips: [{ flight: 'LK 214', route: 'ORD to DEN', departs: 'Friday 8:15 am' }] }), 'You have 1 upcoming trip: LK 214 ORD to DEN, Friday 8:15 am. Your balance is 1,234 miles.');
+  assert.equal(say('get_flight_status', { flight: 'LK 214', route: 'ORD to DEN', status: 'on time', gate: 'B12', departs: 'Friday 8:15 am' }), 'LK 214 (ORD to DEN) is on time, at gate B12, departing Friday 8:15 am.');
+  assert.equal(say('list_airports', { total: 8, airports: [] }), 'There are 8 airports near you.');
+  assert.equal(say('request_change_fee_waiver', { request_id: 'CFW-0A1B2C', status: 'pending review', requested_by: 'u' }), 'Your change fee waiver request CFW-0A1B2C is filed and pending review. Nothing is waived until it is reviewed.');
+  assert.match(say('get_airline_bookings', { total: 'two', miles: 'many' }), /^Here is what get_airline_bookings returned:/, 'a shape the lab does not know falls back');
+  assert.match(say('get_flight_status', { flight: 'LK 214', status: 'on\ntime' }), /^Here is what get_flight_status returned:/, 'a control character in a field means the plain sentence is not used');
   assert.ok(!/surprise/.test(replyText('request_change_fee_waiver', { structuredContent: { request_id: 'CFW-1', status: 'pending review', surprise: 'x', lab_invented: true } })));
   assert.ok(/found/.test(replyText('get_my_issues', { structuredContent: { found: 3, extra: 'kept for software' } })) && /extra kept for software/.test(replyText('get_my_issues', { structuredContent: { found: 3, extra: 'kept for software' } })), 'a software tool reads every plain field as before');
 });
