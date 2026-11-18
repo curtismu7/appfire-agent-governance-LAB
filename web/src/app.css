@@ -2,7 +2,7 @@
    no colour literals, no dark-mode media queries, no forced priority, breakpoints 600px and 900px only. */
 .app { max-width: 2200px; margin: 0 auto; padding: 0 0 32px; } /* page frame rule (owner 2026-11-16): wide 2200px container; the earlier 1100px waiver is superseded */
 .seg { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.chip { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 600; }
+.chip { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; }
 .notice { margin: 6px 0 0; padding: 8px 12px; border: 1px solid var(--status-warn); border-radius: 8px; background: var(--surface); color: var(--text); font-size: 13px; }
 .lede { margin: 0 0 8px; max-width: 78ch; color: var(--text-body); font-size: 14px; line-height: 1.5; }
 .inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
@@ -42,7 +42,7 @@ button[aria-disabled="true"] { opacity: 0.88; cursor: not-allowed; }
 .result { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
 .result__head { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 
-.tag { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 12px; font-weight: 600; }
+.tag { display: inline-block; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 14px; font-weight: 600; }
 .tag[data-state="ok"] { border-color: var(--status-ok); color: var(--status-ok); }
 .tag[data-state="warn"] { border-color: var(--status-warn); color: var(--status-warn); }
 .tag[data-state="bad"] { border-color: var(--danger-text); color: var(--danger-text); }
