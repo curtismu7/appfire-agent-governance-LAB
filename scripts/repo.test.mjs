@@ -218,6 +218,10 @@ test('Presenter mode keeps the top menu cluster right-aligned and its labels rea
   assert.match(css, /^\.shell-bar \.top-menu__ctl \{ color: var\(--on-box\); \}/m);
 });
 
+test('the shell bar reserves the top line for the vendored TopMenu sign-in slot, so the slot never covers a nav tab (lab-local layout.css)', () => {
+  assert.match(read('web/src/layout.css'), /^\.shell-bar:has\(\.top-menu__signin-slot\) \{ padding-top: 46px; \}/m);
+});
+
 test('step 1: the data files the agent page reads ship in the image (data/ is copied whole)', () => {
   for (const f of ['data/handoff.json', 'data/prompts.json']) assert.ok(fs.existsSync(path.join(root, f)), f);
   assert.match(read('Dockerfile'), /COPY data data/);
