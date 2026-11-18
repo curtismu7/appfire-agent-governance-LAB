@@ -956,7 +956,7 @@ try {
     const tex = fullP1.seen.filter((x) => x.method === 'POST' && x.url.endsWith('/as/token')).map((x) => Object.fromEntries(new URLSearchParams(x.body))).filter((f) => f.grant_type === 'urn:ietf:params:oauth:grant-type:token-exchange');
     const ex2 = tex[tex.length - 1];
     check(tex.length >= 2 && ex2?.scope === 'issues:read' && ex2.audience === undefined && !ex2.actor_token, `${tag}: exchange 2 asked PingOne for ONE tool scope from the one tools resource, with no audience and no actor (${ex2?.scope})`);
-    check((await t('turn-answer-text').last().innerText()).includes('lab-invented') && (await t('turn-who').last().textContent()) !== 'Authorize', `${tag}: the reply says the tool data is lab-invented and is not the Authorize voice`);
+    check(!(await t('turn-answer-text').last().innerText()).includes('lab-invented') && (await t('turn-who').last().textContent()) !== 'Authorize', `${tag}: the reply does not say the tool data is lab-invented (owner 2026-11-18) and is not the Authorize voice`);
     check(fullGw.seen.length === 0, `${tag}: the SE gateway was not called for a software use case`);
     await t('row-' + th.n).click(); await t('step-detail').waitFor();
     const detail = await textOf('step-detail');
@@ -1087,10 +1087,23 @@ try {
     check(lastEx2()?.scope === 'trips:read' && lastEx2().audience === undefined && !lastEx2().actor_token, `${tag}: exchange 2 asked PingOne for ONE scope, trips:read, from the one tools resource (no audience, no actor): ${lastEx2()?.scope}`);
     check(run?.fareRule?.limit === 400 && run.fareRule.hold === 1500 && run.fareRule.from === 'business' && run.fareRule.to === 'economy' && !run.booking && !run.constrained, `${tag}: the run carries the fare rule (five rungs) and no booking`);
     check(Array.isArray(run?.gatewayTrace) && run.gatewayTrace.length === 0 && (await t('gateway-trace').count()) === 0, `${tag}: no What Privilege did panel for a tool server run`);
-    check((await t('turn-answer-text').last().innerText()).includes('lab-invented') && (await t('risk-strip').locator('li').count()) === 5, `${tag}: the reply says the data is lab-invented and the strip draws five rungs`);
+    check(!(await t('turn-answer-text').last().innerText()).includes('lab-invented') && (await t('risk-strip').locator('li').count()) === 5, `${tag}: the reply does not say the data is lab-invented and the strip draws five rungs`);
     await t('row-' + th.n).click(); await t('step-detail').waitFor();
     check((await textOf('step-detail')).includes('Answered by') && (await textOf('step-detail')).includes('tool server (local)'), `${tag}: the step detail shows the key fact "Answered by: tool server (local)"`);
     await cardWords(`${tag}: an airline trip list answered by the tool server, step detail open`);
+    // The detail box pops out (owner 2026-11-18): docked by default, a Pop out button floats it as a draggable window, Dock puts it back.
+    check((await t('sdp-popout').count()) === 1 && (await t('step-detail-window').count()) === 0, `${tag}: the step detail is docked under the sequence with a Pop out button`);
+    await t('sdp-popout').click();
+    await t('step-detail-window').waitFor();
+    check((await t('step-detail').count()) === 1 && (await textOf('step-detail-window')).includes('Answered by') && (await t('sdp-floating-note').count()) === 1, `${tag}: Pop out floats the same detail in its own window and leaves a note`);
+    if (!tag.includes('phone')) { // a narrow window shows it as a sheet, which is not draggable
+      const w0 = await t('step-detail-window').boundingBox(); const bar = await t('step-detail-window').getByTestId('fd-titlebar').boundingBox();
+      await page.mouse.move(bar.x + 60, bar.y + bar.height / 2); await page.mouse.down(); await page.mouse.move(bar.x + 60 - 90, bar.y + bar.height / 2 + 50, { steps: 8 }); await page.mouse.up();
+      const w1 = await t('step-detail-window').boundingBox();
+      check(Math.abs((w0.x - w1.x) - 90) <= 4 && Math.abs((w1.y - w0.y) - 50) <= 4, `${tag}: the floating step detail is dragged by its title bar (moved ${Math.round(w0.x - w1.x)} left, ${Math.round(w1.y - w0.y)} down)`);
+    }
+    await t('sdp-dock-button').click();
+    check((await t('step-detail-window').count()) === 0 && (await t('sdp-popout').count()) === 1 && (await t('step-detail').count()) === 1, `${tag}: Dock puts the step detail back under the sequence`);
 
     // UC7: Denver, $380 domestic: allowed as asked
     run = await runUc('UC7');

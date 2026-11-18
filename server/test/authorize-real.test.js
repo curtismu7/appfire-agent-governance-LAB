@@ -116,7 +116,7 @@ test('Toronto, Authorize on: CONSTRAINED (economy booked), the statement code na
     const d = decisionHop(x);
     assert.equal(d.decision.line, `${BY} returned PERMIT with the statement airline-economy-intl; the lab read that as economy only and applied it`); assert.equal(d.decision.outcome, 'PERMIT', 'what PingOne Authorize returned, not the lab word'); assert.equal(d.authorize.outcome, 'CONSTRAINED', 'the lab\'s own reading'); assert.equal(d.authorize.said, 'PERMIT');
     assert.match(d.note, /^PingOne Authorize returned PERMIT with the statement airline-economy-intl, which this lab reads as economy only\. The tool server \(local\) applied it: the cabin was narrowed from business to economy\./);
-    assert.match(x.reply.text, /^Booked in economy, not business: this trip is international\. LK 322 from ORD to YYZ, confirmation LKR-[0-9A-F]{6} \(lab-invented data from the lab's own tool server\)\.$/);
+    assert.match(x.reply.text, /^Booked in economy, not business: this trip is international\. LK 322 from ORD to YYZ, confirmation LKR-[0-9A-F]{6}\.$/);
     assert.equal(x.booking.booked, 'economy'); noAzSecrets(x, p1, 'Toronto');
     for (const h of authorizeWords(x)) assert.ok(h.inDecisionHop || AZ_PHRASES.test(h.v), `${h.where}: ${h.v}`);
   });

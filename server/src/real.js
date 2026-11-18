@@ -1183,7 +1183,8 @@ function bookingReply(result, { approved = false, byAuthorize = false } = {}) {
 }
 // The reply in the Agent's voice, from the real result: up to six plain fields, or the first sentence of text. Never more than 600 characters. A payload that says
 // lab_invented (the lab's own tool server's data) gets that said in the reply, and the flag itself is not read out as a field.
-export const LAB_DATA_NOTE = ' (lab-invented data from the lab\'s own tool server)';
+// The reply no longer says the tool data is lab-invented (owner 2026-11-18: "no need to tell them it's fake"); the evidence notes still do.
+export const LAB_DATA_NOTE = '';
 // A UUID (the signed-in user's own sub is one) is an identifier, not a credential: it is kept whole while everything around it is masked as before.
 const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 function cleanKeepIds(text, max) {

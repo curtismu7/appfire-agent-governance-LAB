@@ -73,7 +73,7 @@ function RfcColumn({ spec }) {
   );
 }
 
-export default function StepDetailPanel({ hops = [], selected = null, onSelect, onClose }) {
+export default function StepDetailPanel({ hops = [], selected = null, onSelect, onClose, headExtra = null }) {
   const [rfc, setRfc] = useState(() => readPref(RFC_KEY, (v) => v === "1" || v === "0", "1") === "1");
   const [zoom, setZoom] = useState(() => Number(readPref(ZOOM_KEY, (v) => { const n = Number(v); return n >= Z_MIN && n <= Z_MAX; }, Z_DEFAULT)));
   const toggleRfc = () => setRfc((on) => { writePref(RFC_KEY, on ? "0" : "1"); return !on; });
@@ -113,6 +113,7 @@ export default function StepDetailPanel({ hops = [], selected = null, onSelect, 
         <button type="button" aria-pressed={rfc} onClick={toggleRfc} data-testid="rfc-toggle">RFC info</button>
         <button type="button" aria-label="Previous step" disabled={!prev} onClick={() => prev && onSelect?.(prev.n)}>‹ Prev</button>
         <button type="button" aria-label="Next step" disabled={!next} onClick={() => next && onSelect?.(next.n)}>Next ›</button>
+        {headExtra}
         {onClose && <button type="button" aria-label="Close step detail" onClick={onClose}>×</button>}
       </div>
 

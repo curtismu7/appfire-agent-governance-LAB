@@ -150,3 +150,7 @@ The Sign in dialog drives PingOne's own password actions over pi.flow (no redire
 
 To keep a demo user ordinary, set a permanent password in the console (do not force a change).
 
+### Opening the lab by a name instead of 127.0.0.1
+
+The lab answers to loopback names and to the names in `LAB_ALLOWED_HOSTS` (the lab's own `.env`, comma separated). To use a name such as `lab.example` (any valid host name that points at this Mac): add `127.0.0.1 lab.example` to `/etc/hosts` (needs sudo), add the name to `LAB_ALLOWED_HOSTS`, recreate the container (`docker compose up -d`), and open `http://lab.example:7814/`. The Docker port stays published on this Mac only, and `127.0.0.1` keeps working. The PingOne sign-in is unaffected: it is pi.flow, the redirect URI is only a parameter and the page is never redirected.
+

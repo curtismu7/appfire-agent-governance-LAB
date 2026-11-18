@@ -2,7 +2,7 @@ import { useState } from "react";
 import { EXTRAS, extraHops, noIds, outcomeState, triggerText } from "../lib";
 import { Tag } from "./Bits";
 import SequenceView from "../evidence/SequenceView";
-import StepDetailPanel from "../evidence/StepDetailPanel";
+import StepDetail from "./StepDetail";
 
 // An extra page: it exists only because a use case brought it in (its `opens` field). It shows what that run did through this page's lens, and names
 // the product page as a plain label (never a link).
@@ -22,7 +22,7 @@ export default function ExtraPage({ opens, entry }) {
       {/* The same Sequence and step detail as the Agent page, drawn from this page's hops only. */}
       <h3 className="panel__sub">Hops for this page</h3>
       <SequenceView hops={hops} selected={sel} onSelect={setSel} />
-      {sel != null && <StepDetailPanel hops={hops} selected={sel} onSelect={setSel} onClose={() => setSel(null)} />}
+      {sel != null && <StepDetail hops={hops} selected={sel} onSelect={setSel} onClose={() => setSel(null)} />}
     </section>
   );
 }

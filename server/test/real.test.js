@@ -937,7 +937,7 @@ test('tools: UC1 on the software vertical runs Real on the local provider; excha
     assert.deepEqual(decide.decision, { outcome: 'PERMIT', by: 'lab policy (local), not PingOne Authorize', basis: 'observed' });
     assert.deepEqual([tool.title, tool.label], ['Tool server (local)', 'Tool server [local]: tools/call get_my_issues']); assert.equal(tool.note, 'The tool server ran the tool. The data is lab-invented.');
     assert.deepEqual([api.title, api.note, api.label], ['Tool data', 'Not run: this tool serves lab-invented data itself; no API sits behind it.', 'API [NOT RUN]']);
-    assert.match(x.reply.text, /^Here is what get_my_issues returned: signed_in_sub [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}, total 8, returned (\d+) \(lab-invented data from the lab's own tool server\)\.$/, 'the user\'s own sub is shown whole (a UUID is not a key), and the issue count is said once');
+    assert.match(x.reply.text, /^Here is what get_my_issues returned: signed_in_sub [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}, total 8, returned (\d+)\.$/, 'the user\'s own sub is shown whole (a UUID is not a key), and the issue count is said once');
     assert.ok(!x.reply.text.includes('[masked'), 'nothing in the reply is masked');
     // The vendored catalog's gateway and policy-engine wording is replaced for a tool server (the catalog file is not edited): spec, fact and lanes name the tool server.
     for (const h of [check, decide, tool]) assert.ok(!/gateway|policy engine|Authorize decision/i.test(JSON.stringify(h.spec)), `${h.kind}: the spec does not describe a gateway or a policy engine`);
@@ -1017,7 +1017,7 @@ test('tools: UC24 runs NO agent token and NO exchange; the public call and the p
     assert.ok(ts.seen.filter((c) => c.url === '/mcp').every((c) => c.headers.authorization === undefined && c.headers['x-token-validation'] === undefined), 'no authorization header and no x-token-validation');
     assert.deepEqual(ts.seen.filter((c) => c.rpc?.method === 'tools/call').map((c) => c.rpc.params.name), ['list_marketplace_apps', 'get_my_issues']);
     assert.deepEqual(x.hops.map((h) => h.verdict), ['ok', 'ok', 'ok', 'deny', 'ok']); assert.match(x.hops[3].note, /^Refused as it should be: the protected tool answered 401 with no token\.$/);
-    assert.match(x.reply.text, /lab-invented data from the lab's own tool server\)\. The protected tool get_my_issues was refused with no token \(HTTP 401\)\.$/);
+    assert.match(x.reply.text, /\. The protected tool get_my_issues was refused with no token \(HTTP 401\)\.$/ );
     assert.deepEqual(x.hops.slice(1, 4).map((h) => h.answeredBy), ['tool server (local)', 'tool server (local)', 'tool server (local)']);
     assert.deepEqual(vocabulary(x), []); assert.deepEqual(findWords(x, 'UC24'), []); assert.equal(x.tokens.length, 1, 'only the user token from the sign-in');
   });
@@ -1250,7 +1250,7 @@ test('airline Real, read and status: UC1 asks ONE scope (trips:read), UC33 fligh
     assert.equal(x.booking, undefined); assert.equal(x.constrained, undefined); airlineChecks(x, 'UC1');
     const ex2 = tokenCalls(p1).at(-1); assert.equal(ex2.form.scope, 'trips:read'); assert.equal(ex2.form.audience, undefined); assert.equal(ex2.form.actor_token, undefined);
     const delegated = x.tokens.at(-1); assert.deepEqual([delegated.claims.aud, delegated.claims.scope, delegated.claims.act], [TOOLS_AUDIENCE, 'trips:read', { sub: AGENT_CLIENT_ID }]);
-    assert.match(x.reply.text, /^Here is what get_airline_bookings returned: .*\(lab-invented data from the lab's own tool server\)\.$/);
+    assert.match(x.reply.text, /^Here is what get_airline_bookings returned: .*[^)]\.$/);
     const st = await runAir(url, 'UC33'); assert.equal(st.outcome, 'REAL_PERMIT'); airlineChecks(st, 'UC33');
     assert.equal(tokenCalls(p1).at(-1).form.scope, 'flights:read'); assert.deepEqual(callsOf(ts, 'get_flight_status').at(-1).rpc.params.arguments, { flight: 'LK 214' });
     const fee = await runAir(url, 'UC28'); assert.equal(fee.outcome, 'REAL_PERMIT'); airlineChecks(fee, 'UC28'); assert.equal(tokenCalls(p1).at(-1).form.scope, 'fees:request');
@@ -1267,7 +1267,7 @@ test('airline Real, UC7 (Denver): booked as asked; the booking, the reply and th
     assert.equal(x.outcome, 'REAL_PERMIT'); airlineChecks(x, 'UC7');
     assert.deepEqual(x.booking, { flight: 'LK 214', from: 'ORD', to: 'DEN', fare: 380, international: false, asked: 'business', booked: 'business' }); assert.equal(x.constrained, undefined);
     assert.equal(tokenCalls(p1).at(-1).form.scope, 'flights:book');
-    assert.match(x.reply.text, /^Booked: a business seat on LK 214 from ORD to DEN, confirmation LKR-[0-9A-F]{6} \(lab-invented data from the lab's own tool server\)\.$/); assert.ok(!/\$|fare|price/i.test(x.reply.text), 'never a price');
+    assert.match(x.reply.text, /^Booked: a business seat on LK 214 from ORD to DEN, confirmation LKR-[0-9A-F]{6}\.$/); assert.ok(!/\$|fare|price/i.test(x.reply.text), 'never a price');
     const d = x.hops.find((h) => h.kind === 'authorize-decision'); assert.deepEqual(d.decision, { outcome: 'PERMIT', by: 'lab policy (local), not PingOne Authorize', basis: 'observed' });
     assert.equal(x.hops.find((h) => h.kind === 'tool-dispatched').note, 'The tool server ran the tool. The data is lab-invented.');
     assert.deepEqual(callsOf(ts, 'book_airline_flight').at(-1).rpc.params.arguments, { flight: 'LK 214', cabin: 'business' });
@@ -1291,7 +1291,7 @@ test('airline Real, UC8 (Toronto): the tool server answers 200 with the cabin na
     const t = x.hops.find((h) => h.kind === 'tool-dispatched');
     assert.equal(t.note, 'The tool server ran the tool with the cabin narrowed to economy. The data is lab-invented.'); assert.equal(t.verdict, 'ok');
     assert.equal(t.request.calls.at(-1).body.arguments.cabin, 'business', 'the request shows the arguments as the agent sent them'); assert.equal(t.response.calls.at(-1).body.content.cabin_booked, 'economy');
-    assert.match(x.reply.text, /^Booked in economy, not business: this trip is international\. LK 322 from ORD to YYZ, confirmation LKR-[0-9A-F]{6} \(lab-invented data from the lab's own tool server\)\.$/);
+    assert.match(x.reply.text, /^Booked in economy, not business: this trip is international\. LK 322 from ORD to YYZ, confirmation LKR-[0-9A-F]{6}\.$/);
     assert.deepEqual(callsOf(ts, 'book_airline_flight').at(-1).rpc.params.arguments, { flight: 'LK 322', cabin: 'business' }, 'no fare field ever goes to the tool server');
     assert.ok(!x.hops.some((h) => h.kind === 'authorize-decision' && /checked/.test(JSON.stringify(h.decision))));
   });
@@ -1333,7 +1333,7 @@ test('airline Real, UC6 (Paris): held (428), the phone, the retry with the recei
     const retry = await runAir(url, 'UC6', { approvalId: id });
     assert.equal(retry.outcome, 'REAL_PERMIT'); airlineChecks(retry, 'UC6 retry'); assert.equal(retry.constrained, undefined, 'an approval beats a narrowing');
     assert.deepEqual(retry.booking, { flight: 'LK 704', from: 'ORD', to: 'CDG', fare: 2400, international: true, asked: 'business', booked: 'business' });
-    assert.match(retry.reply.text, /^Booked as approved: a business seat on LK 704 from ORD to CDG, confirmation LKR-[0-9A-F]{6} \(lab-invented data from the lab's own tool server\)\.$/);
+    assert.match(retry.reply.text, /^Booked as approved: a business seat on LK 704 from ORD to CDG, confirmation LKR-[0-9A-F]{6}\.$/);
     const sent = callsOf(ts, 'book_airline_flight').at(-1).rpc.params.arguments;
     assert.deepEqual(sent, { flight: 'LK 704', cabin: 'business', _hitl_challenge_id: hold.challenge }, 'the retry echoes the receipt and nothing else');
     assert.ok(!JSON.stringify({ hops: retry.hops, reply: retry.reply }).includes(hold.challenge), 'the receipt is in no hop');
