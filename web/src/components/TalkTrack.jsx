@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import FloatingDialog from "../floating-dialog/FloatingDialog";
 import { DEMO_GUIDE, guideStep } from "../demoGuide";
 import { promptOfCase, runLabelOfCase } from "../demoCases";
@@ -9,8 +9,22 @@ import { promptOfCase, runLabelOfCase } from "../demoCases";
 // requires, the words to type, what the page will show, the talking points and the links into the lab, and one button runs it. The whole talk track follows below.
 export default function TalkTrack({ talk, onRun, activeUc, onClose, cases = null, cast = null, prompts = [], onCase, onLink }) {
   const [at, setAt] = useState(0);
+  const [closeNext, setCloseNext] = useState(false);
+  const popped = useRef(false);
   const run = (uc) => { const step = talk.find((t) => (t.run || []).some((r) => r.uc === uc)); onRun?.(step, uc); };
   const hasCases = Array.isArray(cases) && cases.length > 0;
+  // With the cases (owner 2026-11-18): the dialog opens in its own window (second monitor) so it never covers the chat and the Decision card, unless the screen is
+  // narrow (a sheet) or the browser blocks the window (the dialog stays docked). It presses the dialog's own Pop out button, so the shared dialog is untouched.
+  useEffect(() => {
+    if (!hasCases || popped.current) return;
+    popped.current = true;
+    if (window.matchMedia?.("(max-width: 600px)").matches) return;
+    document.querySelector('[data-testid="talk-track-dialog"] button[aria-label="Pop out to a new window"]')?.click();
+  }, [hasCases]);
+  // Run closes the dialog only while it is docked over the page (a popped-out window stays: the talking points stay on the second screen). The close waits for the
+  // next render so App's `current` is the page the run opened, not the Talk track page the click came from.
+  useEffect(() => { if (closeNext) { setCloseNext(false); onClose?.(); } }, [closeNext]); // eslint-disable-line react-hooks/exhaustive-deps
+  const runCase = (k) => { onCase?.(k); if (document.querySelector('[data-testid="talk-track-dialog"]')) setCloseNext(true); };
   const c = hasCases ? cases[Math.min(at, cases.length - 1)] : null;
   const stepAt = c ? DEMO_GUIDE.findIndex((g) => g.id === c.stepId) : -1;
   const step = stepAt >= 0 ? guideStep(DEMO_GUIDE[stepAt], { cast, prompts }) : null;
@@ -18,7 +32,7 @@ export default function TalkTrack({ talk, onRun, activeUc, onClose, cases = null
   const running = c && c.uc && activeUc === c.uc;
   return (
     <FloatingDialog isOpen noBackdrop onClose={onClose} title="Talk track" ariaLabel="Talk track"
-      defaultWidth={hasCases ? 980 : 560} defaultHeight={hasCases ? 770 : 720} defaultY={hasCases ? 110 : null} placement="right" storageKey="aag.talktrack" testId="talk-track-dialog">
+      defaultWidth={hasCases ? 980 : 560} defaultHeight={hasCases ? 770 : 720} defaultY={hasCases ? 110 : null} placement="right" className="talk-dialog" storageKey="aag.talktrack" testId="talk-track-dialog">
       {hasCases && (
         <div className="cases" data-testid="talk-cases">
           <nav className="cases__list" aria-label="The eight cases">
@@ -51,7 +65,7 @@ export default function TalkTrack({ talk, onRun, activeUc, onClose, cases = null
               <ul>{c.say.map((s) => <li key={s}>{s}</li>)}</ul>
             </div>
             <p className="cases__actions">
-              <button type="button" className="primary" onClick={() => onCase?.(c)} aria-pressed={running ? "true" : undefined} data-testid="case-run">{running ? "Running…" : runLabelOfCase(c)}</button>
+              <button type="button" className="primary" onClick={() => runCase(c)} aria-pressed={running ? "true" : undefined} data-testid="case-run">{running ? "Running…" : runLabelOfCase(c)}</button>
               {c.links.map((l) => (
                 <button key={l.label} type="button" className="talk__run" onClick={() => onLink?.(l, c)} data-testid={`case-link-${l.kind}${l.preset ? `-${l.preset}` : ""}`}>{l.label}</button>
               ))}

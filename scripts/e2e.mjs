@@ -1479,26 +1479,50 @@ try {
     await page.keyboard.press('p'); await t('presenter-say').waitFor();
     await walk(page, `${tag}: Presenter mode`);
     await page.keyboard.press('Escape'); await t('nav').waitFor();
-    await t('nav-talk').click(); await t('talk-track').waitFor();
-    await walk(page, `${tag}: the talk track`);
+    // The talk track opens in its own window by default (owner 2026-11-18: second monitor, never over the chat); the page keeps a placeholder
+    const [pop] = await Promise.all([page.waitForEvent('popup'), t('nav-talk').click()]);
+    const tp = (id) => pop.getByTestId(id);
+    await tp('talk-track').waitFor();
+    check(await t('fd-placeholder').isVisible(), `${tag}: the talk track opens in its own window by default (the page shows its placeholder)`);
+    await walk(pop, `${tag}: the talk track`);
     // The eight cases on the left of the talk track: each one shows the agenda requirement, the words to type, what happens and the talking points
-    await t('talk-cases').waitFor();
-    const casePicks = await page.locator('[data-testid^="case-pick-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid').replace('case-pick-', '')));
+    await tp('talk-cases').waitFor();
+    const casePicks = await pop.locator('[data-testid^="case-pick-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid').replace('case-pick-', '')));
     check(casePicks.length === 8, `${tag}: the talk track lists eight cases on the left (${casePicks.length})`);
     for (const id of casePicks) {
-      await t(`case-pick-${id}`).click();
-      check((await t('case-detail').getAttribute('data-case')) === id, `${tag}: picking ${id} shows that case`);
-      check((await t('case-requirement').innerText()).length > 20 && (await t('case-prompt').innerText()).length > 5 && (await t('case-explain').innerText()).length > 20 && (await t('case-say').locator('li').count()) >= 1, `${tag}: ${id} shows the requirement, the prompt, what happens and the talking points`);
-      await walk(page, `${tag}: the talk track case ${id}`);
+      await tp(`case-pick-${id}`).click();
+      // the popped-out window is rendered by its own React root, a tick after the page's state changes: wait for the case to show
+      await pop.locator(`[data-testid="case-detail"][data-case="${id}"]`).waitFor({ timeout: 5000 }).catch(() => {});
+      check((await tp('case-detail').getAttribute('data-case')) === id, `${tag}: picking ${id} shows that case`);
+      check((await tp('case-requirement').innerText()).length > 20 && (await tp('case-prompt').innerText()).length > 5 && (await tp('case-explain').innerText()).length > 20 && (await tp('case-say').locator('li').count()) >= 1, `${tag}: ${id} shows the requirement, the prompt, what happens and the talking points`);
+      await walk(pop, `${tag}: the talk track case ${id}`);
     }
-    await t('case-pick-audit-trail').click(); await t('case-run').click(); await t('history').waitFor();
-    check(await t('history').isVisible(), `${tag}: the audit case opens Run history`);
+    await tp('case-pick-audit-trail').click(); await tp('case-run').click(); await t('history').waitFor();
+    check(await t('history').isVisible() && !pop.isClosed(), `${tag}: the audit case opens Run history in the page and the popped-out talk track stays open`);
     await walk(page, `${tag}: Run history from the audit case`);
+    await pop.close();
     await t('nav-runs').click(); await t('history').waitFor();
     await walk(page, `${tag}: Run history`);
     await t('nav-diagram').click(); await page.locator('.react-flow__node').first().waitFor();
     await walk(page, `${tag}: the Diagram page`);
     check(errors.length === 0, `${tag}: no unexpected console error (${errors.slice(0, 2).join(' | ')})`);
+    await ctx.close();
+  }
+
+  // ---- The talk track at the standard 2200 px screen with the pop-out window blocked: it stays docked, clear of the nav, and Run closes it --------------------
+  {
+    const tag = 'talk-track-2200';
+    const ctx = await browser.newContext({ viewport: { width: 2200, height: 1200 } });
+    await ctx.addInitScript(() => { window.open = () => null; });
+    const page = await ctx.newPage();
+    const t = (id) => page.getByTestId(id);
+    await page.goto(`${fullBase}/`); await t('uc-UC1').waitFor();
+    await t('nav-talk').click(); await t('talk-cases').waitFor();
+    const geo = await page.evaluate(() => { const d = document.querySelector('[data-testid=talk-track-dialog]').getBoundingClientRect(); const n = document.querySelector('[data-testid=nav]').getBoundingClientRect(); return { top: d.top, width: d.width, navBottom: n.bottom, wide: document.documentElement.scrollWidth > window.innerWidth }; });
+    check(geo.top >= geo.navBottom, `${tag}: the docked dialog opens below the nav (top ${Math.round(geo.top)}, nav bottom ${Math.round(geo.navBottom)})`);
+    check(geo.width <= 2200 * 0.5 && !geo.wide, `${tag}: the docked dialog takes at most half of the 2200 px screen and the page has no sideways scroll (${Math.round(geo.width)} px)`);
+    await t('case-pick-audit-trail').click(); await t('case-run').click(); await t('history').waitFor();
+    check((await t('talk-track-dialog').count()) === 0, `${tag}: Run closes the docked talk track so the result is not covered`);
     await ctx.close();
   }
 
