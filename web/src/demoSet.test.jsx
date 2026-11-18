@@ -7,12 +7,24 @@ import DemoGuide from "./components/DemoGuide";
 import { DEMO_CASES } from "./demoCases";
 import { DEMO_GUIDE } from "./demoGuide";
 import { PRESETS } from "./compare";
-import { activeSet, demoPresetIds, demoUcIds, keepButtons, promptsInSet } from "./demoSet";
+import { SET_KEY, activeSet, demoPresetIds, demoUcIds, keepButtons, promptsInSet, savedSet } from "./demoSet";
 
 const cast = { castFareRule: true };
 const eight = DEMO_CASES.filter((c) => c.uc).map((c) => c.uc);
 
 describe("today's demo set", () => {
+  test("the lab opens on all use cases; only a saved \"demo\" narrows it", () => {
+    window.localStorage.removeItem(SET_KEY);
+    expect(savedSet()).toBe("all");
+    window.localStorage.setItem(SET_KEY, "demo");
+    expect(savedSet()).toBe("demo");
+    window.localStorage.setItem(SET_KEY, "all");
+    expect(savedSet()).toBe("all");
+    window.localStorage.setItem(SET_KEY, "anything else");
+    expect(savedSet()).toBe("all");
+    window.localStorage.removeItem(SET_KEY);
+  });
+
   test("the ids come from the cases, only on the airline pack", () => {
     expect([...demoUcIds(cast)].sort()).toEqual([...eight].sort());
     expect(demoUcIds({})).toBeNull();

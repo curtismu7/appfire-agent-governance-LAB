@@ -26,4 +26,5 @@ export const keepButtons = (buttons, cast) => {
 // `choice` is "demo" or "all"; a vertical with no eight always shows everything.
 export const activeSet = (cast, choice) => (choice === "demo" && demoUcIds(cast) ? demoUcIds(cast) : null);
 export const promptsInSet = (prompts, ids) => (ids ? prompts.filter((p) => ids.has(p.uc)) : prompts);
-export const savedSet = () => { try { return window.localStorage.getItem(SET_KEY) === "all" ? "all" : "demo"; } catch { return "demo"; } };
+// The lab opens on every use case (owner, 2026-11-18, after the Appfire demo); "Today's demo (8)" is one click away and is remembered once chosen.
+export const savedSet = () => { try { return window.localStorage.getItem(SET_KEY) === "demo" ? "demo" : "all"; } catch { return "all"; } };
