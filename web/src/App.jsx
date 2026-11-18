@@ -434,6 +434,7 @@ export default function App() {
             theme={{ value: theme, onChange: setTheme }}
             fontSize={{ value: fontStep, onChange: setFontStep }}
             present={{ active: presenter, onToggle: () => setPresenter((v) => !v), label: "Presenter (P)" }}
+            talkTrack={{ active: talkOpen, onToggle: () => setTalkOpen((v) => !v) }}
             help={{ onClick: () => setGuideOpen(true), label: "Demo guide" }}
             version={info?.version || null}
             onReset={reset}
