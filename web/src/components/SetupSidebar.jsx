@@ -17,7 +17,7 @@ export function VerticalSelect({ vertical, verticals, onChange }) {
 export const brainLabel = (b) => (!b?.configured ? "llama.cpp · not configured" : b.available ? "llama.cpp · local model" : "llama.cpp · unavailable");
 
 // The setup sidebar: New chat, gateway status, one agent or several, agent, brain, vertical, the use cases (children) and the sessions.
-export default function SetupSidebar({ onNewChat, host, several, setSeveral, agent, vertical, verticals, onVertical, sessions, onSession, brain = "scripted", brainInfo = null, onBrain = () => {}, children }) {
+export default function SetupSidebar({ onNewChat, host, several, setSeveral, agent, vertical, verticals, onVertical, sessions, onSession, brain = "scripted", brainInfo = null, onBrain = () => {}, demoSet = null, children }) {
   return (
     <aside className="setup" aria-label="Setup" data-testid="setup">
       <button type="button" className="primary setup__new" onClick={onNewChat} data-testid="new-chat">+ New chat</button>
@@ -44,6 +44,15 @@ export default function SetupSidebar({ onNewChat, host, several, setSeveral, age
           <option value="llama" disabled={!brainInfo?.configured}>{brainLabel(brainInfo)}</option>
         </select>
       </label>
+      {demoSet && (
+        <>
+          <p className="kicker">Use cases shown</p>
+          <div className="seg seg--fill" role="group" aria-label="Use cases shown">
+            <button type="button" aria-pressed={demoSet.choice === "demo"} onClick={() => demoSet.onChoice("demo")} data-testid="set-demo">Today's demo (8)</button>
+            <button type="button" aria-pressed={demoSet.choice === "all"} onClick={() => demoSet.onChoice("all")} data-testid="set-all">All use cases{demoSet.total ? ` (${demoSet.total})` : ""}</button>
+          </div>
+        </>
+      )}
       <VerticalSelect vertical={vertical} verticals={verticals} onChange={onVertical} />
       {children}
       <p className="kicker">Sessions · this workspace</p>

@@ -4,6 +4,7 @@ import DecisionCard from "./DecisionCard";
 import { Tag } from "./Bits";
 import { getJson, postJson } from "../api";
 import { presetFor, presetsFor } from "../compare";
+import { demoPresetIds } from "../demoSet";
 import { compareRows } from "../decision";
 import { focusHop, newTraceparent, outcomeState } from "../lib";
 import { visible } from "../safeText";
@@ -13,8 +14,9 @@ const none = () => {};
 // Two runs side by side (#compare). Both are run here, fresh, in Mock (`mode: "mock"` is sent on every call), so this page never reaches a real
 // tenant even while the lab is in Real. The deciding step is highlighted in each Sequence, the five audit facts are lined up, and the rows that
 // differ are marked.
-export default function ComparePage({ vertical, onBack, startPreset, cast, prompts }) {
-  const presets = presetsFor(cast); // the pairs this vertical shows (the airline pack has two of its own and hides two)
+export default function ComparePage({ vertical, onBack, startPreset, cast, prompts, only = false }) {
+  const keepIds = only ? demoPresetIds(cast) : null;
+  const presets = presetsFor(cast).filter((p) => !keepIds || keepIds.has(p.id)); // the pairs this vertical shows (the airline pack has two of its own and hides two)
   const first = presets.find((p) => p.id === startPreset) || presets[0]; // the step bar can open the page at a named pair
   const [presetId, setPresetId] = useState(first.id);
   const [sides, setSides] = useState(first.sides.map(() => ({ status: "running" })));
