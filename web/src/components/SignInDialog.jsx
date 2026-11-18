@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import FloatingDialog from "../floating-dialog/FloatingDialog";
-import { postJson } from "../api";
+import { getJson, postJson } from "../api";
 import { newTraceparent } from "../lib";
 import { visible } from "../safeText";
 
@@ -10,7 +10,7 @@ import { visible } from "../safeText";
 // this component's state only while the dialog is open: each is cleared the moment it is sent, on close and on unmount, and the page never shows it back.
 //
 // Two more steps (owner, 2026-11-17), both PingOne's own flows API actions run by the lab's server:
-//   "Forgot password?"  -> PingOne looks the user up, the person asks for a code by email, then types the code and a new password;
+//   "Forgot password?"  (only when PingOne's sign-on policy offers it) -> PingOne looks the user up, the person asks for a code by email, then types the code and a new password;
 //   "Choose a new password" -> when PingOne holds the sign-in for a temporary or expired password.
 // Modes: password (the default), recover, change. The server says which one is next (`next` in its answer).
 const TITLES = { password: "Sign in", recover: "Forgot password", change: "Choose a new password" };
@@ -26,10 +26,18 @@ export default function SignInDialog({ isOpen, username, onClose, onSignedIn }) 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [info, setInfo] = useState(null);
+  // "Forgot password?" is shown only when PingOne's own sign-on policy offers recovery (the server asks PingOne; owner 2026-11-18: his tenant has none).
+  const [recoveryOffered, setRecoveryOffered] = useState(false);
   const firstRef = useRef(null);
   const wipe = () => { setPassword(""); setCode(""); setCurrent(""); setNewPw(""); setConfirm(""); };
   const reset = () => { wipe(); setMode("password"); setError(null); setInfo(null); setBusy(false); };
   useEffect(() => { if (!isOpen) reset(); }, [isOpen]);
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let live = true;
+    getJson("/api/signin/options").then((b) => { if (live) setRecoveryOffered(b?.recovery === true); }, () => { if (live) setRecoveryOffered(false); });
+    return () => { live = false; };
+  }, [isOpen]);
   useEffect(() => () => wipe(), []);
   // A step the person leaves must not leave a flow waiting on the server.
   const cancelWaiting = () => { if (mode !== "password") postJson("/api/signin/cancel", {}, { traceparent: newTraceparent() }).catch(() => {}); };
@@ -124,7 +132,7 @@ export default function SignInDialog({ isOpen, username, onClose, onSignedIn }) 
             <span className="field-label">Password</span>
             <input ref={firstRef} type="password" name="password" value={password} onChange={(e) => setPassword(e.target.value.slice(0, 256))} autoComplete="current-password" required maxLength={256} data-testid="signin-password" autoFocus />
           </label>
-          <p className="muted"><button type="button" className="signin__link" onClick={forgot} disabled={busy} data-testid="signin-forgot">Forgot password?</button></p>
+          {recoveryOffered && <p className="muted"><button type="button" className="signin__link" onClick={forgot} disabled={busy} data-testid="signin-forgot">Forgot password?</button></p>}
           {feedback}
         </form>
       )}

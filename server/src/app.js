@@ -284,6 +284,16 @@ export function createApp({
   }));
   // "Forgot password?", the code, the new password; and the forced change of a temporary or expired one (owner 2026-11-17). All drive PingOne's pi.flow
   // password actions on the server; a waiting flow lasts ten minutes and holds no password or code. Secrets are used once and never stored, logged or returned.
+  // Whether PingOne's sign-on policy offers password recovery (the dialog shows "Forgot password?" only then): true, false, or null when PingOne could not be asked.
+  api.get('/signin/options', async (req, res, next) => {
+    try {
+      const id = ws(req, res); if (!id) return;
+      noStore(res);
+      const why = signInRefusal(req);
+      const recovery = why ? false : await real.recoveryOffered(parseTraceparent(req.headers.traceparent) ? req.headers.traceparent : randomTraceparent());
+      res.json({ recovery: recovery === true });
+    } catch (e) { next(e); }
+  });
   api.post('/signin/forgot', jsonWrites, runSignIn('signinForgot', (id, b, tp) => real.forgot(id, tp)));
   api.post('/signin/code', jsonWrites, runSignIn('signinCode', (id) => real.sendCode(id)));
   api.post('/signin/recover', jsonWrites, runSignIn('signinRecover', (id, b, tp, res) => {
