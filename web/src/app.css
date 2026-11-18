@@ -189,6 +189,23 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 
 /* ===== Talk track: per-step run links ===== */
 .talk__runs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+/* ===== Talk track: the eight cases (list on the left, one case on the right) ===== */
+.cases { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.cases__list ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.cases__pick { width: 100%; text-align: left; border-radius: 8px; min-height: 40px; padding: 6px 10px; }
+.cases__pick[aria-current="true"] { background: color-mix(in srgb, var(--sel) 18%, var(--surface)); border-color: var(--sel); font-weight: 700; }
+.cases__n { font-family: var(--font-mono); margin-right: 4px; }
+.cases__detail { display: grid; gap: 10px; min-width: 0; }
+.cases__detail p, .cases__say ul { margin: 0; line-height: 1.55; }
+.cases__title { font-size: 18px; margin: 0; }
+.cases__label { display: block; font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+.cases__req, .cases__prompt, .cases__say { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: var(--surface-2); }
+.cases__prompt q { font-weight: 700; }
+.cases__say ul { padding-left: 18px; }
+.cases__actions, .cases__step { display: flex; flex-wrap: wrap; gap: 8px; }
+.cases__all { font-size: 16px; margin: 18px 0 0; }
+@media (max-width: 900px) { .cases { grid-template-columns: minmax(0, 1fr); } }
+
 /* The Run buttons in the talk track are real buttons (the global button style), a little smaller than a form button; the pressed one fills with the accent. */
 .talk__run { font-size: 13px; padding: 4px 12px; min-height: 32px; text-align: left; }
 /* The step detail in the evidence column is narrow: its parts stack instead of sharing three squeezed columns (the full page keeps its columns). */

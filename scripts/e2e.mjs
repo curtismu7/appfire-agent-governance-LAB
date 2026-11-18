@@ -1481,6 +1481,19 @@ try {
     await page.keyboard.press('Escape'); await t('nav').waitFor();
     await t('nav-talk').click(); await t('talk-track').waitFor();
     await walk(page, `${tag}: the talk track`);
+    // The eight cases on the left of the talk track: each one shows the agenda requirement, the words to type, what happens and the talking points
+    await t('talk-cases').waitFor();
+    const casePicks = await page.locator('[data-testid^="case-pick-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid').replace('case-pick-', '')));
+    check(casePicks.length === 8, `${tag}: the talk track lists eight cases on the left (${casePicks.length})`);
+    for (const id of casePicks) {
+      await t(`case-pick-${id}`).click();
+      check((await t('case-detail').getAttribute('data-case')) === id, `${tag}: picking ${id} shows that case`);
+      check((await t('case-requirement').innerText()).length > 20 && (await t('case-prompt').innerText()).length > 5 && (await t('case-explain').innerText()).length > 20 && (await t('case-say').locator('li').count()) >= 1, `${tag}: ${id} shows the requirement, the prompt, what happens and the talking points`);
+      await walk(page, `${tag}: the talk track case ${id}`);
+    }
+    await t('case-pick-audit-trail').click(); await t('case-run').click(); await t('history').waitFor();
+    check(await t('history').isVisible(), `${tag}: the audit case opens Run history`);
+    await walk(page, `${tag}: Run history from the audit case`);
     await t('nav-runs').click(); await t('history').waitFor();
     await walk(page, `${tag}: Run history`);
     await t('nav-diagram').click(); await page.locator('.react-flow__node').first().waitFor();
