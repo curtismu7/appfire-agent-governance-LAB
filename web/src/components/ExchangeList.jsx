@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Json } from "./JsonPane";
+import { Json } from "./TokenJson";
 import { statusState } from "./HttpMessage";
 import { visible } from "../safeText";
 import { HOT_CALL } from "../lib";

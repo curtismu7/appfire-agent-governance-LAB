@@ -1,7 +1,8 @@
 import { useRef } from "react";
 
-// The JSON pane (Form | JSON, Rule 24) lives in the vendored JsonPane.jsx; it is re-exported here so every caller keeps one import.
-export { Json } from "./JsonPane";
+// The JSON pane (Form | JSON, Rule 24) lives in the vendored JsonPane.jsx; TokenJson.jsx wraps it so every JWT in a value is also shown decoded, and Bits re-exports
+// that wrapper so every caller keeps one import. Import `Json` from here, never from JsonPane (a repo test fails otherwise).
+export { Json } from "./TokenJson";
 
 // A small word-tag. The state only colours the border; the words carry the meaning.
 export const Tag = ({ state = "info", children, title, testId }) => <span className="tag" data-state={state} title={title} data-testid={testId}>{children}</span>;

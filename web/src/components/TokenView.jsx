@@ -1,4 +1,5 @@
 import { Json, Tag } from "./Bits";
+import { TokenParts } from "./TokenJson";
 import { visible } from "../safeText";
 import { HOT_CLAIMS } from "../lib";
 
@@ -20,11 +21,8 @@ export default function TokenView({ tokens }) {
           </h4>
           {t.notice && <p className="muted">{t.notice}</p>}
           <p className="field-label">Raw token</p>
-          <Json value={t.raw} label={`${t.label} raw`} testId="token-raw" />
-          <p className="field-label">Decoded header</p>
-          <Json value={t.header} label={`${t.label} header`} />
-          <p className="field-label">Decoded claims</p>
-          <Json value={t.claims} label={`${t.label} claims`} testId="token-claims" hot={HOT_CLAIMS} />
+          <Json value={t.raw} label={`${t.label} raw`} testId="token-raw" decode={false} />
+          <TokenParts header={t.header} claims={t.claims} raw={t.raw} label={t.label} claimsTestId="token-claims" />
         </article>
       ))}
     </div>
