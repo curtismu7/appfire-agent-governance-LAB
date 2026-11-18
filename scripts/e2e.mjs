@@ -1479,6 +1479,15 @@ try {
     await page.keyboard.press('p'); await t('presenter-say').waitFor();
     await walk(page, `${tag}: Presenter mode`);
     await page.keyboard.press('Escape'); await t('nav').waitFor();
+    {
+      // The centred Signed in slot must never sit on a nav tab at this width (the :has() rule that reserved its line was dropped by the build, 2026-11-18).
+      const hit = await page.evaluate(() => {
+        const slot = document.querySelector('.top-menu__signin-slot'); if (!slot) return 'no slot';
+        const s = slot.getBoundingClientRect();
+        return [...document.querySelectorAll('[role="tablist"] [role="tab"], [data-testid^="nav-"]')].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && !(s.right <= r.left || r.right <= s.left || s.bottom <= r.top || r.bottom <= s.top); }).map((e) => e.getAttribute('data-testid') || e.textContent).join(',') || null;
+      });
+      check(hit === null, `${tag}: the Signed in slot covers no nav tab at 1280 px (${hit})`);
+    }
     await t('nav-talk').click(); await t('talk-track').waitFor();
     await walk(page, `${tag}: the talk track`);
     await t('nav-runs').click(); await t('history').waitFor();

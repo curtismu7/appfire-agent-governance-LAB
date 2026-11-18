@@ -405,7 +405,7 @@ export default function App() {
   return (
     <div className="app" data-presenter={presenter ? "true" : undefined} data-text={cfg.text}>
       <button type="button" className="skip" onClick={() => document.getElementById("main")?.focus()} data-testid="skip">Skip to the main content</button>
-      <header className="shell-bar">
+      <header className={`shell-bar${mode === "live" && realLevel === "full" ? " shell-bar--signin" : ""}`}>
         <div className="shell-brand">
           <span className="shell-logo" aria-hidden="true">Af</span>
           <h1 className="shell-name">Appfire Agent Governance LAB</h1>

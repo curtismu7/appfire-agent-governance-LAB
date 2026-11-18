@@ -219,7 +219,9 @@ test('Presenter mode keeps the top menu cluster right-aligned and its labels rea
 });
 
 test('the shell bar reserves the top line for the vendored TopMenu sign-in slot, so the slot never covers a nav tab (lab-local layout.css)', () => {
-  assert.match(read('web/src/layout.css'), /^\.shell-bar:has\(\.top-menu__signin-slot\) \{ padding-top: 46px; \}/m);
+  // A class, not :has(): the build's CSS target drops a :has() rule, which left the slot on the Talk track tab (2026-11-18).
+  assert.match(read('web/src/layout.css'), /^\.shell-bar--signin \{ padding-top: 46px; \}/m);
+  assert.match(read('web/src/App.jsx'), /shell-bar--signin/);
 });
 
 test('step 1: the data files the agent page reads ship in the image (data/ is copied whole)', () => {

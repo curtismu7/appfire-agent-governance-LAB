@@ -18,8 +18,8 @@
 .shell-more select[data-current="true"] { border-style: solid; font-weight: 700; }
 .shell-right { display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; margin-left: auto; }
 .shell-right button { min-height: 34px; padding: 4px 8px; }
-/* The vendored TopMenu centers its Sign in / Signed in slot on the bar's top line (position: absolute). When it shows, the bar reserves that line so the slot never covers the nav tabs. */
-.shell-bar:has(.top-menu__signin-slot) { padding-top: 46px; }
+/* The vendored TopMenu centers its Sign in / Signed in slot on the bar's top line (position: absolute). When it shows (Real with full settings: the App adds shell-bar--signin), the bar reserves that line so the slot never covers the nav tabs. A class, not :has(): the build's CSS target drops a :has() rule, and the slot then sat on the Talk track tab. */
+.shell-bar--signin { padding-top: 46px; }
 .shell-bar .shell-theme { color: var(--on-box); }
 .shell-bar .top-menu__ctl { color: var(--on-box); }
 .statusline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
