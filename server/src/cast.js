@@ -27,7 +27,7 @@ export const VERTICALS = {
   // tool server (phase B), which enforces the booking rule, so the airline use cases listed in realGate run Real.
   airline: {
     castBrand: 'Larkspur Air', castHost: 'larkspur-air', castUser: 'elena.novak', castUser2: 'jun.takeda', castOwner2: 'marcus.bell', castAgent: 'travel-assistant', castAgent2: 'bookings-specialist', castAgent3: 'report-generalist',
-    castAdmin: 'sofia.reyes', castMoney: 'trips and bookings', castReadTool: 'get_airline_bookings', castWriteTool: 'book_airline_flight', castSensitiveTool: 'sensitive_passenger_record', castA2aTool: 'sensitive_passenger_record',
+    castAdmin: 'sofia.reyes', castMoney: 'trips and bookings', castReadTool: 'get_airline_bookings', castWriteTool: 'book_airline_flight', castSensitiveTool: 'sensitive_passenger_record', castA2aTool: 'get_airline_bookings',
     castAsset: 'trip', castAction: 'booking', castGroup: 'orbit-tier',
     castPublicTool: 'list_airports', castStatusTool: 'get_flight_status', castRequestTool: 'request_change_fee_waiver', castPerson: 'traveller',
     castFareRule: 'fare', castFareLimit: '$400', castFareHold: '$1,500', castToolServer: 'larkspur-air',
