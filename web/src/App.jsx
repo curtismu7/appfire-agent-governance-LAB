@@ -5,6 +5,7 @@ import DiagramView from "./components/DiagramView";
 import ExtraPage from "./components/ExtraPage";
 import RunHistory from "./components/RunHistory";
 import TalkTrack from "./components/TalkTrack";
+import { casesFor } from "./demoCases";
 import AgentColumn, { statusOf } from "./components/AgentColumn";
 import EvidenceColumn from "./components/EvidenceColumn";
 import FullPageEvidence from "./components/FullPageEvidence";
@@ -294,6 +295,19 @@ export default function App() {
     setComparePreset(step.preset);
     select("compare");
   };
+  // The talk track's eight cases (the airline pack): Run opens the case the way the Demo guide's buttons do; a link jumps to a lab view the presenter points at.
+  const caseRun = (c) => {
+    if (c.compare) { guideCompare({ preset: c.compare, stepId: c.stepId }); return; }
+    if (c.history) { const at = DEMO_GUIDE.findIndex((g) => g.id === c.stepId); if (at >= 0) setAgendaStep(at); select("runs"); return; }
+    guideRun({ uc: c.uc, stepId: c.stepId });
+  };
+  const caseLink = (l, c) => {
+    const at = DEMO_GUIDE.findIndex((g) => g.id === c.stepId);
+    if (l.kind === "agenda") { if (at >= 0) setAgendaStep(at); setPresenter(true); if (current !== "agent" || page) select("agent"); }
+    else if (l.kind === "guide") setGuideOpen(true);
+    else if (l.kind === "runs") select("runs");
+    else if (l.kind === "compare") guideCompare({ preset: l.preset, stepId: c.stepId });
+  };
   const guideRun = (step) => {
     if (!step?.uc) return;
     const at = DEMO_GUIDE.findIndex((g) => g.id === step.stepId);
@@ -509,7 +523,7 @@ export default function App() {
           )}
           {current === "runs" && <RunHistory refresh={runCount} />}
           {current === "diagram" && <DiagramView vertical={vertical} resetSignal={resetSignal} lastRun={last} />}
-          {talkOpen && story && <TalkTrack talk={story.talkTrack} onRun={talkRun} activeUc={guideRunning} onClose={() => { setTalkOpen(false); if (current === "talk") select("agent"); }} />}
+          {talkOpen && story && <TalkTrack talk={story.talkTrack} onRun={talkRun} activeUc={guideRunning} cases={casesFor(cast)} cast={cast} prompts={prompts} onCase={caseRun} onLink={caseLink} onClose={() => { setTalkOpen(false); if (current === "talk") select("agent"); }} />}
           {current === "talk" && !story && <p className="muted">{error ? "The talk track could not be loaded." : "Loading..."}</p>}
           {extraKey && opened[extraKey] && <ExtraPage opens={extraKey} entry={opened[extraKey]} />}
         </div>
