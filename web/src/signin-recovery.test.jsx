@@ -13,6 +13,7 @@ let calls;
 // answers: path -> a function (body) -> { status, body }
 const stub = (answers) => {
   calls = [];
+  answers = { "/api/signin/options": () => ({ status: 200, body: { recovery: true } }), ...answers }; // PingOne offers recovery unless a test says otherwise
   vi.stubGlobal("fetch", async (url, init = {}) => {
     const path = String(url);
     const body = init.body ? JSON.parse(init.body) : null;
@@ -36,8 +37,8 @@ describe("Forgot password?", () => {
   test("the link asks the lab's server to start a recovery (no username typed), then the dialog asks for the emailed code and a new password", async () => {
     stub({ "/api/signin/forgot": () => ({ status: 200, body: { signedIn: false, next: "recovery_code", message: "PingOne found the user. Enter the recovery code." } }) });
     const { dlg, u } = await open();
-    expect(within(dlg).getByTestId("signin-forgot").textContent).toMatch(/Forgot password\?/);
-    await u.click(within(dlg).getByTestId("signin-forgot"));
+    expect((await within(dlg).findByTestId("signin-forgot")).textContent).toMatch(/Forgot password\?/);
+    await u.click(await within(dlg).findByTestId("signin-forgot"));
     await within(dlg).findByTestId("signin-recover-form");
     expect(posts("/api/signin/forgot")).toHaveLength(1); expect(posts("/api/signin/forgot")[0].body).toEqual({});
     expect(within(dlg).getByTestId("fd-titlebar").textContent).toMatch(/Forgot password/);
@@ -56,7 +57,7 @@ describe("Forgot password?", () => {
       "/api/signin/code": () => (sent++ === 0 ? { status: 200, body: { signedIn: false, next: "recovery_code", message: "A recovery code was sent to the email address of the user." } } : { status: 429, body: { error: "too_soon", message: "a code was sent a moment ago; wait 20 seconds before asking for another" } }),
     });
     const { dlg, u } = await open();
-    await u.click(within(dlg).getByTestId("signin-forgot"));
+    await u.click(await within(dlg).findByTestId("signin-forgot"));
     await u.click(await within(dlg).findByTestId("signin-send-code"));
     await waitFor(() => expect(within(dlg).getByTestId("signin-info").textContent).toMatch(/recovery code was sent/));
     await u.click(within(dlg).getByTestId("signin-send-code"));
@@ -69,7 +70,7 @@ describe("Forgot password?", () => {
       "/api/signin/recover": () => ({ status: 200, body: { signedIn: true, user: { name: "demo-user" }, steps: [] } }),
     });
     const { dlg, u, onSignedIn } = await open();
-    await u.click(within(dlg).getByTestId("signin-forgot"));
+    await u.click(await within(dlg).findByTestId("signin-forgot"));
     await u.type(await within(dlg).findByTestId("signin-code"), ` ${CODE.toLowerCase()}!`);
     expect(within(dlg).getByTestId("signin-code").value, "only letters and digits are kept").toBe(CODE.toLowerCase());
     await u.type(within(dlg).getByTestId("signin-new"), NEW_PW);
@@ -84,7 +85,7 @@ describe("Forgot password?", () => {
   test("two different new passwords are refused in the dialog before anything is sent", async () => {
     stub({ "/api/signin/forgot": () => ({ status: 200, body: { signedIn: false, next: "recovery_code", message: "m" } }) });
     const { dlg, u } = await open();
-    await u.click(within(dlg).getByTestId("signin-forgot"));
+    await u.click(await within(dlg).findByTestId("signin-forgot"));
     await u.type(await within(dlg).findByTestId("signin-code"), CODE);
     await u.type(within(dlg).getByTestId("signin-new"), NEW_PW);
     await u.type(within(dlg).getByTestId("signin-confirm"), NEW_PW + "x");
@@ -101,7 +102,7 @@ describe("Forgot password?", () => {
       "/api/signin/cancel": () => ({ status: 200, body: { cancelled: true } }),
     });
     const { dlg, u, onClose } = await open();
-    await u.click(within(dlg).getByTestId("signin-forgot"));
+    await u.click(await within(dlg).findByTestId("signin-forgot"));
     await u.type(await within(dlg).findByTestId("signin-code"), "WRONG123");
     await u.type(within(dlg).getByTestId("signin-new"), NEW_PW);
     await u.type(within(dlg).getByTestId("signin-confirm"), NEW_PW);
@@ -112,10 +113,31 @@ describe("Forgot password?", () => {
     await u.click(within(dlg).getByTestId("signin-back"));
     await within(dlg).findByTestId("signin-form");
     expect(posts("/api/signin/cancel")).toHaveLength(1);
-    await u.click(within(dlg).getByTestId("signin-forgot"));
+    await u.click(await within(dlg).findByTestId("signin-forgot"));
     await within(dlg).findByTestId("signin-recover-form");
     await u.click(within(dlg).getByTestId("signin-cancel"));
     expect(onClose).toHaveBeenCalled(); expect(posts("/api/signin/cancel")).toHaveLength(2);
+  });
+});
+
+describe("the link follows PingOne's own sign-on policy", () => {
+  test("the dialog asks the server whether PingOne offers recovery and shows the link only when it does", async () => {
+    stub({});
+    const { dlg } = await open();
+    await within(dlg).findByTestId("signin-forgot");
+    expect(calls.filter((c) => c.path === "/api/signin/options")).toHaveLength(1);
+  });
+  test("no link when PingOne's policy does not offer it, when the answer is an error, or when the server cannot be asked; the password form is unchanged", async () => {
+    for (const answer of [() => ({ status: 200, body: { recovery: false } }), () => ({ status: 500, body: { error: "x" } }), null]) {
+      stub(answer ? { "/api/signin/options": answer } : { "/api/signin/options": undefined });
+      if (!answer) vi.stubGlobal("fetch", async () => { throw new Error("offline"); });
+      const { dlg } = await open();
+      await within(dlg).findByTestId("signin-password");
+      await new Promise((r) => setTimeout(r, 30));
+      expect(within(dlg).queryByTestId("signin-forgot")).toBeNull();
+      expect(within(dlg).getByTestId("signin-submit")).toBeTruthy();
+      cleanup();
+    }
   });
 });
 
@@ -163,7 +185,7 @@ describe("Choose a new password", () => {
       "/api/signin/recover": () => ({ status: 200, body: { signedIn: false, next: "password", message: "The password was changed. Sign in with the new password." } }),
     });
     const { dlg, u } = await open();
-    await u.click(within(dlg).getByTestId("signin-forgot"));
+    await u.click(await within(dlg).findByTestId("signin-forgot"));
     await u.type(await within(dlg).findByTestId("signin-code"), CODE);
     await u.type(within(dlg).getByTestId("signin-new"), NEW_PW);
     await u.type(within(dlg).getByTestId("signin-confirm"), NEW_PW);

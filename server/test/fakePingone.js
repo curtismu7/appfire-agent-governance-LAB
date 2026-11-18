@@ -160,7 +160,7 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
           }
           const id = randomBytes(8).toString('hex'); const st = randomBytes(12).toString('hex');
           flows.set(id, { cookie: st, challenge: q.code_challenge, state: q.state, nonce: q.nonce, done: false });
-          return send(200, { id, status: 'USERNAME_PASSWORD_REQUIRED', _links: { 'usernamePassword.check': { href: `http://fake.invalid/${ENV_ID}/flows/${id}` } } }, { 'set-cookie': [`ST=${st}; Path=/; HttpOnly`, 'interactionId=fake-interaction; Path=/'] });
+          return send(200, { id, status: 'USERNAME_PASSWORD_REQUIRED', _links: { 'usernamePassword.check': { href: `http://fake.invalid/${ENV_ID}/flows/${id}` }, ...(state.full.forgot === 'not-offered' ? {} : { 'password.forgot': { href: `http://fake.invalid/${ENV_ID}/flows/${id}` } }) } }, { 'set-cookie': [`ST=${st}; Path=/; HttpOnly`, 'interactionId=fake-interaction; Path=/'] });
         }
         const fm = /^\/[^/]+\/flows\/([a-z0-9]+)$/.exec(u.pathname);
         if (req.method === 'POST' && fm) {

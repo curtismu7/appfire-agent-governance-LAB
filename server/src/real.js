@@ -472,6 +472,26 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     } finally { inFlight -= 1; }
   }
 
+  // Does PingOne's sign-on policy for the user app offer password recovery? (owner 2026-11-18: the owner's tenant has none, so the link must not show.)
+  // PingOne says so itself: the flow that asks for the password carries a `password.forgot` link only when the policy allows it. One authorize call, cached
+  // for five minutes (the policy rarely changes); true | false, or null when PingOne could not be asked (nothing is cached then). Holds no flow.
+  const RECOVERY_CACHE_MS = 5 * 60 * 1000;
+  let recoveryAnswer = null; // { value, at }
+  const offersRecovery = (flow) => flow?.status === 'USERNAME_PASSWORD_REQUIRED' && Boolean(flow._links && typeof flow._links === 'object' && flow._links['password.forgot']);
+  async function recoveryOffered(traceparentIn) {
+    if (!configured()) return null;
+    if (recoveryAnswer && now() - recoveryAnswer.at < RECOVERY_CACHE_MS) return recoveryAnswer.value;
+    if (inFlight >= MAX_IN_FLIGHT) return null;
+    inFlight += 1;
+    try {
+      const s = await startFlow(newCtx('probe', traceparentIn));
+      if (s.failed) return null;
+      const value = offersRecovery(s.flow);
+      recoveryAnswer = { value, at: now() };
+      return value;
+    } finally { inFlight -= 1; }
+  }
+
   // "Forgot password?": start a fresh flow, let PingOne look the user up (the username is the lab's own, never typed here), and wait for the code.
   async function forgot(ws, traceparentIn) {
     if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
@@ -483,6 +503,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       const s = await startFlow(ctx);
       if (s.failed) return s.failed;
       if (s.flow.status !== 'USERNAME_PASSWORD_REQUIRED') return ctx.fail(409, 'signin_step_unsupported', 'PingOne did not ask for a password here, so a recovery cannot start (a PingOne session may already be signed in).');
+      if (!offersRecovery(s.flow)) { recoveryAnswer = { value: false, at: now() }; return ctx.fail(409, 'recovery_not_offered', 'PingOne\'s sign-on policy for this app does not offer password recovery.'); }
       const r = await flowPost(ctx, s.flowId, FORGOT_TYPE, { username: config.username }, 'flows API: forgot password (look the user up)', { username: config.username });
       if (r.unreachable) return lost(ctx, r);
       if (r.status !== 200 || !r.json) return ctx.fail(r.status === 400 || r.status === 404 ? 409 : 502, 'recovery_not_started', 'PingOne could not start a password recovery for this user (it needs an enabled user with an email address and a password).', r);
@@ -998,7 +1019,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     // PingOne Authorize for the airline booking: on when all three AAG_AUTHORIZE_* settings are valid. The config (with the secret) never leaves the parent: index.js builds authorize.js from it.
     authorizeOn: () => configured() && Boolean(config.authorize), authorizeProblem: () => (configured() ? config.authorizeProblem ?? null : null),
     a2aReady: () => configured() && Boolean(config.a2a), a2aProblem: () => (configured() ? config.a2aProblem ?? null : null),
-    signIn, forgot, sendCode, recover, changePassword, cancelSignIn, session: sessionOf, signOut: (ws) => { pending.delete(ws); return sessions.delete(ws); }, userOf, run,
+    signIn, forgot, sendCode, recover, changePassword, cancelSignIn, recoveryOffered, session: sessionOf, signOut: (ws) => { pending.delete(ws); return sessions.delete(ws); }, userOf, run,
     // A workspace's session, or one signed in silently from the PingOne session (null when there is none or it has ended). Waits 5 s after a failed try.
     ensureSession,
     // Forget the PingOne session: an explicit Sign out. (Reset ends only the workspace's token session, so the next run signs in silently.)

@@ -158,6 +158,37 @@ test('an authorization server that echoes what it was sent cannot put the code o
   });
 });
 
+test('recoveryOffered: PingOne says so itself (the password.forgot link in its flow); the answer is cached five minutes and holds no flow', async () => {
+  await withReal(async (real, { p1, clock }) => {
+    const authorizes = () => p1.seen.filter((c) => c.url.includes('/as/authorize')).length;
+    assert.equal(await real.recoveryOffered(TP), true);
+    assert.equal(await real.recoveryOffered(TP), true); assert.equal(authorizes(), 1, 'the second answer comes from the cache');
+    assert.equal((await real.sendCode(WS)).error, 'no_signin_waiting', 'asking holds no flow for the person');
+    p1.state.full.forgot = 'not-offered';
+    assert.equal(await real.recoveryOffered(TP), true, 'still the cached answer');
+    clock.t += 5 * 60 * 1000 + 1;
+    assert.equal(await real.recoveryOffered(TP), false, 'five minutes later PingOne is asked again: its policy offers no recovery'); assert.equal(authorizes(), 2);
+  });
+});
+
+test('a sign-on policy with no recovery: forgot is refused with a fixed message, nothing waits, and the answer is remembered', async () => {
+  await withReal(async (real, { p1 }) => {
+    p1.state.full.forgot = 'not-offered';
+    const out = await real.forgot(WS, TP);
+    assert.equal(out.ok, false); assert.equal(out.error, 'recovery_not_offered'); assert.equal(out.status, 409); assert.match(out.message, /does not offer password recovery/);
+    assert.equal(p1.state.recovery.forgot.length, 0, 'PingOne was never asked to start a recovery');
+    assert.equal(await real.recoveryOffered(TP), false);
+    assert.equal((await real.sendCode(WS)).error, 'no_signin_waiting');
+  });
+});
+
+test('recoveryOffered: PingOne cannot be asked -> unknown (null), nothing cached, the link stays hidden', async () => {
+  const clock = { t: 1_000_000 };
+  const real = createReal({ config: realConfig(fullSettingsFor('http://127.0.0.1:9/mcp'), { AAG_LIVE_TEST_BASE: 'http://127.0.0.1:9' }), missing: [], wanted: true, now: () => clock.t });
+  assert.equal(await real.recoveryOffered(TP), null);
+  assert.equal(await createReal({ missing: [], wanted: false }).recoveryOffered(TP), null, 'not configured');
+});
+
 // ---- over HTTP: the routes, their strict bodies and the whole round trip
 async function withLab(fn, opts) {
   await withReal(async (real, ctx) => { await withServer((url) => fn(url, ctx), { env: { ALLOW_MOCK_SIGNIN: '1' }, real }); }, opts);
@@ -210,5 +241,21 @@ test('HTTP: without full Real the new routes refuse like /api/signin does', asyn
     for (const [path, body] of [['/api/signin/forgot', {}], ['/api/signin/code', {}], ['/api/signin/recover', { recoveryCode: RECOVERY_CODE, newPassword: NEW_PW }], ['/api/signin/change', { currentPassword: DEMO_PASSWORD, newPassword: NEW_PW }]]) {
       const r = await post(url, path, body, H); assert.equal(r.status, 409, path); assert.equal((await r.json()).error, 'real_not_available');
     }
+  }, { env: { ALLOW_MOCK_SIGNIN: '1' } });
+});
+
+test('HTTP: GET /api/signin/options says whether PingOne offers recovery; false without full Real and for a policy with none', async () => {
+  await withLab(async (url, { p1 }) => {
+    await realOn(url);
+    assert.deepEqual(await (await get(url, '/api/signin/options', H)).json(), { recovery: true });
+    p1.state.full.forgot = 'not-offered';
+    assert.deepEqual(await (await get(url, '/api/signin/options', H)).json(), { recovery: true }, 'the answer is cached');
+  });
+  await withLab(async (url) => {
+    await realOn(url);
+    assert.deepEqual(await (await get(url, '/api/signin/options', H)).json(), { recovery: false });
+  }, { setup: (p1) => { p1.state.full.forgot = 'not-offered'; } });
+  await withServer(async (url) => {
+    assert.deepEqual(await (await get(url, '/api/signin/options', H)).json(), { recovery: false });
   }, { env: { ALLOW_MOCK_SIGNIN: '1' } });
 });

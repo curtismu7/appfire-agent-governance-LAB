@@ -143,6 +143,7 @@ the policy's gate. The numbers stay LAB-INVENTED.
 
 The Sign in dialog drives PingOne's own password actions over pi.flow (no redirect). Check once on your tenant:
 
+0. **Forgot password?** is shown only when PingOne's sign-on policy for the user app offers recovery (the flow carries a `password.forgot` link). A tenant with no recovery or reset shows no link.
 1. Click **Forgot password?**. PingOne must accept the lab's username (`AAG_DEMO_USERNAME`) and the dialog switches to the recovery step. The PingOne user needs an email address, a password and a working email service; otherwise the dialog says PingOne could not start the recovery.
 2. Click **Email me a code**. PingOne sends an 8-character code that lasts 5 minutes (at most one every 20 seconds). Whether PingOne already emails a code at step 1 is not known; if one arrives, use it.
 3. Type the code and a new password twice, then **Set the password and sign in**. The lab never stores or shows either. UNVERIFIED: the state PingOne returns after a successful recovery (the lab handles `COMPLETED`, a plain sign-in step and a forced change; anything else, such as MFA, gets the "this lab does not drive" message).

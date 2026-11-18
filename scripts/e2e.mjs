@@ -790,6 +790,7 @@ try {
       // "Forgot password?" in the real browser (owner 2026-11-17): the dialog drives PingOne's recovery (the fake's flows API), then the waiting run continues.
       const NEW_PW = ['Brand', 'New-', 'Pass-', '77'].join('');
       const sentBefore = fullP1.state.recovery.sent;
+      await t('signin-forgot').waitFor(); // shown once the lab has asked PingOne whether its sign-on policy offers recovery
       await t('signin-forgot').click();
       await t('signin-recover-form').waitFor();
       await walk(page, `${tag}: the recovery step of the sign-in dialog`);
