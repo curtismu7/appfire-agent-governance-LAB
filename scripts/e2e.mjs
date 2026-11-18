@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { AGENT_CLIENT_SECRET, CLIENT_ID, CLIENT_SECRET, DEMO_PASSWORD, DEMO_USERNAME, FAKE_TOKEN, USER_CLIENT_SECRET, USER_SUB, authorizeSettings, fullSettingsFor, settingsFor, startFakePingOne } from '../server/test/fakePingone.js';
+import { AGENT_CLIENT_SECRET, CLIENT_ID, CLIENT_SECRET, DEMO_PASSWORD, DEMO_USERNAME, RECOVERY_CODE, FAKE_TOKEN, USER_CLIENT_SECRET, USER_SUB, authorizeSettings, fullSettingsFor, settingsFor, startFakePingOne } from '../server/test/fakePingone.js';
 import { TRUSTED_HEADERS } from '../server/src/mcpClient.js';
 import { REAL_KEYS } from '../server/src/settings.js';
 import { startFakeGateway } from '../server/test/fakeGateway.js';
@@ -786,9 +786,43 @@ try {
     check(geo.pw.top >= geo.body.top && geo.pw.bottom <= geo.body.bottom, `${tag}: the Password field is fully inside the modal body, not clipped (${Math.round(geo.pw.top)}-${Math.round(geo.pw.bottom)} in ${Math.round(geo.body.top)}-${Math.round(geo.body.bottom)})`);
     check(geo.pw.bottom <= geo.submit.top && geo.submit.top >= geo.body.bottom && geo.submit.bottom <= geo.panel.bottom && geo.panel.bottom <= geo.vh, `${tag}: the Sign in button sits below the Password field and the body (nothing covers a field) and the whole modal is in the window`);
     if (tag === 'full-desktop-light' || tag === 'full-phone-dark') await page.screenshot({ path: path.join(shots, `${tag}-signin.png`), fullPage: false });
-    await t('signin-password').fill(DEMO_PASSWORD);
-    await t('signin-submit').click();
-    await page.waitForFunction(() => document.querySelector('[data-testid="outcome"]')?.textContent === 'REAL_PERMIT', null, { timeout: 20000 });
+    if (tag === 'full-desktop-light' || tag === 'full-phone-dark') {
+      // "Forgot password?" in the real browser (owner 2026-11-17): the dialog drives PingOne's recovery (the fake's flows API), then the waiting run continues.
+      const NEW_PW = ['Brand', 'New-', 'Pass-', '77'].join('');
+      const sentBefore = fullP1.state.recovery.sent;
+      await t('signin-forgot').click();
+      await t('signin-recover-form').waitFor();
+      await walk(page, `${tag}: the recovery step of the sign-in dialog`);
+      check((await t('signin-username').inputValue()) === DEMO_USERNAME && (await t('signin-username').getAttribute('readonly')) !== null && (await t('signin-new').getAttribute('type')) === 'password' && (await t('signin-confirm').getAttribute('type')) === 'password', `${tag}: Forgot password? opens the recovery step: the username read-only, the code field and two new-password fields`);
+      const rgeo = await page.evaluate(() => {
+        const box = (el) => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; };
+        const dlg = document.querySelector('[data-testid="signin-dialog"]');
+        // The body scrolls on a short window (the buttons are the footer, outside it): each field must be reachable by scrolling and then sit inside the body.
+        const fields = ['signin-code', 'signin-new', 'signin-confirm'].map((id) => { const el = dlg.querySelector(`[data-testid="${id}"]`); el.scrollIntoView({ block: 'nearest' }); return box(el); });
+        return { body: box(dlg.querySelector('.fd-body')), fields, submit: box(dlg.querySelector('[data-testid="signin-submit"]')), panel: box(dlg), vh: window.innerHeight };
+      });
+      check(rgeo.fields.every((f) => f.top >= rgeo.body.top - 1 && f.bottom <= rgeo.body.bottom + 1) && rgeo.submit.top >= rgeo.body.bottom - 1 && rgeo.panel.bottom <= rgeo.vh, `${tag}: each recovery field can be scrolled into the modal body, the button stays below it and the modal is in the window`);
+      if (tag === 'full-desktop-light') await page.screenshot({ path: path.join(shots, `${tag}-recovery.png`), fullPage: false });
+      if (tag === 'full-desktop-light') { // one email per 20 seconds for the whole lab (one mailbox): the second tag does not ask again
+        await t('signin-send-code').click();
+        await t('signin-info').waitFor({ timeout: 15000 });
+        check(fullP1.state.recovery.sent === sentBefore + 1 && /recovery code was sent/.test(await t('signin-info').innerText()), `${tag}: Email me a code asks PingOne to send the code once and says so`);
+      }
+      const recoveredBefore = fullP1.state.recovery.recover.length;
+      await t('signin-code').fill(RECOVERY_CODE); await t('signin-new').fill(NEW_PW); await t('signin-confirm').fill(NEW_PW + 'x');
+      await t('signin-submit').click();
+      await page.waitForFunction(() => /not the same/.test(document.querySelector('[data-testid="signin-error"]')?.textContent || ''), null, { timeout: 10000 });
+      check(/not the same/.test(await t('signin-error').innerText()) && fullP1.state.recovery.recover.length === recoveredBefore, `${tag}: two different new passwords are refused in the dialog before anything is sent`);
+      await t('signin-code').fill(RECOVERY_CODE); await t('signin-new').fill(NEW_PW); await t('signin-confirm').fill(NEW_PW);
+      await t('signin-submit').click();
+      await page.waitForFunction(() => document.querySelector('[data-testid="outcome"]')?.textContent === 'REAL_PERMIT', null, { timeout: 20000 });
+      check(fullP1.state.recovery.recover.length === recoveredBefore + 1 && fullP1.state.recovery.recover.at(-1).code === RECOVERY_CODE && !(await page.content()).includes(NEW_PW), `${tag}: the code and the new password went to PingOne once and are on no part of the page`);
+      fullP1.state.password = DEMO_PASSWORD; // the later sign-ins of this run use the fake's own password
+    } else {
+      await t('signin-password').fill(DEMO_PASSWORD);
+      await t('signin-submit').click();
+      await page.waitForFunction(() => document.querySelector('[data-testid="outcome"]')?.textContent === 'REAL_PERMIT', null, { timeout: 20000 });
+    }
     check((await t('signin-dialog').count()) === 0 && (await t('who').innerText()).includes(DEMO_USERNAME), `${tag}: signed in, the modal closed and the header names the user`);
     // The PingOne session (owner 2026-11-16): a second tab (a new workspace) is signed in with no password and no dialog.
     const passwordsBefore = fullP1.seen.filter((c) => c.method === 'POST' && /\/flows\//.test(c.url)).length;
