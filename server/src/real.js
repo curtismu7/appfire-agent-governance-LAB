@@ -1222,9 +1222,37 @@ const AIRLINE_SHOWN = {
   list_airports: ['total'],
   request_change_fee_waiver: ['request_id', 'status', 'flight', 'requested_by', 'note'],
 };
+// The airline read tools say their answer in a plain sentence (owner 2026-11-18: not "Here is what get_airline_bookings returned: signed_in_sub ..."): only the
+// fields the tool is pinned to (AIRLINE_SHOWN), each checked for its type and shape; any other shape falls back to the generic text below. No tool name, no subject id.
+const isShort = (v, max = 40) => typeof v === 'string' && v.length > 0 && v.length <= max && !/[\u0000-\u001f]/.test(v);
+const isCount = (v) => Number.isInteger(v) && v >= 0 && v <= 1_000_000;
+function airlineSentence(tool, p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return null;
+  switch (tool) {
+    case 'get_airline_bookings': {
+      if (!isCount(p.total) || !isCount(p.miles)) return null;
+      const trips = Array.isArray(p.trips) ? p.trips.filter((t) => t && isShort(t.flight, 10) && isShort(t.route, 20) && isShort(t.departs, 30)).slice(0, 3) : [];
+      const list = trips.length ? `: ${trips.map((t) => `${t.flight} ${t.route}, ${t.departs}`).join('; ')}` : '';
+      return `You have ${p.total} upcoming ${p.total === 1 ? 'trip' : 'trips'}${list}. Your balance is ${p.miles.toLocaleString('en-US')} miles.`;
+    }
+    case 'get_flight_status':
+      if (!isShort(p.flight, 10) || !isShort(p.status, 30)) return null;
+      return `${p.flight}${isShort(p.route, 20) ? ` (${p.route})` : ''} is ${p.status}${isShort(p.gate, 10) ? `, at gate ${p.gate}` : ''}${isShort(p.departs, 30) ? `, departing ${p.departs}` : ''}.`;
+    case 'sensitive_passenger_record':
+      if (!/^[0-9]{4}$/.test(String(p.passport_last4 ?? '')) || !/^[0-9]{4}$/.test(String(p.card_last4 ?? ''))) return null;
+      return `Your traveller record is on file: passport ending ${p.passport_last4}, a known traveller number, and a card ending ${p.card_last4}. Full numbers stay masked in chat.`;
+    case 'list_airports':
+      return isCount(p.total) ? `There ${p.total === 1 ? 'is 1 airport' : `are ${p.total} airports`} near you.` : null;
+    case 'request_change_fee_waiver':
+      if (!/^CFW-[0-9A-F]{6}$/.test(String(p.request_id ?? '')) || !isShort(p.status, 30)) return null;
+      return `Your change fee waiver request ${p.request_id} is filed and ${p.status}. Nothing is waived until it is reviewed.`;
+    default: return null;
+  }
+}
 export function replyText(tool, result, opts = {}) {
   if (tool === 'book_airline_flight') { const b = bookingReply(result, opts); if (b) return b; }
   const p = toolPayload(result);
+  if (Object.hasOwn(AIRLINE_SHOWN, tool)) { const plain = airlineSentence(tool, p); if (plain) return cleanKeepIds(plain, 600); }
   if (typeof p === 'string') return cleanFree(`Here is what ${tool} returned: ${p}`, 600);
   const labData = p && typeof p === 'object' && !Array.isArray(p) && p.lab_invented === true;
   const shown = Object.hasOwn(AIRLINE_SHOWN, tool) ? AIRLINE_SHOWN[tool] : null;
