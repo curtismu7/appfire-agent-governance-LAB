@@ -229,7 +229,7 @@ check((await healthOf(liveBase)) === 'live' && (await healthOf(base)) === 'offli
 let browser;
 try {
   browser = await chromium.launch({ executablePath: process.env.E2E_CHROMIUM || undefined });
-  // Today's demo set (the airline pack opens on its eight cases): every block below drives the whole catalog, so its pages start on "All use cases" (the choice is read from localStorage `aag.set`).
+  // Today's demo set (the lab opens on all use cases; the eight are one click away): every block below drives the whole catalog, so its pages are pinned to "All use cases" (the choice is read from localStorage `aag.set`).
   // The toggle block uses `rawContext`, which leaves the saved choice alone.
   const rawContext = browser.newContext.bind(browser);
   browser.newContext = async (o) => { const c = await rawContext(o); await c.addInitScript(() => { try { window.localStorage.setItem('aag.set', 'all'); } catch { /* storage blocked */ } }); return c; };
@@ -554,22 +554,22 @@ try {
     }
   }
 
-  // ---- Today's demo set: the airline pack opens on its eight cases; "All use cases" brings the whole catalog back, and the choice is remembered ----
+  // ---- Today's demo set: the lab opens on All use cases; "Today's demo (8)" narrows the airline pack to its eight cases, and the choice is remembered ----
   {
     const tag = 'demo-set';
     const ctx = await rawContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
     const t = (id) => page.getByTestId(id);
-    await page.goto(`${base}/`); await t('uc-UC7').waitFor();
-    check((await t('set-demo').getAttribute('aria-pressed')) === 'true' && (await t('set-demo').innerText()).includes('(8)'), `${tag}: the page opens on Today's demo (8)`);
-    check((await t('uc-UC1').count()) === 0 && (await t('uc-UC6').count()) === 1, `${tag}: a use case outside the eight is not listed, one of the eight is`);
+    await page.goto(`${base}/`); await t('uc-UC1').waitFor(); // on All use cases the first track is open and the others are folded
+    check((await t('set-all').getAttribute('aria-pressed')) === 'true' && (await t('set-demo').innerText()).includes('(8)'), `${tag}: the page opens on All use cases, with Today's demo (8) one click away`);
+    check((await t('uc-UC1').count()) === 1 && (await t('wtt-UC1').count()) === 1, `${tag}: a use case outside the eight is listed, in the list and in What to type`);
+    await t('set-demo').click();
+    check((await t('set-demo').getAttribute('aria-pressed')) === 'true' && (await t('uc-UC1').count()) === 0 && (await t('uc-UC6').count()) === 1, `${tag}: Today's demo (8) lists only the eight`);
     check((await t('wtt-UC1').count()) === 0 && (await t('wtt-UC7').count()) === 1, `${tag}: What to type lists only the eight`);
+    await page.reload(); await t('uc-UC7').waitFor();
+    check((await t('set-demo').getAttribute('aria-pressed')) === 'true' && (await t('uc-UC1').count()) === 0, `${tag}: the choice is remembered after a reload`);
     await t('set-all').click(); await t('uc-UC1').waitFor();
     check((await t('set-all').getAttribute('aria-pressed')) === 'true' && (await t('wtt-UC1').count()) === 1, `${tag}: All use cases brings the rest back`);
-    await page.reload(); await t('uc-UC1').waitFor();
-    check((await t('set-all').getAttribute('aria-pressed')) === 'true', `${tag}: the choice is remembered after a reload`);
-    await t('set-demo').click();
-    check((await t('uc-UC1').count()) === 0, `${tag}: switching back hides them again`);
     await ctx.close();
   }
 
