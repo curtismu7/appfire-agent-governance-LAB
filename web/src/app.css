@@ -205,6 +205,8 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 .cases__actions, .cases__step { display: flex; flex-wrap: wrap; gap: 8px; }
 .cases__all { font-size: 16px; margin: 18px 0 0; }
 @media (max-width: 900px) { .cases { grid-template-columns: minmax(0, 1fr); } }
+/* On a phone the shared dialog is a bottom sheet up to 85vh, which covers the wrapped nav; the Talk track's sheet stops short of it. */
+@media (max-width: 600px) { .fd-panel.talk-dialog[data-placement] { max-height: 60vh; } }
 
 /* The Run buttons in the talk track are real buttons (the global button style), a little smaller than a form button; the pressed one fills with the accent. */
 .talk__run { font-size: 13px; padding: 4px 12px; min-height: 32px; text-align: left; }

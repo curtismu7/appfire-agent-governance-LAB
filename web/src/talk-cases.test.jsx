@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import TalkTrack from "./components/TalkTrack";
 import { DEMO_CASES, casesFor } from "./demoCases";
@@ -10,6 +10,7 @@ const prompts = DEMO_CASES.filter((c) => c.uc).map((c) => ({ uc: c.uc, text: `ty
 const cast = { castFareRule: true };
 
 describe("the Talk track's eight cases", () => {
+  beforeEach(() => { vi.restoreAllMocks(); vi.spyOn(window, "open").mockReturnValue(null); }); // jsdom has no windows: a blocked pop-out
   test("only the airline pack (a fare rule) has them", () => {
     expect(casesFor(cast)).toBe(DEMO_CASES);
     expect(casesFor({})).toBeNull();
@@ -64,5 +65,31 @@ describe("the Talk track's eight cases", () => {
     expect(screen.getByTestId("case-next").disabled).toBe(true);
     fireEvent.click(screen.getByTestId("case-prev"));
     expect(screen.getByTestId("case-detail").dataset.case).toBe("poisoned-instructions");
+  });
+
+  test("with the cases it tries to open in its own window once (and never without them); a blocked window leaves it docked", () => {
+    const open = window.open;
+    const plain = render(<TalkTrack talk={talk} onClose={() => {}} />);
+    expect(open).not.toHaveBeenCalled();
+    plain.unmount();
+    render(<TalkTrack talk={talk} cases={DEMO_CASES} cast={cast} prompts={prompts} onClose={() => {}} />);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByTestId("talk-track-dialog")).toHaveLength(1); // the cases one stayed docked: the window was blocked
+  });
+
+  test("Run closes the dialog while it is docked over the page", () => {
+    const onCase = vi.fn(); const onClose = vi.fn();
+    render(<TalkTrack talk={talk} cases={DEMO_CASES} cast={cast} prompts={prompts} onCase={onCase} onClose={onClose} />);
+    fireEvent.click(screen.getByTestId("case-run"));
+    expect(onCase).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test("a link does not close it", () => {
+    const onLink = vi.fn(); const onClose = vi.fn();
+    render(<TalkTrack talk={talk} cases={DEMO_CASES} cast={cast} prompts={prompts} onLink={onLink} onClose={onClose} />);
+    fireEvent.click(screen.getByTestId("case-link-guide"));
+    expect(onLink).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
