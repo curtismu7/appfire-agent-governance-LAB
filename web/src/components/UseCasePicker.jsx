@@ -44,7 +44,7 @@ export default function UseCasePicker({ catalog, selectedId, onPick, failed = fa
       <p className="muted" role="status" aria-live="polite" data-testid="search-count">{!catalog && failed ? "Use cases unavailable" : q ? `${found} of ${catalog?.total ?? 87} match` : keep ? `${found} of ${catalog?.total ?? 87} shown` : `${catalog?.total ?? 87} use cases in 8 tracks`}</p>
       {!catalog && (failed ? <p className="muted" data-testid="catalog-failed">The use cases could not be loaded. Is the server running?</p> : <p className="muted">Loading the use cases...</p>)}
       {tracks.map((t) => (t.shown.length === 0 ? null : (
-        <details key={t.track} className="pick__track" open={q ? true : openTracks.has(t.track)} onToggle={(e) => { const isOpen = e.currentTarget.open; if (!q) setOpenTracks((cur) => { const next = new Set(cur); if (isOpen) next.add(t.track); else next.delete(t.track); return next; }); }} data-testid={`track-${t.track}`}>
+        <details key={t.track} className="pick__track" open={q || keep ? true : openTracks.has(t.track)} onToggle={(e) => { const isOpen = e.currentTarget.open; if (!q && !keep) setOpenTracks((cur) => { const next = new Set(cur); if (isOpen) next.add(t.track); else next.delete(t.track); return next; }); }} data-testid={`track-${t.track}`}>
           <summary>{TRACK_LABELS[t.track] || t.track} <span className="muted">({q || keep ? `${t.shown.length} of ${t.count}` : t.count})</span></summary>
           <ul className="pick__list">{t.shown.map((u) => <UseCaseRow key={u.id} u={u} selected={u.id === selectedId} onPick={onPick} slim={slim} />)}</ul>
         </details>
