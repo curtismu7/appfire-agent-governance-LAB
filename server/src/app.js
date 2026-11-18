@@ -36,7 +36,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
 const CONFIG = process.env.CUSTOMER_CONFIG || path.resolve(HERE, '../../customer.config.json');
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-const KEYS = Object.freeze({ run: ['vertical', 'persona', 'mode', 'brain', 'said', 'instructions', 'approvalId'], mode: ['mode'], reset: [], pick: ['vertical', 'text'], signin: ['password'], signout: [] });
+const KEYS = Object.freeze({ run: ['vertical', 'persona', 'mode', 'brain', 'said', 'instructions', 'approvalId'], mode: ['mode'], reset: [], pick: ['vertical', 'text'], signin: ['password'], signinForgot: [], signinCode: [], signinRecover: ['recoveryCode', 'newPassword'], signinChange: ['currentPassword', 'newPassword'], signinCancel: [], signout: [] });
 
 // What a list or detail answer shows for a use case: the manifest row, plus the tool resolved for the vertical and whether the run is guided (the
 // lab opens the product's page and does not compute the outcome) or computed by the engine. `labInputs` are the lab-invented numbers and events fed to the engine (empty for most).
@@ -252,23 +252,57 @@ export function createApp({
     res.json({ available: why === null, reason: why, method: 'pi.flow', redirect: false, username: why ? null : real.username(), signedIn: Boolean(s), user: s ? real.userOf(s) : null });
     } catch (e) { next(e); }
   });
-  api.post('/signin', jsonWrites, async (req, res, next) => {
+  // One answer for every sign-in step: signed in, one more step for the dialog (more), or a fixed-text refusal. Never a password, a code or a secret.
+  const signInAnswer = (res, out) => {
+    if (out.ok) return res.json({ signedIn: true, user: out.user, steps: out.steps });
+    if (out.more) return res.json({ signedIn: false, next: out.more, message: out.message, steps: out.steps });
+    return res.status(out.status).json({ error: out.error, message: out.message, pingone: out.pingone ?? null, steps: out.steps });
+  };
+  const runSignIn = (key, handler) => async (req, res, next) => {
     try {
       const id = ws(req, res); if (!id) return;
       noStore(res);
-      if (!strict(req, res, KEYS.signin)) return;
+      if (!strict(req, res, KEYS[key])) return;
       const why = signInRefusal(req);
       if (why) return res.status(409).json({ error: 'real_not_available', message: why });
-      const pw = bodyOf(req).password;
-      if (typeof pw !== 'string' || pw.length < 1 || pw.length > 256) return res.status(400).json({ error: 'bad_password', detail: 'type the password (1 to 256 characters)' });
+      const tp = parseTraceparent(req.headers.traceparent) ? req.headers.traceparent : randomTraceparent();
       let out;
-      try { out = await real.signIn(id, pw, parseTraceparent(req.headers.traceparent) ? req.headers.traceparent : randomTraceparent()); } catch (e) {
+      try { out = await handler(id, bodyOf(req), tp, res); if (out === undefined) return; } catch (e) {
         if (e instanceof RealRefused) return res.status(e.status).json({ error: e.code, message: e.message });
         throw e;
       }
-      if (!out.ok) return res.status(out.status).json({ error: out.error, message: out.message, pingone: out.pingone ?? null, steps: out.steps });
-      return res.json({ signedIn: true, user: out.user, steps: out.steps });
+      return signInAnswer(res, out);
     } catch (e) { return next(e); }
+  };
+  const secretText = (v, res, what) => {
+    if (typeof v !== 'string' || v.length < 1 || v.length > 256) { res.status(400).json({ error: 'bad_password', detail: `type ${what} (1 to 256 characters)` }); return null; }
+    return v;
+  };
+  api.post('/signin', jsonWrites, runSignIn('signin', (id, b, tp, res) => {
+    const pw = secretText(b.password, res, 'the password'); if (pw === null) return undefined;
+    return real.signIn(id, pw, tp);
+  }));
+  // "Forgot password?", the code, the new password; and the forced change of a temporary or expired one (owner 2026-11-17). All drive PingOne's pi.flow
+  // password actions on the server; a waiting flow lasts ten minutes and holds no password or code. Secrets are used once and never stored, logged or returned.
+  api.post('/signin/forgot', jsonWrites, runSignIn('signinForgot', (id, b, tp) => real.forgot(id, tp)));
+  api.post('/signin/code', jsonWrites, runSignIn('signinCode', (id) => real.sendCode(id)));
+  api.post('/signin/recover', jsonWrites, runSignIn('signinRecover', (id, b, tp, res) => {
+    const code = typeof b.recoveryCode === 'string' ? b.recoveryCode.trim() : '';
+    if (!/^[A-Za-z0-9]{4,16}$/.test(code)) { res.status(400).json({ error: 'bad_code', detail: 'type the recovery code from the email (letters and digits)' }); return undefined; }
+    const np = secretText(b.newPassword, res, 'the new password'); if (np === null) return undefined;
+    return real.recover(id, code, np, tp);
+  }));
+  api.post('/signin/change', jsonWrites, runSignIn('signinChange', (id, b, tp, res) => {
+    const cur = secretText(b.currentPassword, res, 'the current password'); if (cur === null) return undefined;
+    const np = secretText(b.newPassword, res, 'the new password'); if (np === null) return undefined;
+    return real.changePassword(id, cur, np, tp);
+  }));
+  api.post('/signin/cancel', jsonWrites, (req, res) => {
+    const id = ws(req, res); if (!id) return;
+    noStore(res);
+    if (!strict(req, res, KEYS.signinCancel)) return;
+    real.cancelSignIn(id);
+    res.json({ cancelled: true });
   });
   api.post('/signout', jsonWrites, (req, res) => {
     const id = ws(req, res); if (!id) return;

@@ -237,3 +237,7 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 .working { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-weight: 600; }
 .working__s { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
 .evcol__running { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; background: var(--surface-2); }
+
+/* The Sign in dialog: "Forgot password?" and "Email me a code" are text buttons. */
+.signin__link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--text); text-decoration: underline; cursor: pointer; }
+.signin__link:disabled { color: var(--muted); cursor: default; }

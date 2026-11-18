@@ -138,3 +138,15 @@ prints what one holds); that `airline-second-factor-required` and `airline-booki
 least-privilege role works; that your endpoint's rate limit allows the lab's pace (it asks at most once per 1.1 s and retries a 429 once after 1.5 s); that a later edit of a limit in the console is picked up on the next booking
 (the endpoint is "Use latest": the lab shows the code it gets and applies the narrowing the code names; the limit it displays stays its own `FARE_RULE` until it is edited there); and that the `ToolName` parameter is part of
 the policy's gate. The numbers stay LAB-INVENTED.
+
+### Sign-in: "Forgot password?" and "Choose a new password" (UNVERIFIED against your tenant)
+
+The Sign in dialog drives PingOne's own password actions over pi.flow (no redirect). Check once on your tenant:
+
+1. Click **Forgot password?**. PingOne must accept the lab's username (`AAG_DEMO_USERNAME`) and the dialog switches to the recovery step. The PingOne user needs an email address, a password and a working email service; otherwise the dialog says PingOne could not start the recovery.
+2. Click **Email me a code**. PingOne sends an 8-character code that lasts 5 minutes (at most one every 20 seconds). Whether PingOne already emails a code at step 1 is not known; if one arrives, use it.
+3. Type the code and a new password twice, then **Set the password and sign in**. The lab never stores or shows either. UNVERIFIED: the state PingOne returns after a successful recovery (the lab handles `COMPLETED`, a plain sign-in step and a forced change; anything else, such as MFA, gets the "this lab does not drive" message).
+4. A temporary or expired password: set one in the PingOne console with "force change at next sign-in", sign in, and the dialog asks for the current and a new password.
+
+To keep a demo user ordinary, set a permanent password in the console (do not force a change).
+

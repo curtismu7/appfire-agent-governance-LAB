@@ -53,6 +53,13 @@ const REGION_TLD = { na: 'com', us: 'com', com: 'com', eu: 'eu', ca: 'ca', ap: '
 const TX = 'urn:ietf:params:oauth:grant-type:token-exchange';
 const AT = 'urn:ietf:params:oauth:token-type:access_token';
 const PW_TYPE = 'application/vnd.pingidentity.usernamePassword.check+json';
+// The flows API's recovery and password-change actions (owner 2026-11-17: "Forgot password?" and "Choose a new password" in the Sign in dialog).
+const FORGOT_TYPE = 'application/vnd.pingidentity.password.forgot+json';
+const SEND_CODE_TYPE = 'application/vnd.pingidentity.password.sendRecoveryCode+json';
+const RECOVER_TYPE = 'application/vnd.pingidentity.password.recover+json';
+const RESET_TYPE = 'application/vnd.pingidentity.password.reset+json';
+const PENDING_MS = 10 * 60 * 1000; // a flow that waits for the person (the recovery code lasts 5 minutes)
+const CODE_GAP_MS = 20 * 1000; // at most one recovery email per 20 seconds
 const EX1_TITLE = 'Exchange 1: act = agent';
 const EX2_TITLE = 'Exchange 2: for the gateway';
 const EX2_TOOLS_TITLE = 'Exchange 2: for the tools';
@@ -333,87 +340,212 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     return s;
   };
 
-  // The pi.flow sign-in. password: what the person typed (a string). Returns { ok: true, user, steps } or { ok: false, status, error, message, steps }.
+  // The pi.flow sign-in. password: what the person typed (a string). Returns { ok: true, user, steps }, { ok: false, status, error, message, steps }
+  // or { ok: false, more, message, steps } when PingOne wants one more step the dialog can drive (more: 'change_password' | 'recovery_code' | 'password').
   // The password is used in one request body below and is not kept anywhere; `steps` (what the dialog and the Sign-in hop show) never carry it.
+  //
+  // The same flow carries the two recovery steps (owner 2026-11-17): "Forgot password?" (forgot, sendCode, recover) and the forced change of a temporary
+  // or expired password (changePassword). A flow that waits for the person is kept in `pending` per workspace: its flow id, the cookies PingOne set,
+  // the PKCE verifier, state and nonce, and the steps shown so far. Never a password or a code. UNVERIFIED against a real tenant (the fake models the states).
+  const pending = new Map(); // workspace id -> { kind: 'change' | 'recover', ctx, flowId, expiresAt }
+  let lastCodeAt = -Infinity;
+  const sweepPending = () => { for (const [k, v] of pending) if (v.expiresAt <= now()) pending.delete(k); };
+
+  function newCtx(ws, traceparentIn, { silent = false } = {}) {
+    const trace = newTrace(traceparentIn, `signin:${ws}`);
+    const ctx = { silent, steps: [], jar: new Map(silent ? sso.cookies : []), trace, secrets: [], sent: false, verifier: randomBytes(32).toString('base64url'), state: randomBytes(12).toString('base64url'), nonce: randomBytes(12).toString('base64url') };
+    ctx.tp = () => formatTraceparent(trace.traceId, trace.span());
+    ctx.keep = (cookies) => { for (const c of cookies) { const pair = String(c).split(';')[0]; const i = pair.indexOf('='); if (i > 0) ctx.jar.set(pair.slice(0, i).trim(), pair.slice(i + 1)); } };
+    ctx.cookieHeader = () => [...ctx.jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    // Belt and braces: any secret typed in this sign-in (the password, a recovery code, a new password), if it ever appears in what is returned, is replaced
+    // (only when long enough to be unambiguous).
+    ctx.scrub = (v) => {
+      let text = JSON.stringify(v); let hit = false;
+      for (const s of ctx.secrets) if (typeof s === 'string' && s.length >= 4) { const needle = JSON.stringify(s).slice(1, -1); if (text.includes(needle)) { text = text.split(needle).join('[typed by you]'); hit = true; } }
+      return hit ? JSON.parse(text) : v;
+    };
+    ctx.fail = (status, error, message, r) => ctx.scrub({ ok: false, status, error, message, steps: ctx.steps, ...(r ? { pingone: ctx.sent ? p1Codes(r) : p1Error(r) } : {}) });
+    ctx.more = (more, message) => ctx.scrub({ ok: false, more, message, steps: ctx.steps });
+    return ctx;
+  }
+  const flowUrl = (flowId) => `${config.base}/flows/${flowId}`;
+  // A POST to the flows API with one of PingOne's vendor content types; the step records the request with the secrets replaced by PASSWORD_SHOWN.
+  async function flowPost(ctx, flowId, type, body, label, shownBody) {
+    const t = ctx.tp();
+    const r = await p1(flowUrl(flowId), { method: 'POST', headers: { 'content-type': type, accept: '*/*', ...(ctx.jar.size ? { cookie: ctx.cookieHeader() } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, t);
+    ctx.keep(r.cookies);
+    ctx.steps.push({ step: label, traceparent: t, request: { method: 'POST', url: flowUrl(flowId), headers: { 'content-type': type, cookie: ctx.cookieHeader() }, ...(shownBody === undefined ? {} : { body: shownBody }) }, response: { status: r.status, body: r.json && r.status === 200 ? { id: str(r.json.id, 64), status: str(r.json.status, 64) } : p1Codes(r) } });
+    return r;
+  }
+  const lost = (ctx, r) => (r.unreachable ? ctx.fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', r) : null);
+
+  // 1. authorize, pi.flow: the answer is JSON (a flow), not a redirect.
+  async function startFlow(ctx) {
+    // PingOne refuses scopes from two custom resources in one authorize ("May not request scopes for multiple resources"),
+    // so the sign-in asks for the agent scope only (the gateway scope arrives on the exchange-2 token, whose audience the
+    // gateway-scope resource chooses). The agent scope on the user token is also what the resource's may_act attribute
+    // resolves from, so the exchange-1 resource can stamp act.
+    const query = { response_type: 'code', client_id: config.user.id, redirect_uri: REDIRECT_URI, scope: `${SIGN_IN_SCOPES} ${config.agentScope}`, response_mode: 'pi.flow', code_challenge: createHash('sha256').update(ctx.verifier).digest('base64url'), code_challenge_method: 'S256', state: ctx.state, nonce: ctx.nonce };
+    const t1 = ctx.tp();
+    const a = await p1(`${config.base}/as/authorize?${new URLSearchParams(query)}`, { method: 'GET', headers: { accept: 'application/json', ...(ctx.silent && ctx.jar.size ? { cookie: ctx.cookieHeader() } : {}) } }, t1);
+    ctx.keep(a.cookies);
+    ctx.steps.push({ step: ctx.silent ? 'authorize (response_mode=pi.flow, PKCE S256, with your PingOne session: no password)' : 'authorize (response_mode=pi.flow, PKCE S256)', traceparent: t1, request: { method: 'GET', url: `${config.base}/as/authorize`, query }, response: { status: a.status, body: a.json ? { id: str(a.json.id, 64), status: str(a.json.status, 64), ...(a.status === 200 ? {} : p1Error(a)) } : p1Error(a), 'set-cookie': a.cookies.map(String) } });
+    if (a.unreachable) return { failed: ctx.fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', a) };
+    if (a.status !== 200 || !a.json || !FLOW_ID.test(String(a.json.id || ''))) return { failed: ctx.fail(502, 'signin_refused', `PingOne refused to start the sign-in (${failText(a)}).`, a) };
+    return { flow: a.json, flowId: a.json.id }; // checked against FLOW_ID above; later answers never change the id the lab calls
+  }
+
+  // 3 and 4. the code (in the completed flow, or from resume with the flow's cookies), then the code for tokens. Makes the workspace's session.
+  async function finishFlow(ws, ctx, flow, flowId, trace) {
+    const { steps, scrub, fail, tp, keep, cookieHeader, jar } = ctx;
+    let code = str(flow.authorizeResponse?.code, 2000); let gotState = flow.authorizeResponse?.state;
+    if (!code) {
+      const t3 = tp();
+      const r = await p1(`${config.base}/as/resume?flowId=${encodeURIComponent(flowId)}`, { method: 'GET', headers: { accept: 'application/json', ...(jar.size ? { cookie: cookieHeader() } : {}) } }, t3);
+      keep(r.cookies); // the PingOne session cookie can arrive here too
+      steps.push({ step: 'resume: the authorization code', traceparent: t3, request: { method: 'GET', url: `${config.base}/as/resume?flowId=${flowId}`, headers: { cookie: cookieHeader() } }, response: { status: r.status, body: r.json?.authorizeResponse ? { authorizeResponse: { code: str(r.json.authorizeResponse.code, 2000), state: str(r.json.authorizeResponse.state, 200) } } : p1Codes(r) } });
+      if (r.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', r);
+      code = str(r.json?.authorizeResponse?.code, 2000); gotState = r.json?.authorizeResponse?.state;
+      if (r.status !== 200 || !code) return fail(502, 'signin_refused', `PingOne did not hand back an authorization code (${failText(r)}).`, r);
+    }
+    if (gotState !== ctx.state) return fail(502, 'signin_refused', 'The authorization code came back without the state the lab sent; the lab refuses it.');
+    // 4. code for tokens (the user app's secret in the Authorization header only).
+    const t4 = tp();
+    const tok = await tokenCall({ grant_type: 'authorization_code', code, code_verifier: ctx.verifier, redirect_uri: REDIRECT_URI }, config.user, t4);
+    const at = typeof tok.json?.access_token === 'string' ? tok.json.access_token : null;
+    steps.push({ step: 'token: the code for the user\'s tokens', traceparent: t4, request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: 'authorization_code', code, code_verifier: ctx.verifier, redirect_uri: REDIRECT_URI } }, response: { status: tok.status, body: at ? { access_token: at, id_token: str(tok.json.id_token, 8000), token_type: str(tok.json.token_type), expires_in: Number.isFinite(tok.json.expires_in) ? tok.json.expires_in : null, scope: str(tok.json.scope) } : p1Codes(tok) } });
+    if (tok.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', tok);
+    if (tok.status !== 200 || !at) return fail(502, 'signin_refused', `PingOne did not issue the user's tokens (${failText(tok)}).`, tok);
+    const idClaims = typeof tok.json.id_token === 'string' ? decodeJwt(tok.json.id_token)?.claims ?? null : null;
+    if (idClaims && idClaims.nonce !== ctx.nonce) return fail(502, 'signin_refused', 'The ID token does not carry the nonce the lab sent; the lab refuses it.');
+    const dec = decodeJwt(at);
+    const life = Number.isFinite(tok.json.expires_in) && tok.json.expires_in > 0 ? Math.min(tok.json.expires_in, 24 * 3600) : 3600;
+    const session = { accessToken: at, header: dec?.header ?? null, claims: dec?.claims ?? null, idClaims, expiresAt: now() + life * 1000, steps, traceId: trace.traceId, viaP1Session: ctx.silent };
+    sessions.set(ws, session);
+    pending.delete(ws);
+    if (jar.size) sso = { cookies: new Map(jar) };
+    return scrub({ ok: true, user: userOf(session), steps });
+  }
+
+  // The flow waits for the person: keep it for ten minutes and tell the dialog which step to show.
+  function holdFor(ws, ctx, flowId, kind, message) {
+    sweepPending();
+    if (!pending.has(ws) && pending.size >= MAX_SESSIONS) return ctx.fail(429, 'too_many', 'too many sign-ins waiting; try again in a few minutes');
+    pending.set(ws, { kind, ctx, flowId, expiresAt: now() + PENDING_MS });
+    return ctx.more(kind === 'change' ? 'change_password' : 'recovery_code', message);
+  }
+  const CHANGE_MESSAGE = 'PingOne asks you to choose a new password before signing in (the password is temporary or has expired).';
+  const RECOVER_MESSAGE = 'PingOne found the user. Enter the recovery code from the email together with a new password. The code is 8 characters and lasts 5 minutes.';
+
   async function signIn(ws, password, traceparentIn, { silent = false } = {}) {
     if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
     if (silent && !sso) return { ok: false, status: 401, error: 'no_p1_session', message: 'There is no PingOne session to use: sign in with your password.', steps: [] };
     if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two calls are already in flight; wait for one to finish', 429);
     if (!sessions.has(ws) && sessions.size >= MAX_SESSIONS) throw new RealRefused('too_many', 'too many signed-in workspaces; Reset one first', 429);
     inFlight += 1;
-    const trace = newTrace(traceparentIn, `signin:${ws}`);
-    const tp = () => formatTraceparent(trace.traceId, trace.span());
-    const steps = [];
-    const jar = new Map(silent ? sso.cookies : []);
-    const keep = (cookies) => { for (const c of cookies) { const pair = String(c).split(';')[0]; const i = pair.indexOf('='); if (i > 0) jar.set(pair.slice(0, i).trim(), pair.slice(i + 1)); } };
-    const cookieHeader = () => [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
-    let sent = false; // true once the password has gone to PingOne: from then on, only error codes are kept
-    // Belt and braces: the exact password, if it ever appears in what is returned, is replaced (only for passwords long enough to be unambiguous).
-    const scrub = (v) => (typeof password === 'string' && password.length >= 4 ? JSON.parse(JSON.stringify(v).split(JSON.stringify(password).slice(1, -1)).join('[the password]')) : v);
-    const fail = (status, error, message, r) => scrub({ ok: false, status, error, message, steps, ...(r ? { pingone: sent ? p1Codes(r) : p1Error(r) } : {}) });
+    const ctx = newCtx(ws, traceparentIn, { silent });
+    ctx.secrets.push(password);
+    const { steps, fail } = ctx;
     try {
-      // 1. authorize, pi.flow: the answer is JSON (a flow), not a redirect.
-      const verifier = randomBytes(32).toString('base64url');
-      const state = randomBytes(12).toString('base64url');
-      const nonce = randomBytes(12).toString('base64url');
-      // PingOne refuses scopes from two custom resources in one authorize ("May not request scopes for multiple resources"),
-      // so the sign-in asks for the agent scope only (the gateway scope arrives on the exchange-2 token, whose audience the
-      // gateway-scope resource chooses). The agent scope on the user token is also what the resource's may_act attribute
-      // resolves from, so the exchange-1 resource can stamp act.
-      const query = { response_type: 'code', client_id: config.user.id, redirect_uri: REDIRECT_URI, scope: `${SIGN_IN_SCOPES} ${config.agentScope}`, response_mode: 'pi.flow', code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256', state, nonce };
-      const t1 = tp();
-      const a = await p1(`${config.base}/as/authorize?${new URLSearchParams(query)}`, { method: 'GET', headers: { accept: 'application/json', ...(silent && jar.size ? { cookie: cookieHeader() } : {}) } }, t1);
-      keep(a.cookies);
-      steps.push({ step: silent ? 'authorize (response_mode=pi.flow, PKCE S256, with your PingOne session: no password)' : 'authorize (response_mode=pi.flow, PKCE S256)', traceparent: t1, request: { method: 'GET', url: `${config.base}/as/authorize`, query }, response: { status: a.status, body: a.json ? { id: str(a.json.id, 64), status: str(a.json.status, 64), ...(a.status === 200 ? {} : p1Error(a)) } : p1Error(a), 'set-cookie': a.cookies.map(String) } });
-      if (a.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', a);
-      if (a.status !== 200 || !a.json || !FLOW_ID.test(String(a.json.id || ''))) return fail(502, 'signin_refused', `PingOne refused to start the sign-in (${failText(a)}).`, a);
-      let flow = a.json;
-      const flowId = a.json.id; // checked against FLOW_ID above; later answers never change the id the lab calls
+      pending.delete(ws); // a fresh sign-in replaces a flow that was waiting
+      const s = await startFlow(ctx);
+      if (s.failed) return s.failed;
+      let flow = s.flow; const flowId = s.flowId;
       if (flow.status !== 'USERNAME_PASSWORD_REQUIRED' && flow.status !== 'COMPLETED') return fail(409, 'signin_step_unsupported', 'PingOne asked for a sign-in step this lab does not drive (only username and password). Check the user app\'s sign-on policy.');
       // The PingOne session is gone (it ended or was never valid for this app): forget it, and ask for the password the usual way.
       if (silent && flow.status === 'USERNAME_PASSWORD_REQUIRED') { sso = null; return fail(401, 'p1_session_ended', 'The PingOne session has ended, so PingOne asked for the password again. Sign in once more.'); }
       // 2. username and password, once.
       if (flow.status === 'USERNAME_PASSWORD_REQUIRED') {
-        const t2 = tp();
-        sent = true;
-        const r = await p1(`${config.base}/flows/${flowId}`, { method: 'POST', headers: { 'content-type': PW_TYPE, accept: '*/*', ...(jar.size ? { cookie: cookieHeader() } : {}) }, body: JSON.stringify({ username: config.username, password }) }, t2);
-        keep(r.cookies);
-        steps.push({ step: 'flows API: username and password', traceparent: t2, request: { method: 'POST', url: `${config.base}/flows/${flowId}`, headers: { 'content-type': PW_TYPE, cookie: cookieHeader() }, body: { username: config.username, password: PASSWORD_SHOWN } }, response: { status: r.status, body: r.json && r.status === 200 ? { id: str(r.json.id, 64), status: str(r.json.status, 64) } : p1Codes(r) } });
+        const t2 = ctx.tp();
+        ctx.sent = true;
+        const r = await p1(`${config.base}/flows/${flowId}`, { method: 'POST', headers: { 'content-type': PW_TYPE, accept: '*/*', ...(ctx.jar.size ? { cookie: ctx.cookieHeader() } : {}) }, body: JSON.stringify({ username: config.username, password }) }, t2);
+        ctx.keep(r.cookies);
+        steps.push({ step: 'flows API: username and password', traceparent: t2, request: { method: 'POST', url: `${config.base}/flows/${flowId}`, headers: { 'content-type': PW_TYPE, cookie: ctx.cookieHeader() }, body: { username: config.username, password: PASSWORD_SHOWN } }, response: { status: r.status, body: r.json && r.status === 200 ? { id: str(r.json.id, 64), status: str(r.json.status, 64) } : p1Codes(r) } });
         if (r.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', r);
         if (r.status === 400 || r.status === 401) return fail(401, 'signin_rejected', 'PingOne did not accept the username or password.', r);
         if (r.status !== 200 || !r.json) return fail(502, 'signin_refused', `PingOne refused the sign-in (${failText(r)}).`, r);
         flow = r.json;
+        if (flow.status === 'MUST_CHANGE_PASSWORD' || flow.status === 'PASSWORD_EXPIRED') return holdFor(ws, ctx, flowId, 'change', CHANGE_MESSAGE);
         if (flow.status !== 'COMPLETED') return fail(409, 'signin_step_unsupported', 'PingOne asked for a step after the password that this lab does not drive (for example MFA). Check the user app\'s sign-on policy.');
       }
-      // 3. the code: in the completed flow, or from resume with the flow's cookies.
-      let code = str(flow.authorizeResponse?.code, 2000); let gotState = flow.authorizeResponse?.state;
-      if (!code) {
-        const t3 = tp();
-        const r = await p1(`${config.base}/as/resume?flowId=${encodeURIComponent(flowId)}`, { method: 'GET', headers: { accept: 'application/json', ...(jar.size ? { cookie: cookieHeader() } : {}) } }, t3);
-        keep(r.cookies); // the PingOne session cookie can arrive here too
-        steps.push({ step: 'resume: the authorization code', traceparent: t3, request: { method: 'GET', url: `${config.base}/as/resume?flowId=${flowId}`, headers: { cookie: cookieHeader() } }, response: { status: r.status, body: r.json?.authorizeResponse ? { authorizeResponse: { code: str(r.json.authorizeResponse.code, 2000), state: str(r.json.authorizeResponse.state, 200) } } : p1Codes(r) } });
-        if (r.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', r);
-        code = str(r.json?.authorizeResponse?.code, 2000); gotState = r.json?.authorizeResponse?.state;
-        if (r.status !== 200 || !code) return fail(502, 'signin_refused', `PingOne did not hand back an authorization code (${failText(r)}).`, r);
-      }
-      if (gotState !== state) return fail(502, 'signin_refused', 'The authorization code came back without the state the lab sent; the lab refuses it.');
-      // 4. code for tokens (the user app's secret in the Authorization header only).
-      const t4 = tp();
-      const tok = await tokenCall({ grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: REDIRECT_URI }, config.user, t4);
-      const at = typeof tok.json?.access_token === 'string' ? tok.json.access_token : null;
-      steps.push({ step: 'token: the code for the user\'s tokens', traceparent: t4, request: { method: 'POST', url: `${config.base}/as/token`, headers: { authorization: SECRET_SHOWN }, body: { grant_type: 'authorization_code', code, code_verifier: verifier, redirect_uri: REDIRECT_URI } }, response: { status: tok.status, body: at ? { access_token: at, id_token: str(tok.json.id_token, 8000), token_type: str(tok.json.token_type), expires_in: Number.isFinite(tok.json.expires_in) ? tok.json.expires_in : null, scope: str(tok.json.scope) } : p1Codes(tok) } });
-      if (tok.unreachable) return fail(503, 'signin_unreachable', 'PingOne did not answer the sign-in. Check the network.', tok);
-      if (tok.status !== 200 || !at) return fail(502, 'signin_refused', `PingOne did not issue the user's tokens (${failText(tok)}).`, tok);
-      const idClaims = typeof tok.json.id_token === 'string' ? decodeJwt(tok.json.id_token)?.claims ?? null : null;
-      if (idClaims && idClaims.nonce !== nonce) return fail(502, 'signin_refused', 'The ID token does not carry the nonce the lab sent; the lab refuses it.');
-      const dec = decodeJwt(at);
-      const life = Number.isFinite(tok.json.expires_in) && tok.json.expires_in > 0 ? Math.min(tok.json.expires_in, 24 * 3600) : 3600;
-      const session = { accessToken: at, header: dec?.header ?? null, claims: dec?.claims ?? null, idClaims, expiresAt: now() + life * 1000, steps, traceId: trace.traceId, viaP1Session: silent };
-      sessions.set(ws, session);
-      if (jar.size) sso = { cookies: new Map(jar) };
-      return scrub({ ok: true, user: userOf(session), steps });
+      return await finishFlow(ws, ctx, flow, flowId, ctx.trace);
     } finally { inFlight -= 1; }
   }
+
+  // "Forgot password?": start a fresh flow, let PingOne look the user up (the username is the lab's own, never typed here), and wait for the code.
+  async function forgot(ws, traceparentIn) {
+    if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
+    if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two calls are already in flight; wait for one to finish', 429);
+    inFlight += 1;
+    const ctx = newCtx(ws, traceparentIn);
+    try {
+      pending.delete(ws);
+      const s = await startFlow(ctx);
+      if (s.failed) return s.failed;
+      if (s.flow.status !== 'USERNAME_PASSWORD_REQUIRED') return ctx.fail(409, 'signin_step_unsupported', 'PingOne did not ask for a password here, so a recovery cannot start (a PingOne session may already be signed in).');
+      const r = await flowPost(ctx, s.flowId, FORGOT_TYPE, { username: config.username }, 'flows API: forgot password (look the user up)', { username: config.username });
+      if (r.unreachable) return lost(ctx, r);
+      if (r.status !== 200 || !r.json) return ctx.fail(r.status === 400 || r.status === 404 ? 409 : 502, 'recovery_not_started', 'PingOne could not start a password recovery for this user (it needs an enabled user with an email address and a password).', r);
+      if (r.json.status !== 'RECOVERY_CODE_REQUIRED') return ctx.fail(409, 'signin_step_unsupported', 'PingOne answered the recovery with a step this lab does not drive.');
+      return holdFor(ws, ctx, s.flowId, 'recover', RECOVER_MESSAGE);
+    } finally { inFlight -= 1; }
+  }
+  const pendingOf = (ws, kind) => { sweepPending(); const p = pending.get(ws); return p && p.kind === kind ? p : null; };
+  const noPending = (kind) => ({ ok: false, status: 409, error: 'no_signin_waiting', message: kind === 'recover' ? 'There is no password recovery waiting (it lasts ten minutes). Choose "Forgot password?" again.' : 'There is no password change waiting (it lasts ten minutes). Sign in again.', steps: [] });
+
+  // Send (or send again) the recovery code to the user's email. At most one every 20 seconds, so the button cannot flood an inbox.
+  async function sendCode(ws) {
+    if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
+    const p = pendingOf(ws, 'recover'); if (!p) return noPending('recover');
+    if (now() - lastCodeAt < CODE_GAP_MS) throw new RealRefused('too_soon', 'a code was sent a moment ago; wait 20 seconds before asking for another', 429);
+    if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two calls are already in flight; wait for one to finish', 429);
+    inFlight += 1;
+    try {
+      lastCodeAt = now();
+      const r = await flowPost(p.ctx, p.flowId, SEND_CODE_TYPE, undefined, 'flows API: send the recovery code to the email address');
+      if (r.unreachable) return lost(p.ctx, r);
+      if (r.status !== 200 && r.status !== 204) return p.ctx.fail(502, 'code_not_sent', 'PingOne did not send the code (it needs an email address on the user and a working email service).', r);
+      return p.ctx.more('recovery_code', 'A recovery code was sent to the email address of the user. It is 8 characters and lasts 5 minutes.');
+    } finally { inFlight -= 1; }
+  }
+
+  // The code and the new password. Used in one request body and never kept.
+  async function recover(ws, recoveryCode, newPassword, traceparentIn) {
+    if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
+    const p = pendingOf(ws, 'recover'); if (!p) return noPending('recover');
+    if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two calls are already in flight; wait for one to finish', 429);
+    inFlight += 1;
+    const ctx = p.ctx; ctx.secrets.push(recoveryCode, newPassword); ctx.sent = true;
+    try {
+      const r = await flowPost(ctx, p.flowId, RECOVER_TYPE, { recoveryCode, newPassword }, 'flows API: recover the password (code and new password)', { recoveryCode: PASSWORD_SHOWN, newPassword: PASSWORD_SHOWN });
+      if (r.unreachable) return lost(ctx, r);
+      if (r.status === 400 || r.status === 401 || r.status === 403) return ctx.fail(401, 'recovery_rejected', 'PingOne did not accept the code or the new password. The code lasts 5 minutes and five wrong tries end it; the new password must meet the password policy.', r);
+      if (r.status !== 200 || !r.json) return ctx.fail(502, 'recovery_refused', `PingOne refused the recovery (${failText(r)}).`, r);
+      const status = r.json.status;
+      if (status === 'COMPLETED') return await finishFlow(ws, ctx, r.json, p.flowId, ctx.trace);
+      if (status === 'MUST_CHANGE_PASSWORD' || status === 'PASSWORD_EXPIRED') return holdFor(ws, ctx, p.flowId, 'change', CHANGE_MESSAGE);
+      if (status === 'USERNAME_PASSWORD_REQUIRED') { pending.delete(ws); return ctx.more('password', 'The password was changed. Sign in with the new password.'); }
+      return ctx.fail(409, 'signin_step_unsupported', 'PingOne asked for a step after the recovery that this lab does not drive (for example MFA). Check the user app\'s sign-on policy.');
+    } finally { inFlight -= 1; }
+  }
+
+  // The forced change: the temporary or expired password and the new one.
+  async function changePassword(ws, currentPassword, newPassword, traceparentIn) {
+    if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
+    const p = pendingOf(ws, 'change'); if (!p) return noPending('change');
+    if (inFlight >= MAX_IN_FLIGHT) throw new RealRefused('busy', 'two calls are already in flight; wait for one to finish', 429);
+    inFlight += 1;
+    const ctx = p.ctx; ctx.secrets.push(currentPassword, newPassword); ctx.sent = true;
+    try {
+      const r = await flowPost(ctx, p.flowId, RESET_TYPE, { currentPassword, newPassword }, 'flows API: change the password', { currentPassword: PASSWORD_SHOWN, newPassword: PASSWORD_SHOWN });
+      if (r.unreachable) return lost(ctx, r);
+      if (r.status === 400 || r.status === 401 || r.status === 403) return ctx.fail(401, 'change_rejected', 'PingOne did not accept the current password or the new one (the new password must meet the password policy and differ from the old).', r);
+      if (r.status !== 200 || !r.json) return ctx.fail(502, 'change_refused', `PingOne refused the password change (${failText(r)}).`, r);
+      if (r.json.status !== 'COMPLETED') return ctx.fail(409, 'signin_step_unsupported', 'PingOne asked for a step after the password change that this lab does not drive (for example MFA). Check the user app\'s sign-on policy.');
+      return await finishFlow(ws, ctx, r.json, p.flowId, ctx.trace);
+    } finally { inFlight -= 1; }
+  }
+  const cancelSignIn = (ws) => pending.delete(ws);
 
   async function ensureSession(ws, traceparentIn) {
     const have = sessionOf(ws);
@@ -866,7 +998,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
     // PingOne Authorize for the airline booking: on when all three AAG_AUTHORIZE_* settings are valid. The config (with the secret) never leaves the parent: index.js builds authorize.js from it.
     authorizeOn: () => configured() && Boolean(config.authorize), authorizeProblem: () => (configured() ? config.authorizeProblem ?? null : null),
     a2aReady: () => configured() && Boolean(config.a2a), a2aProblem: () => (configured() ? config.a2aProblem ?? null : null),
-    signIn, session: sessionOf, signOut: (ws) => sessions.delete(ws), userOf, run,
+    signIn, forgot, sendCode, recover, changePassword, cancelSignIn, session: sessionOf, signOut: (ws) => { pending.delete(ws); return sessions.delete(ws); }, userOf, run,
     // A workspace's session, or one signed in silently from the PingOne session (null when there is none or it has ended). Waits 5 s after a failed try.
     ensureSession,
     // Forget the PingOne session: an explicit Sign out. (Reset ends only the workspace's token session, so the next run signs in silently.)

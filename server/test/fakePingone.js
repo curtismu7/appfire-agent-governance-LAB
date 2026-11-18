@@ -33,6 +33,7 @@ export const USER_CLIENT_SECRET = ['fake', '-user-', 'secret-', 'for-tests-', 'f
 export const AGENT_CLIENT_ID = '88888888-9999-4aaa-8bbb-cccccccccccc';
 export const AGENT_CLIENT_SECRET = ['fake', '-agent-', 'secret-', 'for-tests-', '13579bdf02468ace'].join('');
 export const DEMO_USERNAME = 'lab-demo-user';
+export const RECOVERY_CODE = 'ABCD1234'; // the fake's recovery code (8 characters, like PingOne's)
 export const DEMO_PASSWORD = ['Fake', 'Pass', 'word-', 'for-tests-', '42'].join('');
 export const AUDIENCE = 'fake-gateway-audience';
 export const SCOPE = 'fake:mcp:invoke';
@@ -87,7 +88,7 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
   };
   // agentGrants: the scopes the agent app may ask for (the owner setup script grants them all).
   // tools.groups: what the tools resource's groups attribute puts in an exchanged token (settable per test; [] = a standard-tier user, null = no groups claim at all).
-  const state = { behaviour, delayMs, sso: { mode: 'ok' }, full: { signin: 'ok', exchange: 'ok' }, a2a: { specialist: 'ok', exchange1: 'ok', exchange2: 'ok' }, resources, agentGrants: [agentScope, SCOPE, ...TOOLS_SCOPES], tools: { groups: [] } };
+  const state = { behaviour, delayMs, sso: { mode: 'ok' }, password: DEMO_PASSWORD, recovery: { code: RECOVERY_CODE, sent: 0, forgot: [], recover: [], reset: [], next: 'completed' }, full: { signin: 'ok', exchange: 'ok', forgot: 'ok' }, a2a: { specialist: 'ok', exchange1: 'ok', exchange2: 'ok' }, resources, agentGrants: [agentScope, SCOPE, ...TOOLS_SCOPES], tools: { groups: [] } };
   const flows = new Map(); // flow id -> { cookie, challenge, state, nonce, done }
   // The PingOne session (owner, 2026-11-16): a completed password sign-in sets the P1SSO cookie; authorize with a valid one answers COMPLETED with a code and no
   // password step. state.sso.mode: 'ok' | 'expired' (the cookie is no longer honoured: the password is asked for again).
@@ -165,18 +166,54 @@ export async function startFakePingOne({ behaviour = 'ok', delayMs = 0, agentSco
         if (req.method === 'POST' && fm) {
           const f = flows.get(fm[1]);
           if (!f || cookieOf() !== f.cookie) return send(401, { code: 'UNAUTHORIZED', message: 'fake: the flow cookie is missing' });
-          if (req.headers['content-type'] !== 'application/vnd.pingidentity.usernamePassword.check+json') return send(415, { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'fake: use the vendor content type' });
-          let b = {}; try { b = JSON.parse(Buffer.concat(body).toString('utf8')); } catch { /* bad */ }
+          const ctype = req.headers['content-type'];
+          if (!ctype || !ctype.startsWith('application/vnd.pingidentity.')) return send(415, { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'fake: use the vendor content type' });
+          let b = {}; try { b = JSON.parse(Buffer.concat(body).toString('utf8') || '{}'); } catch { /* bad */ }
+          const invalid = (target) => send(400, { code: 'INVALID_DATA', message: 'fake: the request could not be completed', details: [{ code: 'INVALID_VALUE', target, message: `fake: invalid ${target}` }] });
+          // The end of a good sign-in (the same for the password, the recovery and the forced change).
+          const complete = () => {
+            f.done = true;
+            const code = randomBytes(16).toString('hex'); codes.set(code, { challenge: f.challenge, nonce: f.nonce });
+            if (state.full.signin === 'resume') { f.code = code; return send(200, { id: fm[1], status: 'COMPLETED', _links: { resume: { href: 'x' } } }); }
+            if (state.full.signin === 'bad-state') return send(200, { id: fm[1], status: 'COMPLETED', authorizeResponse: { code, state: 'not-the-state' } });
+            if (state.full.signin === 'no-state') return send(200, { id: fm[1], status: 'COMPLETED', authorizeResponse: { code } });
+            const sso = randomBytes(12).toString('hex'); ssoValid.add(sso);
+            return send(200, { id: fm[1], status: 'COMPLETED', authorizeResponse: { code, state: f.state } }, { 'set-cookie': [`P1SSO=${sso}; Path=/; HttpOnly`] });
+          };
+          // Forgot password, the recovery code and the forced change (flows API vendor types). state.recovery counts what the lab asked for.
+          if (ctype === 'application/vnd.pingidentity.password.forgot+json') {
+            state.recovery.forgot.push(b);
+            if (state.full.forgot === 'unknown' || b.username !== DEMO_USERNAME) return invalid('username');
+            f.recovering = true; return send(200, { id: fm[1], status: 'RECOVERY_CODE_REQUIRED' });
+          }
+          if (ctype === 'application/vnd.pingidentity.password.sendRecoveryCode+json') {
+            if (!f.recovering) return invalid('flow');
+            if (state.full.forgot === 'no-mail') return send(400, { code: 'INVALID_DATA', message: 'fake: no email address', details: [{ code: 'INVALID_VALUE', target: 'email' }] });
+            state.recovery.sent += 1; return send(200, { id: fm[1], status: 'RECOVERY_CODE_REQUIRED' });
+          }
+          if (ctype === 'application/vnd.pingidentity.password.recover+json') {
+            state.recovery.recover.push({ code: b.recoveryCode, newPassword: b.newPassword });
+            if (state.full.signin === 'echo-pw') return send(400, { code: 'INVALID_DATA', message: `fake echo: ${b.newPassword} ${b.recoveryCode}`, details: [{ code: 'INVALID_VALUE', message: `bad ${b.recoveryCode}` }] });
+            if (!f.recovering || b.recoveryCode !== state.recovery.code || typeof b.newPassword !== 'string' || b.newPassword.length < 8) return invalid('recoveryCode');
+            state.password = b.newPassword;
+            if (state.recovery.next === 'password') return send(200, { id: fm[1], status: 'USERNAME_PASSWORD_REQUIRED' });
+            if (state.recovery.next === 'must-change') { f.mustChange = true; return send(200, { id: fm[1], status: 'MUST_CHANGE_PASSWORD' }); }
+            if (state.recovery.next === 'mfa') return send(200, { id: fm[1], status: 'MFA_REQUIRED' });
+            return complete();
+          }
+          if (ctype === 'application/vnd.pingidentity.password.reset+json') {
+            state.recovery.reset.push({ currentPassword: b.currentPassword, newPassword: b.newPassword });
+            if (state.full.signin === 'echo-pw') return send(400, { code: 'INVALID_DATA', message: `fake echo: ${b.currentPassword} ${b.newPassword}`, details: [{ code: 'INVALID_VALUE', message: `bad ${b.newPassword}` }] });
+            if (!f.mustChange || b.currentPassword !== state.password || typeof b.newPassword !== 'string' || b.newPassword.length < 8 || b.newPassword === b.currentPassword) return invalid('newPassword');
+            state.password = b.newPassword; f.mustChange = false;
+            return complete();
+          }
+          if (ctype !== 'application/vnd.pingidentity.usernamePassword.check+json') return send(415, { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'fake: use the vendor content type' });
           if (state.full.signin === 'echo-pw') return send(400, { code: 'INVALID_DATA', message: `fake echo: ${b.password}`, details: [{ code: 'INVALID_VALUE', message: `bad ${b.password}` }] });
-          if (state.full.signin === 'bad-password' || b.username !== DEMO_USERNAME || b.password !== DEMO_PASSWORD) return send(400, { code: 'INVALID_DATA', message: 'fake: the request could not be completed', details: [{ code: 'INVALID_VALUE', target: 'password', message: 'Invalid username or password' }] });
+          if (state.full.signin === 'bad-password' || b.username !== DEMO_USERNAME || b.password !== state.password) return send(400, { code: 'INVALID_DATA', message: 'fake: the request could not be completed', details: [{ code: 'INVALID_VALUE', target: 'password', message: 'Invalid username or password' }] });
           if (state.full.signin === 'mfa') return send(200, { id: fm[1], status: 'MFA_REQUIRED' });
-          f.done = true;
-          const code = randomBytes(16).toString('hex'); codes.set(code, { challenge: f.challenge, nonce: f.nonce });
-          if (state.full.signin === 'resume') { f.code = code; return send(200, { id: fm[1], status: 'COMPLETED', _links: { resume: { href: 'x' } } }); }
-          if (state.full.signin === 'bad-state') return send(200, { id: fm[1], status: 'COMPLETED', authorizeResponse: { code, state: 'not-the-state' } });
-          if (state.full.signin === 'no-state') return send(200, { id: fm[1], status: 'COMPLETED', authorizeResponse: { code } });
-          const sso = randomBytes(12).toString('hex'); ssoValid.add(sso);
-          return send(200, { id: fm[1], status: 'COMPLETED', authorizeResponse: { code, state: f.state } }, { 'set-cookie': [`P1SSO=${sso}; Path=/; HttpOnly`] });
+          if (state.full.signin === 'must-change' || state.full.signin === 'expired') { f.mustChange = true; return send(200, { id: fm[1], status: state.full.signin === 'expired' ? 'PASSWORD_EXPIRED' : 'MUST_CHANGE_PASSWORD' }); }
+          return complete();
         }
         if (req.method === 'GET' && u.pathname === `/${ENV_ID}/as/resume`) {
           const f = flows.get(u.searchParams.get('flowId'));
