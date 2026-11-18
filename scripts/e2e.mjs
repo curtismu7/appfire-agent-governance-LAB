@@ -1092,6 +1092,18 @@ try {
     await t('row-' + th.n).click(); await t('step-detail').waitFor();
     check((await textOf('step-detail')).includes('Answered by') && (await textOf('step-detail')).includes('tool server (local)'), `${tag}: the step detail shows the key fact "Answered by: tool server (local)"`);
     await cardWords(`${tag}: an airline trip list answered by the tool server, step detail open`);
+    // Every token a step shows raw is also shown decoded (owner 2026-11-18): open every step of this real run and count the JWTs in the detail against the decoded blocks.
+    {
+      const JWT = /eyJ[\w-]{4,}\.[\w-]{4,}\.[\w-]*/g; let seen = 0; const gaps = [];
+      for (const r of await page.locator('[data-testid^="row-"]').all()) {
+        await r.click().catch(() => {}); if (!(await t('step-detail').count())) continue;
+        const raw = new Set(((await t('step-detail').first().textContent()) || '').match(JWT) || []);
+        const decoded = await t('step-detail').first().getByTestId('decoded-token').count();
+        seen += raw.size; if (raw.size > decoded) gaps.push(`${raw.size} tokens, ${decoded} decoded`);
+      }
+      await t('row-' + th.n).click(); await t('step-detail').waitFor(); // back on the tool step for the checks that follow
+      check(seen > 0 && gaps.length === 0, `${tag}: every raw token in a step of this real run is also shown decoded (${seen} tokens seen${gaps.length ? '; gaps: ' + gaps.join(' | ') : ''})`);
+    }
     // The detail box pops out (owner 2026-11-18): docked by default, a Pop out button floats it as a draggable window, Dock puts it back.
     check((await t('sdp-popout').count()) === 1 && (await t('step-detail-window').count()) === 0, `${tag}: the step detail is docked under the sequence with a Pop out button`);
     await t('sdp-popout').click();

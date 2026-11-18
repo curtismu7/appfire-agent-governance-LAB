@@ -1,5 +1,5 @@
 import { Tag } from "./Bits";
-import { Json } from "./JsonPane";
+import { Json } from "./TokenJson";
 import { visible } from "../safeText";
 import { HOT_CALL } from "../lib";
 

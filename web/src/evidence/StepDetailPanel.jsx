@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Tag } from "./Tag";
 import { actorOf, readPref, STAGE_STATE, txt, verdictState, verdictWord, withSkipped, writePref } from "./lanes";
 import { HttpMessage, KeyFacts, answeredByOf } from "../components/HttpMessage";
-import { Json } from "../components/JsonPane";
+import { Json } from "../components/TokenJson";
 import { ExchangeList } from "../components/ExchangeList";
 import { pairedCalls } from "../exchanges";
 import "./evidence.css";
