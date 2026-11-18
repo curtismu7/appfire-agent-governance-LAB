@@ -9,6 +9,7 @@
 // request to another origin fails the run. Exit 0 only when every check passes.
 import { spawn, spawnSync } from 'node:child_process';
 import http from 'node:http';
+import net from 'node:net';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -29,6 +30,12 @@ const port = Number(process.env.E2E_PORT) || 7830;
 if (port < 7814 || port > 7834) { console.error('E2E_PORT must be inside 7814-7834 (the live, hosted, full-Real, local-only and PingOne Authorize instances take the next five ports)'); process.exit(2); }
 const base = `http://127.0.0.1:${port}`;
 if (!fs.existsSync(path.join(root, 'web', 'dist', 'index.html'))) { console.error('Run `npm run build` first.'); process.exit(2); }
+// The run starts six servers on E2E_PORT .. E2E_PORT + 5. A port already held (a leftover server from a killed run, another checkout's e2e) would answer the health
+// polls below and the run would test that stale server, failing much later with an unrelated timeout. Stop first and name the port.
+const portFree = (p) => new Promise((resolve) => { const probe = net.createServer(); probe.once('error', () => resolve(false)); probe.listen(p, '127.0.0.1', () => probe.close(() => resolve(true))); });
+for (let i = 0; i < 6; i++) {
+  if (!(await portFree(port + i))) { console.error(`Port ${port + i} is already in use, so this run would talk to whatever holds it. Find it with: lsof -nP -iTCP:${port + i} -sTCP:LISTEN . Stop it if it is a leftover, or pick another range with E2E_PORT=<${7814}-${7834}>.`); process.exit(2); }
+}
 // The Mock instance has no PingOne settings (an empty settings file, like a fresh clone or CI with no .env) and no IDP pin, so Real is disabled by
 // the missing settings alone and its tooltip says what to fill in.
 const noEnvDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cal-e2e-none-'));
