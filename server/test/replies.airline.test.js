@@ -21,7 +21,7 @@ test('the cast: Larkspur Air is the first key, the default, and every value is a
   assert.deepEqual([cast.castUser, cast.castUser2, cast.castOwner2, cast.castAgent, cast.castAgent2, cast.castAgent3, cast.castAdmin],
     ['elena.novak', 'jun.takeda', 'marcus.bell', 'travel-assistant', 'bookings-specialist', 'report-generalist', 'sofia.reyes']);
   assert.deepEqual([cast.castReadTool, cast.castWriteTool, cast.castSensitiveTool, cast.castA2aTool, cast.castPublicTool, cast.castStatusTool, cast.castRequestTool],
-    ['get_airline_bookings', 'book_airline_flight', 'sensitive_passenger_record', 'sensitive_passenger_record', 'list_airports', 'get_flight_status', 'request_change_fee_waiver']);
+    ['get_airline_bookings', 'book_airline_flight', 'sensitive_passenger_record', 'get_airline_bookings', 'list_airports', 'get_flight_status', 'request_change_fee_waiver']);
   assert.deepEqual([cast.castAsset, cast.castAction, cast.castGroup, cast.castPerson, cast.castMoney], ['trip', 'booking', 'orbit-tier', 'traveller', 'trips and bookings']);
   for (const val of Object.values(cast)) { assert.equal(typeof val, 'string'); assert.ok(val.length > 0 && val.length < 41, val); assert.ok(!/[:/@]/.test(val), val); }
   assert.equal(new Set(Object.values(VERTICALS).map((p) => p.castUser)).size, 5);
