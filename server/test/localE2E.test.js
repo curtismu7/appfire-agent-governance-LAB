@@ -58,7 +58,7 @@ test('the real child validates the fake PingOne\'s ES256 tokens and the permitte
       const answered = x.hops.filter((h) => ['gateway-check', 'authorize-decision', 'tool-dispatched'].includes(h.kind));
       assert.ok(answered.length === 3 && answered.every((h) => h.provider === 'local' && h.answeredBy === 'tool server (local)'), id);
       const decide = x.hops.find((h) => h.kind === 'authorize-decision'); assert.equal(decide.decision.outcome, 'PERMIT'); assert.equal(decide.decision.basis, 'observed', 'read from the audit header the child sends');
-      assert.match(x.reply.text, /\(lab-invented data from the lab's own tool server\)\.?$|\(and \d+ [a-z]+\)|returned/);
+      assert.match(x.reply.text, /\(and \d+ [a-z]+\)|returned/);
     }
     const issues = await runSoft(url, 'UC1'); assert.match(issues.reply.text, /signed_in_sub .*total 8/);
   });
@@ -152,12 +152,12 @@ test('airline through the real child: UC7 books as asked, UC8 is CONSTRAINED (ec
     for (const id of ['UC1', 'UC33', 'UC28', 'UC24']) { const x = await runAir(url, id); assert.equal(x.outcome, 'REAL_PERMIT', `${id}: ${x.reply?.text}`); assert.equal(x.provider, 'local'); assert.ok(x.fareRule, id); assert.deepEqual(vocab(x), [], id); assert.deepEqual(findWords(x, id), [], id); }
     const seven = await runAir(url, 'UC7');
     assert.equal(seven.outcome, 'REAL_PERMIT', seven.reply?.text); assert.equal(seven.booking.booked, 'business'); assert.equal(seven.constrained, undefined);
-    assert.match(seven.reply.text, /^Booked: a business seat on LK 214 from ORD to DEN, confirmation LKR-[0-9A-F]{6} /);
+    assert.match(seven.reply.text, /^Booked: a business seat on LK 214 from ORD to DEN, confirmation LKR-[0-9A-F]{6}\.$/);
     const eight = await runAir(url, 'UC8');
     assert.equal(eight.outcome, 'REAL_CONSTRAINED', eight.reply?.text); assert.deepEqual(eight.booking, { flight: 'LK 322', from: 'ORD', to: 'YYZ', fare: 380, international: true, asked: 'business', booked: 'economy' });
     assert.deepEqual(eight.constrained.because, ['international']); assert.equal(eight.constrained.by, 'lab policy (local), not PingOne Authorize');
     const d = eight.hops.find((h) => h.kind === 'authorize-decision'); assert.deepEqual(d.decision, { outcome: 'CONSTRAINED', by: 'lab policy (local), not PingOne Authorize', basis: 'observed' });
-    assert.match(eight.reply.text, /^Booked in economy, not business: this trip is international\. LK 322 from ORD to YYZ, confirmation LKR-[0-9A-F]{6} /);
+    assert.match(eight.reply.text, /^Booked in economy, not business: this trip is international\. LK 322 from ORD to YYZ, confirmation LKR-[0-9A-F]{6}\.$/);
     for (const x of [seven, eight]) { assert.deepEqual(vocab(x), []); assert.deepEqual(findWords(x, x.useCase.id), []); assert.ok(!/"basis":"checked"/.test(JSON.stringify(x))); }
   });
 });
@@ -171,7 +171,7 @@ test('airline UC6 through the real child: the hold (428), the phone on the child
     assert.equal((await (await post(url, '/api/approval/decide', { id: start.approval.id, approved: true })).json()).approval.state, 'approved');
     const retry = await runAir(url, 'UC6', { approvalId: start.approval.id });
     assert.equal(retry.outcome, 'REAL_PERMIT', retry.reply?.text); assert.equal(retry.booking.booked, 'business'); assert.equal(retry.constrained, undefined);
-    assert.match(retry.reply.text, /^Booked as approved: a business seat on LK 704 from ORD to CDG, confirmation LKR-[0-9A-F]{6} /);
+    assert.match(retry.reply.text, /^Booked as approved: a business seat on LK 704 from ORD to CDG, confirmation LKR-[0-9A-F]{6}\.$/);
     assert.deepEqual(retry.hops.find((h) => h.kind === 'authorize-decision').decision, { outcome: 'PERMIT', by: 'lab policy (local), not PingOne Authorize', basis: 'observed' });
     for (const x of [hold, retry]) { assert.ok(!JSON.stringify({ hops: x.hops, reply: x.reply, narration: x.narration }).includes(hold.challenge), 'the challenge id is in no hop'); assert.deepEqual(vocab(x), []); }
     assert.equal((await runAir(url, 'UC6', { approvalId: start.approval.id })).outcome, 'REAL_RECEIPT_REJECTED', 'a receipt is single use');

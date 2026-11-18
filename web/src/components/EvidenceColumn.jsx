@@ -2,7 +2,7 @@ import { Fragment } from "react";
 import Working from "./Working";
 import SequenceView from "../evidence/SequenceView";
 import MovieReel from "../evidence/MovieReel";
-import StepDetailPanel from "../evidence/StepDetailPanel";
+import StepDetail from "./StepDetail";
 import HopCaption from "./HopCaption";
 import DiagramView from "./DiagramView";
 import TokenView from "./TokenView";
@@ -97,7 +97,7 @@ export default function EvidenceColumn({ running, run, selHop, onSelect, config,
             {!tab && <p className="muted" data-testid="no-view">No evidence view is embedded. Pick a tab, or turn one on in Quick Config.</p>}
             {tab === "sequence" && <SequenceView hops={hops} selected={selHop} onSelect={onSelect} />}
             {tab === "reel" && <MovieReel hops={hops} selected={selHop} onSelect={onSelect} />}
-            {(tab === "sequence" || tab === "reel") && hops.length > 0 && selHop != null && <StepDetailPanel hops={hops} selected={selHop} onSelect={onSelect} onClose={() => onSelect(null)} />}
+            {(tab === "sequence" || tab === "reel") && hops.length > 0 && selHop != null && <StepDetail hops={hops} selected={selHop} onSelect={onSelect} onClose={() => onSelect(null)} />}
             {(tab === "sequence" || tab === "reel") && hops.length > 0 && selHop == null && <p className="muted">Click a step, an actor or a tool-call pill for its full detail.</p>}
             {tab === "topology" && <DiagramView vertical={vertical} resetSignal={resetSignal} lastRun={lastRun} />}
             {tab === "tokens" && (

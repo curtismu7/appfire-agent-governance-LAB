@@ -24,7 +24,7 @@ const WORDS = /mock|simulat|offline|\bengine\b|scripted/i;
 // A Real run answered by the lab's own tool server, shaped like the server's (provider and answeredBy on the hops the tool server answered, capability "tools" on
 // every provider-side hop, the authorize-decision hop drawn as a note on the tool server's lane, no gatewayTrace).
 const toolsRun = (id, { outcome = "REAL_PERMIT", stopAt = null, reply, challenge = null } = {}) => {
-  const b = realBody(id, { outcome, stopAt, reply: reply || { who: "Tool server", text: "You have 8 issues (lab-invented data from the lab's own tool server)." } });
+  const b = realBody(id, { outcome, stopAt, reply: reply || { who: "Tool server", text: "You have 8 issues." } });
   const served = new Set(["gateway-check", "authorize-decision", "tool-dispatched", "tool-held", "tool-refused", "api-call"]);
   b.run.vertical = "software";
   b.run.real = { level: "full", tool: "get_my_issues", provider: "local" };

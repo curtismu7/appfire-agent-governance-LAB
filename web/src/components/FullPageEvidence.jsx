@@ -1,6 +1,6 @@
 import SequenceView from "../evidence/SequenceView";
 import MovieReel from "../evidence/MovieReel";
-import StepDetailPanel from "../evidence/StepDetailPanel";
+import StepDetail from "./StepDetail";
 import UseCasePicker from "./UseCasePicker";
 import { outcomeState } from "../lib";
 import { Tag } from "./Bits";
@@ -34,7 +34,7 @@ export default function FullPageEvidence({ page, onPage, onBack, catalog, select
         </header>
         {!run && <p className="muted" data-testid="full-empty">Nothing has run yet. Pick a use case on the left: it runs and draws here.</p>}
         {run && (page === "reel" ? <MovieReel hops={hops} selected={selHop} onSelect={onSelect} /> : <SequenceView hops={hops} selected={selHop} onSelect={onSelect} />)}
-        {run && selHop != null && <StepDetailPanel hops={hops} selected={selHop} onSelect={onSelect} onClose={() => onSelect(null)} />}
+        {run && selHop != null && <StepDetail hops={hops} selected={selHop} onSelect={onSelect} onClose={() => onSelect(null)} />}
       </section>
     </div>
   );

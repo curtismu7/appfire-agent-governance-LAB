@@ -110,9 +110,9 @@ const AIR_TRIPS = {
   UC6: { flight: "LK 704", from: "ORD", to: "CDG", fare: 2400, international: true },
 };
 const AIR_REPLY = {
-  permit: "Booked: a business seat on LK 214 from ORD to DEN, confirmation LKR-3F9A21 (lab-invented data from the lab's own tool server).",
-  constrained: "Booked in economy, not business: this trip is international. LK 322 from ORD to YYZ, confirmation LKR-3F9A21 (lab-invented data from the lab's own tool server).",
-  approved: "Booked as approved: a business seat on LK 704 from ORD to CDG, confirmation LKR-3F9A21 (lab-invented data from the lab's own tool server).",
+  permit: "Booked: a business seat on LK 214 from ORD to DEN, confirmation LKR-3F9A21.",
+  constrained: "Booked in economy, not business: this trip is international. LK 322 from ORD to YYZ, confirmation LKR-3F9A21.",
+  approved: "Booked as approved: a business seat on LK 704 from ORD to CDG, confirmation LKR-3F9A21.",
 };
 // kind: "permit" (UC7), "constrained" (UC8), "hold" (UC6, 428), "approved" (UC6 after the phone), "rejected" (UC6 retry with a spent receipt), "read" (UC1, no booking).
 export const airlineRealBody = (kind = "constrained") => {
@@ -121,7 +121,7 @@ export const airlineRealBody = (kind = "constrained") => {
   const reply = {
     permit: { who: "Tool server", text: AIR_REPLY.permit }, constrained: { who: "Tool server", text: AIR_REPLY.constrained }, approved: { who: "Tool server", text: AIR_REPLY.approved },
     hold: { who: "Tool server", approval: { head: "Held for approval", body: "The tool server (lab policy (local), not PingOne Authorize) holds this booking until a person approves it." } },
-    rejected: { who: "Tool server", text: "The approval receipt was refused. Nothing was run." }, read: { who: "Tool server", text: "You have 2 trips (lab-invented data from the lab's own tool server)." },
+    rejected: { who: "Tool server", text: "The approval receipt was refused. Nothing was run." }, read: { who: "Tool server", text: "You have 2 trips." },
   }[kind];
   const b = realBody(ucId, { outcome, reply, stopAt: kind === "hold" || kind === "rejected" ? 5 : null });
   const served = new Set(["gateway-check", "authorize-decision", "tool-dispatched", "tool-held", "tool-refused", "api-call"]);
