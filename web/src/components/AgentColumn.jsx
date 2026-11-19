@@ -74,7 +74,7 @@ function Starters({ agent, brand, prompts, typeAndSend, stub, step = null, perso
   return (
     <div className="starters" data-testid="starters">
       <span className="avatar avatar--agent avatar--big" aria-hidden="true">AI</span>
-      <h2 className="starters__title">{agent || "The agent"} at {brand || "the demo company"}</h2>
+      <h2 className="starters__title"><span className="step-num" aria-hidden="true">1</span>{agent || "The agent"} at {brand || "the demo company"}</h2>
       <p className="muted">{`Type what a ${person} would say. Each prompt runs one use case and the evidence column draws every hop.`}</p>
       {!stub && (
         <ul className="starters__grid">

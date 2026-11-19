@@ -67,7 +67,7 @@ export default function EvidenceColumn({ running, run, selHop, onSelect, config,
   return (
     <section className="evcol" aria-label="Evidence" data-testid="evidence-column">
       <header className="evcol__head">
-        <h2 className="evcol__title">Evidence</h2>
+        <h2 className="evcol__title"><span className="step-num" aria-hidden="true">2</span>Evidence</h2>
         <span className="muted" data-testid="evidence-count">{run ? `${run.useCase?.title} · ${ranCount(hops)} hops${notRunText(hops)}` : "nothing run yet"}</span>
         <span className="spacer" />
         <button type="button" onClick={() => onFull("compare")} data-testid="open-compare" title="Two runs side by side: what is decided differently">Compare</button>
