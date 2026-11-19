@@ -301,8 +301,8 @@ test('the README airline flights table equals the tool server\'s own fare table 
 test('every JSON pane goes through the token-decoding wrapper: no component imports the bare shared pane (owner 2026-11-18: decode tokens everywhere, no hard-coded one-offs)', () => {
   const webSrc = path.resolve(root, 'web/src');
   const bare = [];
-  const walk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); if (e.isDirectory()) walk(f); else if (/\.jsx?$/.test(e.name) && !/\.test\./.test(e.name)) { const t = fs.readFileSync(f, 'utf8'); if (/from\s+["'](?:\.{1,2}\/)+(?:components\/)?JsonPane["']/.test(t)) bare.push(path.relative(webSrc, f)); } } };
+  const walk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); if (e.isDirectory()) walk(f); else if (/\.jsx?$/.test(e.name) && !/\.test\./.test(e.name)) { const t = fs.readFileSync(f, 'utf8'); if (/from\s+["'](?:\.{1,2}\/)+(?:components\/)?JsonPane(\.jsx)?["']/.test(t)) bare.push(path.relative(webSrc, f)); } } };
   walk(webSrc);
-  // The wrapper itself, the vendored panel (it holds no token: it shows lengths only) and the test setup may import the bare pane.
+  // The re-export module (TokenJson aliases the shared pane), the vendored panel (it holds no token: it shows lengths only) and the test setup may import the bare pane.
   assert.deepEqual(bare.sort(), ['components/TokenJson.jsx', 'gateway-trace/GatewayTrace.jsx', 'testSetup.js'].sort());
 });
