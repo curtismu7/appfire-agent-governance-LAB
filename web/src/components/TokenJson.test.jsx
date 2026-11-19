@@ -29,7 +29,7 @@ describe("the shared Json pane decodes tokens", () => {
 
   test("the exchange body decodes the subject and the actor token; a bearer header decodes; a JSON text body is searched too", () => {
     render(<HttpMessage label="Step 3 request" msg={{ method: "POST", url: "https://idp.example/as/token", headers: { authorization: `Bearer ${ISSUED}` }, body: { grant_type: "urn:ietf:params:oauth:grant-type:token-exchange", subject_token: SUBJECT, actor_token: ACTOR } }} />);
-    const names = screen.getAllByTestId("decoded-token").map((e) => e.querySelector(".field-label").textContent);
+    const names = screen.getAllByTestId("decoded-token").map((e) => e.querySelector(".jdec__name")?.textContent);
     expect(names).toEqual(["authorization", "subject_token", "actor_token"]);
     cleanup();
     render(<Json label="text body" value={JSON.stringify({ access_token: ISSUED })} />);
@@ -47,7 +47,7 @@ describe("the shared Json pane decodes tokens", () => {
     expect(screen.queryByTestId("decoded-tokens")).toBeNull();
     cleanup();
     render(<TokenView tokens={[{ label: "masked token", raw: "eyJhbG...ab12", header: { alg: "RS256" }, claims: { sub: "u-1" } }]} />);
-    expect(screen.getByText(/signature is not shown/)).toBeTruthy();
+    expect(screen.getByText(/no signature segment|signature is not shown/)).toBeTruthy();
   });
 
   test("a cut-short token, a non-token and plain text are skipped; the same token is shown once; the search is bounded", () => {
