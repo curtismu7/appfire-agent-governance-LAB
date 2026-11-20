@@ -50,7 +50,8 @@ if (!up) { server.kill(); console.error('server did not start'); process.exit(2)
 fs.mkdirSync(shots, { recursive: true });
 
 const overlapScript = `(() => {
-  const labels = [...document.querySelectorAll('.react-flow__edgelabel-renderer > *')].map((el) => ({ t: el.textContent.trim(), r: el.getBoundingClientRect() })).filter((l) => l.t && l.r.width > 1);
+  // The diagram kit's labels (dk-label, in the viewport portal) and any React Flow edge labels left, above the boxes.
+  const labels = [...document.querySelectorAll('.dk-label, .react-flow__edgelabel-renderer > *')].map((el) => ({ t: el.textContent.trim(), r: el.getBoundingClientRect() })).filter((l) => l.t && l.r.width > 1);
   let overlaps = 0;
   for (let a = 0; a < labels.length; a++) for (let b = a + 1; b < labels.length; b++) {
     const w = Math.min(labels[a].r.right, labels[b].r.right) - Math.max(labels[a].r.left, labels[b].r.left);
@@ -361,7 +362,7 @@ try {
         const nodeTexts = (await page.locator('.dnode').allInnerTexts()).map((x) => x.replace(/\s+/g, ' '));
         check(nodeTexts.some((x) => x.includes('PingOne Authorize (P1AZ)')) && !nodeTexts.some((x) => /^Authorize( \(policy decision\))?$/.test(x.trim())), `${tag}: ${dn} draws the node "PingOne Authorize (P1AZ)"`);
         if (dn === 'delegation-chain') {
-          const edgeTexts = (await page.getByTestId('edge-label').allInnerTexts()).join(' | ');
+          const edgeTexts = (await page.locator('.dk-label').allInnerTexts()).join(' | ');
           // an arrow is labelled with its step's title (number first), so the two new arrows read "7. Lab tool server" and "8. PingOne Authorize (P1AZ): booking decision"
           check(nodeTexts.some((x) => x.includes('Lab tool server (own tools, local)')) && edgeTexts.includes('7. Lab tool server') && edgeTexts.includes('8. PingOne Authorize (P1AZ): booking decision') && edgeTexts.includes('9. HIVE (represented, not called)'), `${tag}: the delegation chain draws the lab tool server and its path to PingOne Authorize, then HIVE last`);
           check((await page.locator('.dedge--dashed').count()) === 1, `${tag}: the new arrows are solid (HIVE's stays the one dashed arrow)`);

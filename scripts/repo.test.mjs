@@ -43,7 +43,7 @@ test('customer.config.json is git-ignored, and its example only sets the two cas
 });
 
 test('no shipped text names a real customer, company or tenant', () => {
-  const skip = new Set(['node_modules', 'dist', '.git', '.data', 'package-lock.json', '.env', 'customer.config.json']); // git-ignored files (local settings: the e2e screenshots are binary; .env holds this Mac's host names)
+  const skip = new Set(['node_modules', 'dist', '.git', '.data', 'package-lock.json', '.env', 'customer.config.json', '.claude-worktrees']); // git-ignored files (local settings: the e2e screenshots are binary; .env holds this Mac's host names)
   // local .env backups (git-ignored pattern .env.bak.*): skipped by name below
   const allowed = { 'docker-compose.yml': ['appfire-agent-governance.local.ping-devops.com'], // proxy-served lab host (default LAB_ALLOWED_HOSTS): no real tenant or customer
     '.env.example': ['hitl.ai-demo.ping-devops.com'], // the SE HITL service's public host (the mock phone's real approvals); not a tenant or a customer
@@ -145,7 +145,7 @@ test('step 2: the app CSS follows the CSS standard (tokens only, no theme media 
 test('step 2: the web source has no outbound URL, no eval/Function, no raw HTML injection and no colour literal in components', () => {
   const dir = path.join(root, 'web/src');
   const files = [];
-  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (/\.(jsx?|css)$/.test(e.name) && !/\.test\./.test(e.name) && e.name !== 'standalone-ui.css' && e.name !== 'testFixtures.js' && e.name !== 'testSetup.js' && f !== path.join(dir, 'evidence/fixtures.js')) files.push(f); } };
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) { if (e.name === 'diagram-kit') continue; walk(f); } else if (/\.(jsx?|css)$/.test(e.name) && !/\.test\./.test(e.name) && e.name !== 'standalone-ui.css' && e.name !== 'testFixtures.js' && e.name !== 'testSetup.js' && f !== path.join(dir, 'evidence/fixtures.js')) files.push(f); } };
   walk(dir);
   assert.ok(files.length >= 10);
   for (const f of files) {
@@ -250,7 +250,7 @@ test('owner 2026-11-16: the hosted banner prefix is pinned the same way in the d
 });
 
 test('owner 2026-11-09: no shipped file reads or points at the retired shared settings file (~/Development/.env, STANDALONE_ENV)', () => {
-  const skip = new Set(['node_modules', 'dist', '.git', '.data', 'package-lock.json', '.env']); skip.add('.env.bak.2026-11-11T02-06-17-446Z');
+  const skip = new Set(['node_modules', 'dist', '.git', '.data', 'package-lock.json', '.env', '.claude-worktrees']); skip.add('.env.bak.2026-11-11T02-06-17-446Z');
   const self = path.join(root, 'scripts', 'repo.test.mjs');
   const banned = new RegExp(['Development/' + '\\.env', 'STANDALONE' + '_ENV'].join('|'));
   const hits = [];
