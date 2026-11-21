@@ -97,7 +97,7 @@ describe("labels (NOT RUN only) and the replies", () => {
     expect(within(tokens[0]).queryByTestId("token-act")).toBeNull(); expect(within(tokens[1]).queryByTestId("token-act")).toBeNull();
     expect(screen.queryByTestId("token-no-act")).toBeNull();
     expect(screen.getAllByTestId("token-act").map((x) => x.getAttribute("data-state"))).toEqual(["ok", "ok"]);
-    expect(within(tokens[3]).getAllByTestId("token-claims")[0].textContent).toMatch(/act\s*sub\s*agent-1/); // Formatted: the act group, with sub inside it
+    expect(within(tokens[3]).getAllByTestId("token-claims")[0].textContent).toMatch(/act\.sub\s*agent-1/); // Formatted: the hybrid pane shows the nested act as one flat dot-path row
     await u.click(within(tokens[3]).getByTestId("token-claims-raw"));
     expect(within(tokens[3]).getAllByTestId("token-claims")[0].textContent).toMatch(/"act": \{\s*"sub": "agent-1"/); // Raw: the exact JSON
     const turn = screen.getAllByTestId("turn").pop();
