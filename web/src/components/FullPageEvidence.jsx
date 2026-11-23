@@ -4,6 +4,35 @@ import StepDetail from "./StepDetail";
 import UseCasePicker from "./UseCasePicker";
 import { outcomeState } from "../lib";
 import { Tag } from "./Bits";
+import { useCallback, useEffect } from "react";
+
+// Drag the divider to resize the use-case list; the width persists.
+function useSideResize(key) {
+  const onHandleDown = useCallback((e) => {
+    e.preventDefault();
+    const grid = e.target.closest(".fullpage");
+    if (!grid) return;
+    const rect = grid.getBoundingClientRect();
+    const move = (ev) => {
+      ev.preventDefault();
+      const w = Math.min(Math.max(ev.clientX - rect.left, 180), rect.width * 0.45);
+      grid.style.setProperty("--side-w", `${w}px`);
+    };
+    const up = () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try {
+        const w = parseFloat(getComputedStyle(grid).getPropertyValue("--side-w"));
+        if (w) localStorage.setItem(key, String(w));
+      } catch { /* none */ }
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up, { once: true });
+  }, [key]);
+  return onHandleDown;
+}
 
 const runnable = (u) => !u.guided;
 
@@ -12,6 +41,13 @@ const runnable = (u) => !u.guided;
 export default function FullPageEvidence({ page, onPage, onBack, catalog, selectedId, onPickRun, run, running, selHop, onSelect, verticalSelect, failed }) {
   const hops = run?.hops || [];
   const title = page === "reel" ? "Movie reel" : "Sequence";
+  const onHandleDown = useSideResize("ag.sideW");
+  useEffect(() => {
+    try {
+      const w = parseFloat(localStorage.getItem("ag.sideW"));
+      if (w) document.querySelector(".fullpage")?.style.setProperty("--side-w", `${w}px`);
+    } catch { /* none */ }
+  }, [page]);
   return (
     <div className="fullpage" data-testid={`page-${page}`}>
       <aside className="fullpage__side" aria-label="Use cases with a diagram">
@@ -21,6 +57,7 @@ export default function FullPageEvidence({ page, onPage, onBack, catalog, select
         <UseCasePicker catalog={catalog} selectedId={selectedId} onPick={onPickRun} keep={runnable} slim failed={failed} label="Use cases with a diagram" />
         <p className="muted">Hand-offs and guides have no diagram here, so they are not listed. Picking a use case runs it.</p>
       </aside>
+      <div className="col-handle" role="separator" aria-orientation="vertical" aria-label="Resize use-case list" onPointerDown={onHandleDown} />
       <section className="fullpage__main" aria-label={`${title}, full page`}>
         <header className="fullpage__head">
           <h2 className="fullpage__title">{run ? `${run.useCase?.title}` : title}</h2>
