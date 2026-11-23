@@ -264,7 +264,11 @@
 .fullpage__main { display: grid; gap: 10px; min-width: 0; }
 .fullpage__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .fullpage__title { margin: 0; font-size: 18px; }
-@media (min-width: 900px) { .fullpage { grid-template-columns: 250px minmax(0, 1fr); } }
+@media (min-width: 900px) {
+  .fullpage { grid-template-columns: var(--side-w, 250px) 6px minmax(0, 1fr); }
+  .col-handle { width: 6px; min-height: 4rem; border-radius: 3px; background: var(--border); cursor: col-resize; touch-action: none; }
+  .col-handle:hover { background: var(--muted); }
+}
 
 /* text size (Quick Config) and presenter mode */
 .app[data-text="90"] .content { zoom: 0.9; }
