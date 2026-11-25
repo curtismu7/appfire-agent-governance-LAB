@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import UseCasePicker from "./components/UseCasePicker";
 import RunPanel from "./components/RunPanel";
+import RunObs, { headOf } from "./components/RunObs.jsx";
 import DiagramView from "./components/DiagramView";
 import ExtraPage from "./components/ExtraPage";
 import RunHistory from "./components/RunHistory";
@@ -522,6 +523,7 @@ export default function App() {
                         <RunPanel uc={uc} vertical={vertical} verticals={verticals} persona={persona} setPersona={setPersona} personas={personas} onRun={run} running={busy} result={result} mode={mode} realLevel={realLevel} />
                       </details>
                     )}
+                    {uc && <RunObs head={result ? headOf(result.body) : null} loading={busy} />}
                   </EvidenceColumn>
                 )}
               </div>

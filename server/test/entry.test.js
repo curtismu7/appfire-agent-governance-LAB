@@ -12,6 +12,8 @@ test('the entry installs the netguard first, before it can open any socket', () 
 test('no source file evals, uses vm or Function, builds a regular expression from input, writes a file, uses a worker or child process, or reads process.env.MODE', () => {
   const dir = new URL('../src/', import.meta.url);
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.js'))) {
+    // runObservability.js is vendored byte-for-byte from shared/run-observability (the pin test proves the bytes): it is scanned there, not here.
+    if (f === 'runObservability.js') continue;
     const code = fs.readFileSync(new URL(f, dir), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
     assert.ok(!/\beval\(|new Function\(|\bvm\./.test(code), `${f}: no eval, Function or vm`);
     assert.ok(!/writeFile|appendFile|createWriteStream|mkdirSync|rmSync|unlinkSync/.test(code), `${f}: the server writes no file`);
