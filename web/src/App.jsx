@@ -494,7 +494,7 @@ export default function App() {
           {current === "agent" && !page && (
             <div className="agno" data-several={several ? "true" : undefined}>
               {!presenter && (
-                <Rail storageKey="aag.setup" label="Setup">
+                <Rail storageKey="aag.setup" label="Setup" defaultCollapsed>
                 <SetupSidebar onNewChat={() => { dropPick(); setTurns([]); setSelHop(null); }} host={mode !== "live" || (realLevel === "full" && uc?.realGate?.real === false) ? cast.castHost : null} several={several} setSeveral={setSeveral} agent={cast.castAgent}
                   vertical={vertical} verticals={verticals} onVertical={setVertical} sessions={sessions} onSession={pick}
                   brain={cfg.brain} brainInfo={brainInfo} onBrain={(b) => setCfg((c) => ({ ...c, brain: b }))}

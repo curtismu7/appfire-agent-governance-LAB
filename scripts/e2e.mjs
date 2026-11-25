@@ -231,9 +231,9 @@ let browser;
 try {
   browser = await chromium.launch({ executablePath: process.env.E2E_CHROMIUM || undefined });
   // Today's demo set (the lab opens on all use cases; the eight are one click away): every block below drives the whole catalog, so its pages are pinned to "All use cases" (the choice is read from localStorage `aag.set`).
-  // The toggle block uses `rawContext`, which leaves the saved choice alone.
+  // The toggle block uses `rawContext`, which leaves the saved choice alone. Every block also pins the setup sidebar open (`aag.setup` = "0"): the lab opens it collapsed, and these blocks drive its picker.
   const rawContext = browser.newContext.bind(browser);
-  browser.newContext = async (o) => { const c = await rawContext(o); await c.addInitScript(() => { try { window.localStorage.setItem('aag.set', 'all'); } catch { /* storage blocked */ } }); return c; };
+  browser.newContext = async (o) => { const c = await rawContext(o); await c.addInitScript(() => { try { window.localStorage.setItem('aag.set', 'all'); window.localStorage.setItem('aag.setup', '0'); } catch { /* storage blocked */ } }); return c; };
   for (const [width, height, name] of [[1280, 900, 'desktop'], [375, 800, 'phone']]) {
     for (const scheme of ['light', 'dark']) {
       const tag = `${name}-${scheme}`;
@@ -559,6 +559,7 @@ try {
   {
     const tag = 'demo-set';
     const ctx = await rawContext({ viewport: { width: 1280, height: 900 } });
+    await ctx.addInitScript(() => { try { window.localStorage.setItem('aag.setup', '0'); } catch { /* storage blocked */ } });   // the sidebar opens collapsed: this block drives its picker
     const page = await ctx.newPage();
     const t = (id) => page.getByTestId(id);
     await page.goto(`${base}/`); await t('uc-UC1').waitFor(); // on All use cases the first track is open and the others are folded
