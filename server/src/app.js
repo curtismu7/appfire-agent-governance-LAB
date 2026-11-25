@@ -31,6 +31,8 @@ import { createProviders, toolPackOf } from './provider.js';
 import { shelfInfo } from './shelfLink.js';
 import { localize, promptsFor, routeOf } from './routes.js';
 import { createBrain, REASONS } from './brain.js';
+import { createRunLog, runEvents, recordOf, reportFailure, NO_RUN_BEGAN, NO_LONGER_KEPT } from './runObs.js';
+import { RunObsError } from './runObservability.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
@@ -56,6 +58,7 @@ export function createApp({
   health = createHealth(), configFile = CONFIG, env = process.env, bind = '127.0.0.1', openingMode = defaultMode(), workspaces = createWorkspaces({ defaultMode: openingMode }), webDist = WEB_DIST, live = createLive(), brain = createBrain(), real = createReal(),
   // The lab's own tool server (localServices.js; null when Real is not configured, the build is hosted or AAG_PROVIDER=se) and the providers made from it. A test may pass its own `providers`.
   local = null, providers = createProviders({ setting: real.providerSetting(), real, local, hosted: isHosted(env) }),
+  runLog = createRunLog(),
 } = {}) {
   const app = express();
   app.disable('x-powered-by');
@@ -139,8 +142,10 @@ export function createApp({
       s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: null, outcome: run.outcome, matchesExpected: null, traceId: run.traceId });
       return { seq: s.seq, run };
     });
+    // Rule 27: a Real run's hops are recorded the same way; its rows say which hops were real calls and which were MOCK-labelled.
+    const obsId = runLog.mock(() => runEvents(run), { source: 'real' });
     res.set('traceparent', out.run.traceparent);
-    return res.json({ ok: true, workspace: id, seq: out.seq, run: out.run });
+    return res.json({ ok: true, workspace: id, seq: out.seq, run: out.run, ...(obsId ? { obs: { id: obsId } } : { obs: null, obsNote: NO_RUN_BEGAN }) });
   };
 
   api.get('/info', (req, res) => {
@@ -406,6 +411,23 @@ export function createApp({
     } catch (e) { return next(e); }
   });
 
+  // The record of one observability run (rule 27), asked for by the id the run's own answer carried.
+  api.get('/run-record', async (req, res) => {
+    noStore(res);
+    if (Object.keys(req.query).some((k) => k !== 'runId')) return res.status(400).json({ error: 'unknown_field', detail: 'the query carries a parameter this route does not take' });
+    const id = req.query.runId;
+    if (typeof id !== 'string' || !/^run-[0-9a-f]{6}-[0-9]{1,9}$/.test(id)) return res.status(400).json({ error: 'bad_run_id', detail: 'runId must be the id of one run' });
+    const run = runLog.get(id);
+    if (!run) return res.json({ record: null, message: NO_LONGER_KEPT });
+    try {
+      return res.json({ record: await recordOf(run) });
+    } catch (err) {
+      if (err instanceof RunObsError) return res.status(err.status).json({ error: err.code, detail: err.message });
+      reportFailure('record', err);
+      return res.status(500).json({ error: 'server_error', detail: 'The lab could not build this run\'s record (the server log says why).' });
+    }
+  });
+
   api.get('/runs', (req, res) => {
     const id = ws(req, res); if (!id) return;
     noStore(res);
@@ -451,8 +473,11 @@ export function createApp({
           s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: run.persona, outcome: run.outcome, matchesExpected: run.matchesExpected, ...(run.useCase?.labelSource ? { labelSource: run.useCase.labelSource } : {}), traceId: run.traceId });
           return { seq: s.seq, run };
         });
+        // Rule 27: the run's hops become the observability record, computed once. The head key is `obs` (the answer already carries `run`, the engine's full run object).
+        const obsId = runLog.mock(() => runEvents(out.run), { source: 'mock' });
+        const head = obsId ? { obs: { id: obsId } } : { obs: null, obsNote: NO_RUN_BEGAN };
         res.set('traceparent', out.run.traceparent);
-        return res.json({ ok: true, workspace: id, seq: out.seq, run: out.run });
+        return res.json({ ok: true, workspace: id, seq: out.seq, run: out.run, ...head });
       };
       if (requested === 'live') {
         const why = liveRefusal(realCtx(req));
@@ -508,6 +533,7 @@ export function createApp({
       if (!strict(req, res, KEYS.reset)) return;
       await workspaces.reset(id);
       real.signOut(id); // Reset also ends this workspace's Real token session; the PingOne session stays, so the next run signs in silently
+      runLog.clear(); // Reset clears the observability records too (rule 27).
       return res.json({ reset: 'ok', workspace: id });
     } catch (e) { return next(e); }
   });
