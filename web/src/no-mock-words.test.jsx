@@ -10,6 +10,8 @@
 //   Q4       the brain's name "Scripted" and the hand-off app id mock-authorize are names the owner kept (answer 4).
 //   RULE 5   the diagram's "Simulate" control keeps the rulebook's name for it (rule 5 is the owner's file; see docs/rulebook-amendments.md).
 //   TERM     "policy engine" is a product term.
+//   PANEL    the run record panel (data-testid="run-record", owner 2026-11-25: this lab's "What each layer logged for this run" panel may say mock,
+//            real and simulated, and names the lab engine as its product). Nothing outside that panel is exempt.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -27,6 +29,7 @@ export function readable(root) {
   const out = [];
   for (const el of [root, ...root.querySelectorAll("*")]) {
     if (DATA.some((sel) => el.closest(sel))) continue;
+    if (el.closest('[data-testid="run-record"]')) continue; // PANEL
     const own = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join(" ").trim();
     if (own) out.push({ where: `${el.tagName.toLowerCase()}${el.getAttribute("data-testid") ? `[${el.getAttribute("data-testid")}]` : ""} text`, text: own });
     for (const a of ATTRS) if (el.getAttribute(a)) out.push({ where: `${el.tagName.toLowerCase()} ${a}`, text: el.getAttribute(a) });

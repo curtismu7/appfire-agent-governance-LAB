@@ -15,7 +15,11 @@ test('no source file evals, uses vm or Function, builds a regular expression fro
     const code = fs.readFileSync(new URL(f, dir), 'utf8').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
     assert.ok(!/\beval\(|new Function\(|\bvm\./.test(code), `${f}: no eval, Function or vm`);
     assert.ok(!/writeFile|appendFile|createWriteStream|mkdirSync|rmSync|unlinkSync/.test(code), `${f}: the server writes no file`);
-    assert.ok(!/new RegExp\(/.test(code.replace(/new RegExp\(`\^0\{\$\{n\}\}\$`\)/, '')), `${f}: no regular expression is built from input`);
+    const regexps = code.replace(/new RegExp\(`\^0\{\$\{n\}\}\$`\)/, '');
+    // The vendored run-observability core (byte-pinned to shared/run-observability; CLAUDE.md "Run observability") builds 21 patterns from its fixed
+    // tables and from the run's escaped correlation terms. That count is the one named exemption: a change to the pinned file moves it and fails here.
+    if (f === 'runObservability.js') assert.equal((regexps.match(/new RegExp\(/g) || []).length, 21, `${f}: the pinned core builds exactly its 21 named patterns`);
+    else assert.ok(!/new RegExp\(/.test(regexps), `${f}: no regular expression is built from input`);
     assert.ok(!/process\.env\.MODE\b|env\.MODE\b/.test(code), `${f}: a bare MODE is never read`);
     // The lab's own tool server is forked by localServices.js and nowhere else, and only with `fork` (never spawn, exec or a shell).
     if (f === 'localServices.js') {

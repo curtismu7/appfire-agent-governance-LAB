@@ -31,6 +31,7 @@ import { createProviders, toolPackOf } from './provider.js';
 import { shelfInfo } from './shelfLink.js';
 import { localize, promptsFor, routeOf } from './routes.js';
 import { createBrain, REASONS } from './brain.js';
+import { createRunRecords, RUN_ID } from './runRecord.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
@@ -53,7 +54,7 @@ export const REAL_LABELS = {
 // Every hop of the mock engine says where it ran (rule 19: REAL or MOCK by what actually ran, never mixed within a hop).
 const withSource = (run) => ({ ...run, hops: run.hops.map((h) => ({ ...h, source: h.verdict === 'skip' ? 'not-run' : 'mock' })) });
 export function createApp({
-  health = createHealth(), configFile = CONFIG, env = process.env, bind = '127.0.0.1', openingMode = defaultMode(), workspaces = createWorkspaces({ defaultMode: openingMode }), webDist = WEB_DIST, live = createLive(), brain = createBrain(), real = createReal(),
+  health = createHealth(), configFile = CONFIG, env = process.env, bind = '127.0.0.1', openingMode = defaultMode(), workspaces = createWorkspaces({ defaultMode: openingMode }), runRecords = createRunRecords(), webDist = WEB_DIST, live = createLive(), brain = createBrain(), real = createReal(),
   // The lab's own tool server (localServices.js; null when Real is not configured, the build is hosted or AAG_PROVIDER=se) and the providers made from it. A test may pass its own `providers`.
   local = null, providers = createProviders({ setting: real.providerSetting(), real, local, hosted: isHosted(env) }),
 } = {}) {
@@ -452,7 +453,9 @@ export function createApp({
           return { seq: s.seq, run };
         });
         res.set('traceparent', out.run.traceparent);
-        return res.json({ ok: true, workspace: id, seq: out.seq, run: out.run });
+        // The engine's run is recorded after the write (the record is built from the stored run; a failure is logged and the run is answered without one).
+        const recorded = await runRecords.record(id, out.run, { uc });
+        return res.json({ ok: true, workspace: id, seq: out.seq, run: out.run, ...(recorded ? { observability: { runId: recorded.runId } } : {}) });
       };
       if (requested === 'live') {
         const why = liveRefusal(realCtx(req));
@@ -500,6 +503,19 @@ export function createApp({
     } catch (e) { return next(e); }
   });
 
+  // The run-observability record of one mock run (GET only). A Live answer never returns a Mock record, and an unknown id is a 404.
+  api.all('/run-observability/:runId', (req, res, next) => {
+    if (req.method !== 'GET') return res.set('Allow', 'GET').status(405).json({ error: 'method_not_allowed' });
+    try {
+      const id = ws(req, res); if (!id) return;
+      noStore(res);
+      if (!RUN_ID.test(req.params.runId)) return res.status(400).json({ error: 'bad_run', detail: 'the run id is not one this lab issues' });
+      const record = modeFor(req, workspaces.peek(id).mode) === 'mock' ? runRecords.get(id, req.params.runId) : null;
+      if (!record) return res.status(404).json({ error: 'run_not_found', detail: 'no record of this run in this mode' });
+      return res.json(record);
+    } catch (e) { return next(e); }
+  });
+
   // Reset clears this workspace's mode and runs and nothing else.
   api.post('/reset', jsonWrites, async (req, res, next) => {
     try {
@@ -507,6 +523,7 @@ export function createApp({
       noStore(res);
       if (!strict(req, res, KEYS.reset)) return;
       await workspaces.reset(id);
+      runRecords.clear(id);
       real.signOut(id); // Reset also ends this workspace's Real token session; the PingOne session stays, so the next run signs in silently
       return res.json({ reset: 'ok', workspace: id });
     } catch (e) { return next(e); }

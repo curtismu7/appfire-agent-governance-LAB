@@ -197,6 +197,18 @@ Owner only (agents never run these: they change a real PingOne environment and t
 
 API: `GET /api/health`, `GET /api/info`, `GET /api/story?vertical=`, `GET /api/diagram?name=` (two diagram-studio/1 diagrams: delegation-chain, gateway-refusals; the web app draws them), `GET /api/usecases?vertical=&track=`, `GET /api/usecases/:id`, `GET`/`PUT /api/mode`, `GET /api/brain[?check=1]`, `POST /api/brain/pick` (`{vertical, text}` -> `{ok, uc}` or `{ok:false, reason, message}`), `POST /api/run/:id` (`{vertical, persona, mode}`; `GET /api/info` adds `liveSettings`: whether the PingOne settings are present and the one origin, never the environment id or client), `GET /api/runs`, `POST /api/reset`. The workspace id goes in the `X-Workspace` header (default `default`).
 
+## What each layer logged for a run (run observability)
+
+After a run on the lab's own engine, the page shows "What each layer logged for this run": one row per engine hop, grouped under six layers (person, agent, Authorize, Privilege, gateway, resource server). The engine computed every row; no product log was read.
+
+- **Where it lives:** in the lab server's memory, per workspace, for the last 50 runs. Reset clears it. A restart clears it.
+- **Times:** every hop of a run is computed in one call, so every row carries the time the engine finished the run. Rows that share a time are listed by layer, not by the order the engine ran them.
+- **Decisions on stdout:** one line per policy decision (Authorize, the gateway, Privilege, or the lab's own rule stop), for example `<iso> appfire-agent-governance decision step=gateway-policy actor=UC1 result=passed run=<id>`. Values are reduced to letters, digits and `. : / @ -`.
+- **Not recorded:** Real runs have no record yet, and the panel says so. Authorize and the other layers have no product log line in Real; nothing is claimed for them. Token checks and issuance are information, never allowed or refused.
+- **Route:** `GET /api/run-observability/:runId` (GET only, no store). A record is answered only in Mock mode.
+
+The panel is the family's vendored component (`web/src/run-observability/`, byte-pinned to `shared/run-observability` on `origin/main`; `scripts/run-observability-checkPin.mjs` checks it). The lab's wrapper is `web/src/components/RunRecordPanel.jsx`.
+
 ## Health, doctor and reset
 
 - `GET /api/health` returns `demo-health/1` (public, GET only, no detail).

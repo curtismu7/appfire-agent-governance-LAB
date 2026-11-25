@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import UseCasePicker from "./components/UseCasePicker";
 import RunPanel from "./components/RunPanel";
+import RunRecordPanel from "./components/RunRecordPanel.jsx";
 import DiagramView from "./components/DiagramView";
 import ExtraPage from "./components/ExtraPage";
 import RunHistory from "./components/RunHistory";
@@ -520,6 +521,7 @@ export default function App() {
                       <details className="ucpanel" open ref={runRef} data-testid="uc-panel">
                         <summary>{uc.title}: inputs, persona, Run and the raw result</summary>
                         <RunPanel uc={uc} vertical={vertical} verticals={verticals} persona={persona} setPersona={setPersona} personas={personas} onRun={run} running={busy} result={result} mode={mode} realLevel={realLevel} />
+                        <RunRecordPanel result={result} />
                       </details>
                     )}
                   </EvidenceColumn>

@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { createApp, startHttpServer } from '../src/app.js';
 import { createHealth } from '../src/health.js';
+import { createRunRecords } from '../src/runRecord.js';
 import { createWorkspaces } from '../src/workspaces.js';
 import { VERTICALS } from '../src/cast.js';
 
@@ -11,7 +12,7 @@ export const MOCK_OK = { ALLOW_MOCK_SIGNIN: '1' };
 export async function withServer(fn, { configFile = '/nonexistent/customer.config.json', workspaces = createWorkspaces(), env = MOCK_OK, bind = '127.0.0.1', webDist = '/nonexistent/web-dist', live, brain, real, local, providers } = {}) {
   const health = createHealth({ runChecks: async () => [], intervalMs: 3_600_000 });
   await health.ready;
-  const { server, url } = await startHttpServer({ port: 0, host: '127.0.0.1', app: createApp({ health, configFile, workspaces, env, bind, webDist, ...(live ? { live } : {}), ...(brain ? { brain } : {}), ...(real ? { real } : {}), ...(local ? { local } : {}), ...(providers ? { providers } : {}) }) });
+  const { server, url } = await startHttpServer({ port: 0, host: '127.0.0.1', app: createApp({ health, configFile, workspaces, env, bind, webDist, runRecords: createRunRecords({ writer: () => {}, log: () => {} }), ...(live ? { live } : {}), ...(brain ? { brain } : {}), ...(real ? { real } : {}), ...(local ? { local } : {}), ...(providers ? { providers } : {}) }) });
   try { await fn(url.replace(/\/$/, ''), { workspaces }); } finally { health.stop(); await new Promise((res) => server.close(res)); }
 }
 
