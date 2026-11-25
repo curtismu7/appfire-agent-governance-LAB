@@ -42,7 +42,7 @@ describe("the run record in a narrow column", () => {
   test("the section is a size container, so the card layout follows its own width", () => {
     expect(css).toMatch(/\[data-testid="run-record"\] \{[^}]*container-type: inline-size;/);
   });
-  test("below 900px of section width the table becomes cards, and the outcome chip is not forced onto the next cell", () => {
+  test("below 900px of section width the table becomes cards, each cell labelled by its column", () => {
     const q = css.match(/@container \(max-width: 900px\) \{[\s\S]*?\n\}/)?.[0] ?? "";
     expect(q).toMatch(/\.ro-table, \.ro-table tbody, \.ro-table tr, \.ro-table td \{ display: block; width: 100%; \}/);
     expect(q).toMatch(/\.ro-row td::before \{/);
