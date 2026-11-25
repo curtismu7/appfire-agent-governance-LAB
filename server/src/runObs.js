@@ -109,7 +109,8 @@ function chainOf(run) {
     ...(user ? { user } : {}),
     ...(agent ? { agent } : {}),
     ...(scopes.length ? { scopes } : {}),
-    ...(decision ? { policy: { product: PRODUCT.authorize, decision: decision === 'PERMIT' || decision === 'CONSTRAINED' || decision === 'DELEGATE_AND_EXECUTE' ? 'permit' : decision === 'DENY' || decision === 'DENY_401' || decision === 'DENY_403' || decision === 'DENY_429' || decision === 'DENY_503' ? 'deny' : 'obligation', ...(run.useCase?.id ? { id: run.useCase.id } : {}) } } : {}),
+    // No policy id: this lab's policy point is the Authorize decision for the use case that ran, and the page never shows a use-case id (e2e enforces it).
+    ...(decision ? { policy: { product: PRODUCT.authorize, decision: decision === 'PERMIT' || decision === 'CONSTRAINED' || decision === 'DELEGATE_AND_EXECUTE' ? 'permit' : decision === 'DENY' || decision === 'DENY_401' || decision === 'DENY_403' || decision === 'DENY_429' || decision === 'DENY_503' ? 'deny' : 'obligation' } } : {}),
   };
 }
 

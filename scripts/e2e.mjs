@@ -102,7 +102,10 @@ const toolHop = (run) => (run?.hops || []).find((h) => ['tool-dispatched', 'tool
 //            AI-DEMO-Standalone first and the labs re-vendor, so until then they are named here.
 //   PROMPT   the banking pack's What to type chips are the catalog's own text, verbatim ("simulate an agent identity mismatch"); a test pins them.
 const WORDS = /mock|simulat|offline|\bengine\b|scripted/i;
-const EXCEPTIONS = [/lab-simulated/gi, /\bScripted\b/g, /mock-authorize/g, /\bSimulate\b/g, /policy engine/gi, /scripted intent match \(mock\)/gi, /A DENY proves the engine answered/g, /Nothing here was decided by the engine/g, /simulate an? (forged )?agent (identity mismatch|in the delegation chain)/gi];
+const EXCEPTIONS = [/lab-simulated/gi, /\bScripted\b/g, /mock-authorize/g, /\bSimulate\b/g, /policy engine/gi, /scripted intent match \(mock\)/gi, /A DENY proves the engine answered/g, /Nothing here was decided by the engine/g, /simulate an? (forged )?agent (identity mismatch|in the delegation chain)/gi,
+  // RUN-OBS (owner's 2026-11-16 wording exception, granted per lab): the vendored panel's own basis line names what the rows are. The chain's origin
+  // chips ("simulated") are the shared panel's honesty marker in every lab that vendors it; the origin words ride data-origin attributes, not this scan.
+  /Simulated: the lab's mock computed these rows\. None of them was read from a product log\./gi];
 const SCAN = `(() => {
   const DATA = ['.jsonbox', '.json', '.jwire', '.http__url', '.http__line', '.fact__v', '[data-testid="claim-diff"]', '[data-testid="sdp-kv"]', 'script', 'style'];
   const ATTRS = ['aria-label', 'title', 'placeholder', 'alt'];
