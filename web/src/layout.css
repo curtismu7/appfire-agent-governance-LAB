@@ -216,6 +216,18 @@
 .ucpanel > summary { padding: 8px 12px; font-size: 13px; }
 .ucpanel > .panel { border: 0; border-radius: 0 0 10px 10px; }
 
+/* The run record sits in the narrow evidence column: below 900px of its own width the vendored table becomes cards (its own switch is by viewport). */
+[data-testid="run-record"] { container-type: inline-size; }
+@container (max-width: 900px) {
+  .ro-table, .ro-table tbody, .ro-table tr, .ro-table td { display: block; width: 100%; }
+  .ro-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .ro-row { margin: 10px 0 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  .ro-row td { border-bottom: 0; padding: 4px 10px; }
+  .ro-row td::before { content: attr(data-label); display: block; font-size: 0.75rem; font-weight: 700; color: var(--muted); }
+  .ro-xrow td { border: 1px solid var(--border); border-top: 0; border-radius: 0 0 8px 8px; padding: 8px 10px; }
+  .ro-lane-name { min-width: 0; }
+}
+
 .wtt { margin: 0 0 8px; }
 .wtt .kicker { margin-top: 0; }
 .wtt__groups { display: grid; gap: 4px; max-height: 132px; overflow-y: auto; }
