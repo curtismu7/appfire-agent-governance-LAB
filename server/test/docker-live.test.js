@@ -17,21 +17,28 @@ const empty = path.join(dir, 'empty.env');
 fs.writeFileSync(empty, '', { mode: 0o600 });
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
+// How a child ended: by a signal (no exit code) or by its exit code. Used for every "the lab ended" message.
+function endReason({ code, signal }) {
+  return signal ? `killed by ${signal}` : `exited with ${code}`;
+}
+
 // Starts the lab like the container does (no settings file: AAG_ENV_FILE is an empty one), waits for it, returns its first log line and /api/info.
-// An answer counts only when this child printed its own address for this port (index.js prints it after it is listening) and is still alive, so a
-// process that already holds the port is never read as the lab. stderr is kept: a failed start names its reason (EADDRINUSE and the like).
+// An answer counts only when this child printed its own address for this port (index.js prints it after it is listening) and the child has not ended,
+// so a process that already holds the port is never read as the lab. The end is taken from 'close', which fires after stdout and stderr are drained,
+// so the reason (EADDRINUSE and the like) is complete when it is thrown.
 async function boot(port, extra, probe) {
   const env = { ...process.env, PORT: String(port), AAG_ENV_FILE: empty, ALLOW_MOCK_SIGNIN: '1', ...extra };
   for (const k of ['CALAB_BIND', 'AAG_LAB_MODE', 'IDP', 'AAG_ALLOW_LIVE', 'AAG_LIVE_TEST_BASE', 'AAG_DEPLOY_MODE', ...REAL_KEYS]) if (!(k in extra)) delete env[k];
   const child = spawn(process.execPath, [entry], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let out = ''; let err = '';
+  let out = ''; let err = ''; let ended = null;
   child.stdout.on('data', (c) => { out += c; });
   child.stderr.on('data', (c) => { err += c; });
-  const exited = () => new Error(`the lab exited (${child.exitCode}) before it started on ${port}: ${err.trim().slice(0, 400)}`);
+  child.once('close', (code, signal) => { ended = { code, signal }; });
+  const endError = () => new Error(`the lab ${endReason(ended)} before it started on ${port}: ${err.trim().slice(0, 400)}`);
   try {
     const announced = `lab at http://127.0.0.1:${port}/`;
     for (let i = 0; i < 200; i++) {
-      if (child.exitCode !== null) throw exited();
+      if (ended) throw endError();
       if (out.includes(announced)) {
         let info = null; let mode = null;
         try {
@@ -39,7 +46,7 @@ async function boot(port, extra, probe) {
           mode = await (await fetch(`http://127.0.0.1:${port}/api/mode`)).json();
         } catch { /* not answering yet */ }
         if (info && mode) {
-          if (child.exitCode !== null) throw exited();
+          if (ended) throw endError();
           return { log: out.split('\n')[0], info, mode, probe: probe ? await probe(`http://127.0.0.1:${port}`) : undefined };
         }
       }
@@ -152,7 +159,7 @@ test('boot refuses a port another process answers: the child fails to bind, and 
 });
 
 // A child that ends by a signal has no exit code: the reason must name the signal, never "(null)".
-test('a child killed by a signal is reported by its signal name, and the wait ends at once', async () => {
+test('a child killed by a signal is reported by its signal name', async () => {
   const child = spawn(process.execPath, ['-e', "process.kill(process.pid, 'SIGTERM')"], { stdio: ['ignore', 'pipe', 'pipe'] });
   const info = await new Promise((r) => child.once('close', (code, signal) => r({ code, signal })));
   assert.match(endReason(info), /killed by SIGTERM/);
