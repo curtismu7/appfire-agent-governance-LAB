@@ -35,3 +35,16 @@ describe("the risk strip: four rungs everywhere, five on the airline pack", () =
     expect(css).toMatch(/\.risk__rung:last-child:nth-child\(odd\) \{ grid-column: 1 \/ -1; \}/);
   });
 });
+
+// The run record's six-column table is cramped in the 524px evidence column at 1280px (the vendored panel switches to cards only at 760px of viewport
+// width). The lab's own container query makes the section a size container and switches it to the card layout when the section is 900px or narrower.
+describe("the run record in a narrow column", () => {
+  test("the section is a size container, so the card layout follows its own width", () => {
+    expect(css).toMatch(/\[data-testid="run-record"\] \{[^}]*container-type: inline-size;/);
+  });
+  test("below 900px of section width the table becomes cards, and the outcome chip is not forced onto the next cell", () => {
+    const q = css.match(/@container \(max-width: 900px\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+    expect(q).toMatch(/\.ro-table, \.ro-table tbody, \.ro-table tr, \.ro-table td \{ display: block; width: 100%; \}/);
+    expect(q).toMatch(/\.ro-row td::before \{/);
+  });
+});
