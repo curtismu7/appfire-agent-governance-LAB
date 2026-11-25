@@ -147,6 +147,13 @@ test('boot refuses a port another process answers: the child fails to bind, and 
   const squatter = http.createServer((req, res) => { res.setHeader('content-type', 'application/json'); res.end('{"squatter":true}'); });
   await new Promise((r) => squatter.listen(7836, '127.0.0.1', r));
   try {
-    await assert.rejects(boot(7836, { AAG_LIVE_FROM_ENV: '1', AAG_PUBLISH: 'loopback' }), (e) => /EADDRINUSE|exited/.test(e.message));
+    await assert.rejects(boot(7836, { AAG_LIVE_FROM_ENV: '1', AAG_PUBLISH: 'loopback' }), (e) => /EADDRINUSE/.test(e.message));
   } finally { await new Promise((r) => squatter.close(r)); }
+});
+
+// A child that ends by a signal has no exit code: the reason must name the signal, never "(null)".
+test('a child killed by a signal is reported by its signal name, and the wait ends at once', async () => {
+  const child = spawn(process.execPath, ['-e', "process.kill(process.pid, 'SIGTERM')"], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const info = await new Promise((r) => child.once('close', (code, signal) => r({ code, signal })));
+  assert.match(endReason(info), /killed by SIGTERM/);
 });
