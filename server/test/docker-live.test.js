@@ -18,20 +18,34 @@ fs.writeFileSync(empty, '', { mode: 0o600 });
 test.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 // Starts the lab like the container does (no settings file: AAG_ENV_FILE is an empty one), waits for it, returns its first log line and /api/info.
+// An answer counts only when this child printed its own address for this port (index.js prints it after it is listening) and is still alive, so a
+// process that already holds the port is never read as the lab. stderr is kept: a failed start names its reason (EADDRINUSE and the like).
 async function boot(port, extra, probe) {
   const env = { ...process.env, PORT: String(port), AAG_ENV_FILE: empty, ALLOW_MOCK_SIGNIN: '1', ...extra };
   for (const k of ['CALAB_BIND', 'AAG_LAB_MODE', 'IDP', 'AAG_ALLOW_LIVE', 'AAG_LIVE_TEST_BASE', 'AAG_DEPLOY_MODE', ...REAL_KEYS]) if (!(k in extra)) delete env[k];
-  const child = spawn(process.execPath, [entry], { env, stdio: ['ignore', 'pipe', 'ignore'] });
-  let out = ''; child.stdout.on('data', (c) => { out += c; });
+  const child = spawn(process.execPath, [entry], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = ''; let err = '';
+  child.stdout.on('data', (c) => { out += c; });
+  child.stderr.on('data', (c) => { err += c; });
+  const exited = () => new Error(`the lab exited (${child.exitCode}) before it started on ${port}: ${err.trim().slice(0, 400)}`);
   try {
+    const announced = `lab at http://127.0.0.1:${port}/`;
     for (let i = 0; i < 200; i++) {
-      try {
-        const info = await (await fetch(`http://127.0.0.1:${port}/api/info`)).json();
-        const mode = await (await fetch(`http://127.0.0.1:${port}/api/mode`)).json();
-        return { log: out.split('\n')[0], info, mode, probe: probe ? await probe(`http://127.0.0.1:${port}`) : undefined };
-      } catch { await new Promise((r) => setTimeout(r, 100)); }
+      if (child.exitCode !== null) throw exited();
+      if (out.includes(announced)) {
+        let info = null; let mode = null;
+        try {
+          info = await (await fetch(`http://127.0.0.1:${port}/api/info`)).json();
+          mode = await (await fetch(`http://127.0.0.1:${port}/api/mode`)).json();
+        } catch { /* not answering yet */ }
+        if (info && mode) {
+          if (child.exitCode !== null) throw exited();
+          return { log: out.split('\n')[0], info, mode, probe: probe ? await probe(`http://127.0.0.1:${port}`) : undefined };
+        }
+      }
+      await new Promise((r) => setTimeout(r, 100));
     }
-    throw new Error('the lab did not start');
+    throw new Error(`the lab did not start on ${port}: ${err.trim().slice(0, 400)}`);
   } finally { child.kill(); }
 }
 
