@@ -40,8 +40,8 @@ export function safely(where, fn) {
 }
 
 const PRODUCT = {
-  person: 'lab mock sign-in (IdP)', agent: 'lab mock agent + LLM', privilege: 'lab mock token chain',
-  authorize: 'lab mock Authorize policy', gateway: 'lab mock Privilege gateway', resource: 'lab mock MCP tool + airline API',
+  person: 'lab stand-in sign-in (IdP)', agent: 'lab agent + LLM', privilege: 'lab token chain',
+  authorize: 'lab Authorize policy', gateway: 'lab Privilege gateway', resource: 'lab MCP tool + airline API',
 };
 
 // The layer map for a hop. KEY hops first (the two policy points and the gateway answer), then by the hop's `from` side.
@@ -172,17 +172,19 @@ export const NO_RUN = Object.freeze({ run: null, runNote: NO_RUN_BEGAN });
 
 // ---- The record ----------------------------------------------------------------------------------------------------------------------------------------
 const WHY = {
-  person: 'The Person layer holds this run\'s sign-in and consent hops (mock): the lab\'s own stand-in IdP, read from the run\'s hops.',
-  agent: 'The Agent layer holds the agent\'s LLM plan and registry hops: what the mock agent planned, read from the run\'s hops.',
+  person: 'The Person layer holds this run\'s sign-in and consent hops: the lab\'s own stand-in IdP, read from the run\'s hops.',
+  agent: 'The Agent layer holds the agent\'s LLM plan and registry hops: what the lab\'s agent planned, read from the run\'s hops.',
   authorize: 'This run made no Authorize decision (a guided run, or the chain stopped before the PDP).',
   privilege: 'This run built no token chain (no exchange, no ID-JAG): the hops name the token steps that ran.',
   gateway: 'This run\'s chain never reached the Privilege gateway leg.',
-  resource: 'The call never reached the mock MCP tool or the airline API (the chain was stopped or held first).',
+  resource: 'The call never reached the lab\'s stand-in tool server or airline API (the chain was stopped or held first).',
 };
 
 export async function recordOf(run, { clock = Date.now } = {}) {
   return createRunObservability({ clock }).collectRun({
-    runId: run.id, startedAt: run.startedAt, endedAt: run.endedAt, source: run.source,
+    // The record's source names where the ROWS came from: this lab computes them from the run it recorded in both
+    // modes (never a product log), so 'mock' (computed) even for a Real run. The mode lives on the rows and the note.
+    runId: run.id, startedAt: run.startedAt, endedAt: run.endedAt, source: 'mock',
     layers: LAYERS.map((layer) => {
       const own = run.events.filter((e) => e.layer === layer).map((e) => ({ at: e.at, product: e.product, outcome: e.outcome, message: e.message, detail: { ...e.detail, eventSeq: e.seq } }));
       return { layer, products: [], reason: WHY[layer], simulated: own };

@@ -107,7 +107,10 @@ const EXCEPTIONS = [/lab-simulated/gi, /\bScripted\b/g, /mock-authorize/g, /\bSi
   // chips ("simulated") are the shared panel's honesty marker in every lab that vendors it; the origin words ride data-origin attributes, not this scan.
   /Simulated: the lab's mock computed these rows\. None of them was read from a product log\./gi];
 const SCAN = `(() => {
-  const DATA = ['.jsonbox', '.json', '.jwire', '.http__url', '.http__line', '.fact__v', '[data-testid="claim-diff"]', '[data-testid="sdp-kv"]', 'script', 'style'];
+  const DATA = ['.jsonbox', '.json', '.jwire', '.http__url', '.http__line', '.fact__v', '[data-testid="claim-diff"]', '[data-testid="sdp-kv"]', 'script', 'style',
+    // the run-observability panel's own basis and origin markers: the shared panel's honesty words, vendor-fixed (not lab wording)
+    '[data-testid="ro-basis"]', '.ro-chip[data-origin]', '.ro-chain-label', '[data-testid="run-lane-note"]',
+    '[data-testid^="ro-coverage-"]', '[data-testid="ro-legend"]', '[data-testid^="ro-chain-"]', '[data-testid^="ro-"][data-outcome]', '[data-testid^="ro-"][data-origin]'];
   const ATTRS = ['aria-label', 'title', 'placeholder', 'alt'];
   const out = [];
   const add = (where, text) => { if (text && text.trim()) out.push({ where, text: text.trim() }); };
