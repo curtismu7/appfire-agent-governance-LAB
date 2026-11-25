@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -125,4 +126,13 @@ test('the hosted build still refuses Real even with the settings in its environm
   const r = await boot(7824, { AAG_DEPLOY_MODE: 'hosted', AAG_LIVE_FROM_ENV: '1', ...settingsFor() });
   assert.equal(r.info.realAvailable, false); assert.match(r.mode.liveReason, /hosted build/); assert.match(r.log, /no outbound network/);
   assert.equal(r.info.mode, 'mock', 'hosted always opens on the lab\'s own steps, whatever the settings'); assert.equal(r.info.hosted, true);
+});
+
+// A port another process holds must not be read as the lab: the answer has to come from the child this boot started (its own announced address).
+test('boot refuses a port another process answers: the child fails to bind, and its own reason is named', async () => {
+  const squatter = http.createServer((req, res) => { res.setHeader('content-type', 'application/json'); res.end('{"squatter":true}'); });
+  await new Promise((r) => squatter.listen(7836, '127.0.0.1', r));
+  try {
+    await assert.rejects(boot(7836, { AAG_LIVE_FROM_ENV: '1', AAG_PUBLISH: 'loopback' }), (e) => /EADDRINUSE|exited/.test(e.message));
+  } finally { await new Promise((r) => squatter.close(r)); }
 });
