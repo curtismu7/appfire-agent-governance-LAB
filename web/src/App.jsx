@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, lazy, Suspense} from "react";
 import UseCasePicker from "./components/UseCasePicker";
 import RunPanel from "./components/RunPanel";
 import RunObs, { headOf } from "./components/RunObs.jsx";
@@ -32,6 +32,20 @@ import { DEMO_GUIDE } from "./demoGuide";
 import MockPhone from "./components/MockPhone";
 import SignInDialog from "./components/SignInDialog";
 import TopMenu, { applyFontSize } from "./top-menu/TopMenu.jsx";
+import StoryToggle, { storyKey } from "./story/StoryToggle.jsx";
+// Story mode is loaded only when the viewer switches it on, so the page in Demo mode does not pay for it.
+const StoryRoot = lazy(() => import("./StoryRoot.jsx"));
+// If the Story chunk cannot load (a stale file name, the network) the shell bar must survive: Demo mode is never taken down by Story.
+class StoryBoundary extends React.Component {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() { return this.state.failed ? (
+    <div className="story-bar" role="alert" data-testid="story-error">
+      <span className="story-msg">Story could not load. Reload the page and try again.</span>
+    </div>
+  ) : this.props.children; }
+}
+export const STORY_PREFIX = "appfire";
 import "./top-menu/top-menu.css";
 import "./layout.css";
 
@@ -85,6 +99,8 @@ export default function App() {
   const [opened, setOpened] = useState({});
   const [last, setLast] = useState(null);
   const [runCount, setRunCount] = useState(0);
+  const [storyOn, setStoryOn] = useState(false);
+  const [toggleKey, setToggleKey] = useState(0);
   const [view, setView_] = useState(viewFromHash());
   const [theme, setThemeState] = useState(savedTheme);
   const [fontStep, setFontStep] = useState(() => { try { return window.localStorage.getItem(FONT_KEY) || "M"; } catch { return "M"; } });
@@ -238,6 +254,13 @@ export default function App() {
 
   const patchTurn = (id, patch) => setTurns((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   // One run of use case `u`. `turn` (optional) is the chat exchange it answers; `who` overrides the persona when the use case names one.
+  // Exit in the Story bar: back to Demo, remembered, and ?story=1 dropped from the address so a reload stays in Demo.
+  const leaveStory = useCallback(() => {
+    try { localStorage.setItem(storyKey(STORY_PREFIX), "demo"); } catch { /* not remembered */ }
+    try { const u = new URL(window.location.href); if (u.searchParams.has("story")) { u.searchParams.delete("story"); window.history.replaceState(null, "", u); } } catch { /* no address to tidy */ }
+    setToggleKey((k) => k + 1);
+  }, []);
+
   const startRun = async (u, turn = null, who = persona, extra = null) => {
     if (!u || running) return;
     const mine = ++runSeq.current;
@@ -245,12 +268,15 @@ export default function App() {
     const tid = turn ? ++turnSeq.current : null;
     if (turn) setTurns((ts) => [...ts, { id: tid, uc: u, vertical, status: "running", ...turn }]);
     setRunning(true);
+    window.dispatchEvent(new CustomEvent("paad:run-start")); // Story's host watches these two events (shared story contract)
+
     // A typed or chip turn tells the server what was said and which brain actually picked the use case ("llama" only when llama.cpp did;
     // a fallback is "scripted"). A picked or previewed run sends neither.
     const typed = turn && turn.how !== "picked" ? { said: String(turn.said).slice(0, 400), brain: turn.how === "llm" ? "llama" : "scripted" } : {};
     const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(instrEdit !== null ? { instructions: instrEdit } : {}), ...(extra ?? {}) }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
     if (mine !== runSeq.current) return; // a Reset or a newer run took over
     setRunning(false);
+    window.dispatchEvent(new CustomEvent("paad:run-end", { detail: { ok: res.status < 500 } })); // a 4xx answer still completed (the rows show it)
     // Real runs as the person: no sign-in yet opens the Sign in dialog, and the run goes again once it succeeds.
     if (res.status === 401 && res.body?.error === "sign_in_required") { pendingRun.current = { u, turn: turn ? { said: turn.said, how: turn.how, source: turn.source } : null, who }; setSignOpen(true); }
     // A use case the gateway cannot serve runs wholly on the lab's own engine; this refusal only happens when that engine is not available here (the server's words, shown as they are).
@@ -460,11 +486,18 @@ export default function App() {
             onReset={reset}
             showSignIn={mode === "live" && realLevel === "full"}
             signedIn={{ subject: signedIn ? (signin?.user?.name || "demo user") : null, onSignIn: () => setSignOpen(true), onSignOut: signOut }}
-            extra={<button type="button" aria-expanded={qcOpen} aria-controls={qcOpen && current === "agent" && !page ? "quick-config" : undefined} onClick={() => { setQcOpen((v) => !v); if (page || current !== "agent") select("agent"); }} data-testid="qc-open">Quick Config</button>}
+            extra={<><StoryToggle key={toggleKey} prefix={STORY_PREFIX} onChange={setStoryOn} /><button type="button" aria-expanded={qcOpen} aria-controls={qcOpen && current === "agent" && !page ? "quick-config" : undefined} onClick={() => { setQcOpen((v) => !v); if (page || current !== "agent") select("agent"); }} data-testid="qc-open">Quick Config</button></>}
           >
             <ShelfLink url={info?.shelfUrl} headers={() => ({ "x-workspace": workspaceId() })} />
             <VerifyMark id="appfire-agent-governance-lab" headers={() => ({ "x-workspace": workspaceId() })} />
           </TopMenu>
+          {storyOn ? (
+            <StoryBoundary onExit={leaveStory}>
+              <Suspense fallback={null}>
+                <StoryRoot mode={mode === "live" ? "real" : "mock"} ready onExit={leaveStory} prefix={STORY_PREFIX} />
+              </Suspense>
+            </StoryBoundary>
+          ) : null}
           {/* rule 19 (2026-11-03): the conformance gate greps for a mode-real testid in the UI; this hidden marker aliases the Real button. */}
           <span hidden aria-hidden="true" data-testid="mode-real" />
           {/* The opening mode is the server's; tests and scripts read it here (no words) and switch it with POST /api/mode. */}

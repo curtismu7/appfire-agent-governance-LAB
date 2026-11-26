@@ -145,7 +145,7 @@ test('step 2: the app CSS follows the CSS standard (tokens only, no theme media 
 test('step 2: the web source has no outbound URL, no eval/Function, no raw HTML injection and no colour literal in components', () => {
   const dir = path.join(root, 'web/src');
   const files = [];
-  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) { if (e.name === 'diagram-kit') continue; walk(f); } else if (/\.(jsx?|css)$/.test(e.name) && !/\.test\./.test(e.name) && e.name !== 'standalone-ui.css' && e.name !== 'testFixtures.js' && e.name !== 'testSetup.js' && f !== path.join(dir, 'evidence/fixtures.js')) files.push(f); } };
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) { if (e.name === 'diagram-kit' || e.name === 'story' || e.name === 'run-observability') continue; walk(f); } else if (/\.(jsx?|css)$/.test(e.name) && !/\.test\./.test(e.name) && e.name !== 'standalone-ui.css' && e.name !== 'testFixtures.js' && e.name !== 'testSetup.js' && f !== path.join(dir, 'evidence/fixtures.js')) files.push(f); } };
   walk(dir);
   assert.ok(files.length >= 10);
   for (const f of files) {

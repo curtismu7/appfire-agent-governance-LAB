@@ -23,10 +23,9 @@
     4. The turn — break it adversarially; the same pane holds the truth
     5. The close — from demo to audit (the stdout line, the same record)
 
-  STORY_ONLY keys (bubbles the video does not need, the live panel is the star):
+  STORY_ONLY keys (bubbles the video does not need, the live panel is the star): hero_panel, hero_chain
     hero_panel, hero_chain, hero_streams
-  VIDEO_ONLY keys (video-only scenes the live Story skips):
-    video_products_wall
+  VIDEO_ONLY keys (video-only scenes the live Story skips): video_products_wall
 -->
 
 # Opening Slide
@@ -88,7 +87,7 @@ Pick a governed use case and run it — the agent will plan, exchange tokens, as
 
 ---
 
-# Step: hero_panel (STORY_ONLY)
+# Step: hero_panel
 
 ## Title
 One pane, one run
@@ -108,7 +107,7 @@ Read the summary line out loud: allowed, refused, blocked — and "for informati
 
 ---
 
-# Step: hero_chain (STORY_ONLY)
+# Step: hero_chain
 
 ## Title
 The chain: User → Agent → Scopes → Policy
@@ -128,7 +127,7 @@ Open "Where these logs live and where they stream": each product's stdout, one l
 
 ---
 
-# Slide: video_products_wall (VIDEO_ONLY)
+# Slide: video_products_wall
 
 ## Title
 One pane, many labs
