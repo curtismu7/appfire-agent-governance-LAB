@@ -97,7 +97,7 @@ describe("buildSteps", () => {
   test("targets: the panel, its summary, the chain, the streams section; skipped when the panel is empty", () => {
     page();
     const by = Object.fromEntries(buildSteps({ captions, host }).map((s) => [s.key, s]));
-    expect(by.hero_run_prompt.target).toBe("[data-testid=picker]");
+    expect(by.hero_run_prompt.target).toBe("[data-testid=wtt-UC1]");
     expect(by.hero_panel.target()).toBe(document.querySelector("[data-testid=run-observability]"));
     expect(by.hero_summary.target()).toBe(document.querySelector("[data-testid=ro-summary]"));
     expect(by.hero_chain.target()).toBe(document.querySelector("[data-testid=ro-chain]"));
