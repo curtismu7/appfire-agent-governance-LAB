@@ -33,6 +33,7 @@ import { localize, promptsFor, routeOf } from './routes.js';
 import { createBrain, REASONS } from './brain.js';
 import { createRunLog, runEvents, recordOf, reportFailure, NO_RUN_BEGAN, NO_LONGER_KEPT } from './runObs.js';
 import { RunObsError } from './runObservability.js';
+import { storyResponse } from './storyRoute.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
@@ -178,6 +179,13 @@ export function createApp({
     const v = verticalOf(req.query.vertical, res); if (!v) return;
     if (!isFullVertical(v)) return res.status(501).json({ error: 'vertical_stub', detail: 'this vertical is a data stub: it has a name and no story yet' });
     res.json(buildStory(loadCast(configFile, v), v));
+  });
+
+  // Story mode (rule 27 family pattern): the wording at GET /api/story, from video/captions.md (the shared parser, pinned).
+  api.get('/story/wording', (_req, res) => {
+    staticCatalog(res);
+    const { status, body } = storyResponse();
+    res.status(status).json(body);
   });
 
   // The agent's instructions: the default, the presets and the phrases the simulated agent obeys (instructions.js). Static, cast filled.
