@@ -69,9 +69,6 @@ services:
       AAG_LAB_MODE: ${AAG_LAB_MODE:-}
       AAG_BRAIN_URL: ${AAG_BRAIN_URL:-}
       LAB_ALLOWED_HOSTS: ${LAB_ALLOWED_HOSTS:-appfire-agent-governance.local.ping-devops.com}
-    volumes:
-      # The Story wording (GET /api/story/wording) is the repo's video/captions.md, read-only, so an edit shows without rebuilding the image (the image keeps its own copy for k8s).
-      - ./video/captions.md:/app/video/captions.md:ro
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
