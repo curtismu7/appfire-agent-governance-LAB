@@ -10,7 +10,7 @@
 export const STEPS = [
   { key: 'opening', type: 'slide', trigger: 'load' },
 
-  { key: 'hero_run_prompt', type: 'bubble', trigger: 'load', target: '[data-testid=wtt-UC1]', prefer: 'right', prompt: { press: ['[data-testid=wtt-UC1]', '[data-testid=run]'] } },
+  { key: 'hero_run_prompt', type: 'bubble', trigger: 'load', target: '[data-testid=wtt-UC1]', prefer: 'right', prompt: { press: ['[data-testid=wtt-UC1]'] } },
   { key: 'hero_panel', type: 'bubble', trigger: 'run-done', target: { roPanel: true }, prefer: 'left' },
   { key: 'hero_summary', type: 'bubble', trigger: 'run-done', target: { roSummary: true }, prefer: 'above', lines: 'summary' },
   { key: 'hero_chain', type: 'bubble', trigger: 'run-done', target: { roChain: true }, prefer: 'left' },
