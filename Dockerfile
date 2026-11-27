@@ -18,6 +18,8 @@ RUN npm ci --omit=dev -w server && npm cache clean --force
 # server/src includes server/src/local: the lab's own tool server and approval service, forked by server/src/index.js on a loopback port nothing publishes (no extra port, volume or tmpfs).
 COPY server/src server/src
 COPY server/diagrams server/diagrams
+# The Story wording (GET /api/story/wording reads it; the compose mount makes an edit show without a rebuild)
+COPY video/captions.md video/captions.md
 COPY data data
 COPY --from=web /app/web/dist web/dist
 USER node
