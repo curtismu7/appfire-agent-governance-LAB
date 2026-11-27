@@ -31,9 +31,9 @@ test('story: the five-act order is the script\'s bubble order, and every prompt 
   const bubbles = STEPS.filter((s) => s.type === 'bubble' && !STORY_ONLY.includes(s.key)).map((s) => s.key);
   // The five acts: hero (prompt, panel is story-only, summary, chain is story-only, streams), the turn (five), the close.
   assert.deepEqual(bubbles, ['hero_run_prompt', 'hero_summary', 'hero_streams', 'turn_overlimit', 'turn_hold', 'turn_denied', 'turn_blocked', 'turn_compare', 'closing_next']);
-  // The prompt step presses buttons the page really renders (the picker row and the Run control).
+  // The prompt step presses the chip the page really renders: the chip runs the use case itself (there is no separate Run control for it).
   for (const sel of STEPS.find((s) => s.key === 'hero_run_prompt').prompt.press) {
-    assert.match(sel, /^\[data-testid=(wtt-UC1|run)\]$/, `the prompt presses a real testid: ${sel}`);
+    assert.match(sel, /^\[data-testid=wtt-UC1\]$/, `the prompt presses a real testid: ${sel}`);
   }
 });
 

@@ -53,20 +53,20 @@ describe("host: runs", () => {
 });
 
 describe("host: the page", () => {
-  test("send presses the page's own controls with script-made events (pick UC1, then Run)", () => {
-    document.body.innerHTML = '<button data-testid="wtt-UC1">show my trips</button><button data-testid="run">Run</button>';
+  test("send presses the page's own controls with script-made events (the chip runs the use case)", () => {
+    document.body.innerHTML = '<button data-testid="wtt-UC1">show my trips</button>';
     const host = createHost({});
     const clicks = vi.fn((e) => { expect(e.isTrusted).toBe(false); });
-    for (const id of ["wtt-UC1", "run"]) document.querySelector(`[data-testid=${id}]`).addEventListener("click", clicks);
-    host.send({ prompt: { press: ["[data-testid=wtt-UC1]", "[data-testid=run]"] } });
-    expect(clicks).toHaveBeenCalledTimes(2);
+    document.querySelector('[data-testid=wtt-UC1]').addEventListener("click", clicks);
+    host.send({ prompt: { press: ["[data-testid=wtt-UC1]"] } });
+    expect(clicks).toHaveBeenCalledTimes(1);
     host.dispose();
   });
 
   test("send throws when a control is busy or missing (Play stops with a message)", () => {
-    document.body.innerHTML = '<button data-testid="run" disabled>Running…</button>';
+    document.body.innerHTML = '<button data-testid="wtt-UC1" disabled>…</button>';
     const host = createHost({});
-    expect(() => host.send({ prompt: { press: ["[data-testid=wtt-UC1]", "[data-testid=run]"] } })).toThrow(/not available/);
+    expect(() => host.send({ prompt: { press: ["[data-testid=wtt-UC1]"] } })).toThrow(/not available/);
     host.dispose();
   });
 
