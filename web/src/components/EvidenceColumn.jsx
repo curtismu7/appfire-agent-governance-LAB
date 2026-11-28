@@ -94,7 +94,7 @@ export default function EvidenceColumn({ running, run, selHop, onSelect, config,
           </div>
           {config.presenter && (tab === "sequence" || tab === "reel") && hops.length > 0 && <HopCaption hops={hops} selected={selHop} onSelect={onSelect} />}
           <div id="evpanel" role="region" aria-label={tab ? `${VIEW_LABEL[tab]} view` : "Evidence view"} className="evcol__panel" data-view={tab || "none"}>
-            {!tab && <p className="muted" data-testid="no-view">No evidence view is embedded. Pick a tab, or turn one on in Quick Config.</p>}
+            {!tab && <p className="empty-state" data-testid="no-view">No evidence view is embedded. Pick a tab, or turn one on in Quick Config.</p>}
             {tab === "sequence" && <SequenceView hops={hops} selected={selHop} onSelect={onSelect} />}
             {tab === "reel" && <MovieReel hops={hops} selected={selHop} onSelect={onSelect} />}
             {(tab === "sequence" || tab === "reel") && hops.length > 0 && selHop != null && <StepDetail hops={hops} selected={selHop} onSelect={onSelect} onClose={() => onSelect(null)} />}

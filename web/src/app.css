@@ -102,39 +102,10 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
   .seg { gap: 4px; }
 }
 
-/* ===== Appfire look (customer brand, tokens-only override): deep navy surface, Atlassian-style blue accent =====
-   The shared standard keeps Ping Red as --accent; this app re-points the brand tokens to Appfire's navy/blue palette.
-   Contrast checked: navy on light surface 12.9:1; the blue with white text 4.6:1; the deep blue 7.8:1. */
-:root {
-  --box-dark: #10172a;               /* shell bar + diagram boxes: Appfire deep navy in both themes */
-  --accent: #1868db;                 /* Appfire blue */
-  --accent-deep: #0747a6;
-  --accent-gradient: linear-gradient(90deg, #1868db 55%, #0747a6);
-  --accent-soft: #e9f2ff;
-  --focus: #1c2b41;
-  --danger-text: #ae2a19;
-  --box-blue: #0747a6;
-  --box-grey: #44546f;               /* Atlassian charcoal-blue */
-  --status-info: #1d588f;
-}
-:root:not([data-theme="light"]) {
-  /* The shared dark tokens (Auto theme on a dark system) set --accent-soft to a Ping-red tint while --accent stays Appfire blue here,
-     so every tinted row (the hot rows of the token and JSON panes, scope facts) came out red. Red means an error in this lab:
-     derive the tint from the accent and the surface instead. The explicit dark rule below keeps its own value. */
-  --accent-soft: color-mix(in srgb, var(--accent) 16%, var(--surface));
-}
-:root[data-theme="dark"] {
-  --accent: #388bff;
-  --accent-deep: #1d7afc;
-  --accent-gradient: linear-gradient(90deg, #388bff 55%, #1d7afc);
-  --accent-soft: #102139;
-  --focus: #fcfcfc;
-  --danger-text: #fca5a5;
-  --status-info: #8fbcff;
-  --accent-inactive: #6e7681;
-  --accent-inactive-gradient: linear-gradient(90deg, #6e7681 55%, #636b74);
-  --box-blue: #1d7afc;
-}
+/* ===== Ping brand standard (owner decision 2026-11-28): no lab-specific re-brand =====
+   The Appfire navy/blue token override was removed; the vendored shared stylesheet
+   (styles/standalone-ui.css) now supplies every brand token: the Ping Red accent,
+   Core Dark box-dark, Ping blue info, Montserrat via --font-primary. */
 
 
 /* ===== demo guide (Appfire briefing walkthrough, floating dialog) ===== */
@@ -253,6 +224,9 @@ summary { cursor: pointer; font-weight: 700; font-size: 14px; }
 .working { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-weight: 600; }
 .working__s { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
 .evcol__running { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; background: var(--surface-2); }
+
+/* ===== empty state (UI patterns 13, Mock A look): dashed box instead of bare muted text ===== */
+.empty-state { border: 2px dashed var(--border); border-radius: 10px; background: var(--surface-2); padding: 14px 18px; color: var(--muted); font-size: 13px; }
 
 /* The Sign in dialog: "Forgot password?" and "Email me a code" are text buttons. */
 .signin__link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--text); text-decoration: underline; cursor: pointer; }
