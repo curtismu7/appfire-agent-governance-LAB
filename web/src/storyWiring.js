@@ -2,7 +2,7 @@
 // into engine steps and gives the engine a `host` that reads and drives the page. It never edits the page's own markup; it clicks the page's own
 // Run button with a script-made event (isTrusted is false, so Play for me is not mistaken for the viewer's own input).
 //
-// The page (App.jsx) announces runs with appfire:run-start and appfire:run-end ({ ok }): ok is false only when the request itself failed. A run the
+// The page (App.jsx) announces runs with paad:run-start and paad:run-end (the shared story contract's names) ({ ok }): ok is false only when the request itself failed. A run the
 // gateway refused (a 4xx with rows) completes normally — the rows show it — so it is a run that ended ok. run-end goes out after the rows are on the
 // page (two animation frames), so the run-done steps read the panel as soon as it is drawn.
 
@@ -21,8 +21,8 @@ export function createHost({ win = window, doc = document, mode = () => 'mock', 
     for (const w of [...waiters]) w(runs.lastOk);
     watchers.forEach((f) => f());
   };
-  win.addEventListener('appfire:run-start', onStart);
-  win.addEventListener('appfire:run-end', onEnd);
+  win.addEventListener('paad:run-start', onStart);
+  win.addEventListener('paad:run-end', onEnd);
 
   const q = (sel) => doc.querySelector(sel);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -56,7 +56,7 @@ export function createHost({ win = window, doc = document, mode = () => 'mock', 
       }
     },
     assetUrl: () => null,   // no screenshot ships; a slide is text-only
-    dispose() { win.removeEventListener('appfire:run-start', onStart); win.removeEventListener('appfire:run-end', onEnd); timers.forEach(clearTimeout); timers.clear(); waiters.clear(); watchers.clear(); },
+    dispose() { win.removeEventListener('paad:run-start', onStart); win.removeEventListener('paad:run-end', onEnd); timers.forEach(clearTimeout); timers.clear(); waiters.clear(); watchers.clear(); },
     _sleep: sleep, _settleMs: settleMs,
   };
 }
