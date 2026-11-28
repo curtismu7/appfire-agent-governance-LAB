@@ -42,7 +42,7 @@ test('every step names a hop kind the engine really emits, and each step walks o
 test('GET /api/diagram loads a diagram by name; an unknown name falls back to the first and is never echoed', async () => {
   await withServer(async (url) => {
     const j = await (await get(url, '/api/diagram?name=gateway-refusals&vertical=retail')).json();
-    assert.equal(j.diagram.name, 'gateway-refusals'); assert.deepEqual(j.names, DIAGRAM_NAMES); assert.ok(j.diagram.nodes.some((n) => n.label.includes('Appfire Retail Suite')));
+    assert.equal(j.diagram.name, 'gateway-refusals'); assert.deepEqual(j.names, DIAGRAM_NAMES); assert.ok(j.diagram.nodes.some((n) => n.label.includes('AeroGuard Retail Suite')));
     const r = await get(url, '/api/diagram?name=__proto__%20zzz'); const t = await r.text();
     assert.equal(r.status, 200); assert.equal(JSON.parse(t).diagram.name, 'delegation-chain'); assert.ok(!t.includes('zzz'));
     assert.equal((await get(url, '/api/diagram?vertical=nope')).status, 400);
@@ -62,7 +62,7 @@ test('HIVE is drawn in the delegation chain as a dashed, represented-not-called 
   assert.deepEqual([dashed[0].from, dashed[0].to], ['hive', 'mcp']);
   assert.match(dashed[0].say, /never calls it/);
   assert.equal(d.steps.at(-1), dashed[0], 'the represented step comes last, after every step the engine runs');
-  assert.equal(d.groups.appfire.label, 'Appfire (represented, not called)');
+  assert.equal(d.groups.appfire.label, 'Back-end platform (represented, not called)');
   assert.ok(!buildDiagram(VERTICALS.banking, 'gateway-refusals').steps.some((s) => s.dashed));
 });
 

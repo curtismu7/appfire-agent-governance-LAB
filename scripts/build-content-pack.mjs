@@ -27,15 +27,15 @@ export function buildPack() {
   const story = buildStory(DEFAULT_CAST, DEFAULT_VERTICAL);
   const sid = (n) => `S${String(n).padStart(2, '0')}`;
   const tracks = Object.keys(TRACKS);
-  const why = story.talkTrack.find((t) => t.id === 'why-appfire-agent-governance').say;
+  const why = story.talkTrack.find((t) => t.id === 'why-agent-governance').say;
   return {
     schema: 'demo-content-pack/1',
     id: 'appfire-agent-governance-lab',
-    title: 'Appfire Agent Governance LAB',
+    title: 'AeroGuard Agent Governance Demo Lab',
     version,
-    demo: { id: 'appfire-agent-governance-lab', name: 'Appfire Agent Governance LAB', catalog: 'D000', baseUrl: 'http://localhost:7814', doctor: '/api/health', tags: ['appfire-agent-governance', 'token-exchange', 'act-claim', 'authorize', 'gateway', 'step-up', 'hitl', 'ciba', 'attacks'] },
+    demo: { id: 'appfire-agent-governance-lab', name: 'AeroGuard Agent Governance Demo Lab', catalog: 'D000', baseUrl: 'http://localhost:7814', doctor: '/api/health', tags: ['aeroguard-agent-governance', 'token-exchange', 'act-claim', 'authorize', 'gateway', 'step-up', 'hitl', 'ciba', 'attacks'] },
     glossary: [
-      { id: 'appfire-agent-governance', term: 'Customer-facing agent', definition: `An AI agent that acts for a customer: it asks for a list of trips, a flight booking, a flight status. ${NOTE}`, aliases: ['customer agent'] },
+      { id: 'aeroguard-agent-governance', term: 'Customer-facing agent', definition: `An AI agent that acts for a customer: it asks for a list of trips, a flight booking, a flight status. ${NOTE}`, aliases: ['customer agent'] },
       { id: 'delegation', term: 'Delegation with an act claim', definition: `RFC 8693 token exchange mints a delegated token whose sub is the customer and whose act claim names the agent. Delegation, not impersonation. ${NOTE}`, aliases: ['act claim', 'on behalf of'] },
       { id: 'consent', term: 'Consent (may_act)', definition: `The customer lets a named agent act for them before the exchange. ${NOTE}`, aliases: ['may_act'] },
       { id: 'constrained-booking', term: 'Constrained booking', definition: `A permitted call whose arguments the rule narrows (here the cabin, business to economy). The outcome word CONSTRAINED is the lab's own. With the PingOne Authorize settings set, PingOne Authorize decides the booking and the lab applies its answer; otherwise the lab's fare rule decides it, and the page says it is not a PingOne Authorize outcome. The two fare limits and the international flag are lab-invented. ${NOTE}`, aliases: ['allowed with a limit', 'narrowed booking'] },
@@ -51,12 +51,12 @@ export function buildPack() {
       { id: 'catalog', title: `AI-DEMO2 use-case catalog, commit ${String(MANIFEST.source.commit).slice(0, 9)} (read only)`, url: 'https://example.invalid/ai-demo2-use-case-catalog', kind: 'catalog', use: 'The 87 use cases, their tracks, stories, triggers, expected outcomes and evidence chains.', status: 'read', checked: '2026-10-31' },
     ],
     cards: [
-      ...tracks.map((t, i) => ({ id: `try-${t}`, label: `${t[0].toUpperCase()}${t.slice(1)} track (${TRACKS[t]} use cases)`, description: `${TRACK_BLURB[t]} ${NOTE}`, group: 'try-it', action: { type: 'route', href: `/#track-${t}` }, terms: ['appfire-agent-governance'], story: sid(i + 1) })),
+      ...tracks.map((t, i) => ({ id: `try-${t}`, label: `${t[0].toUpperCase()}${t.slice(1)} track (${TRACKS[t]} use cases)`, description: `${TRACK_BLURB[t]} ${NOTE}`, group: 'try-it', action: { type: 'route', href: `/#track-${t}` }, terms: ['aeroguard-agent-governance'], story: sid(i + 1) })),
       { id: 'try-delegation', label: 'Run delegated access (UC1)', description: 'Sign in as the demo customer, consent, exchange, gateway check, authorize, dispatch: seven hops, each with its raw request and response.', group: 'try-it', action: { type: 'route', href: '/#run-UC1' }, terms: ['delegation', 'consent', 'gateway-check'] },
       { id: 'try-constrained', label: 'Run the international booking next to the domestic one', description: 'Run the international booking next to the domestic one: same fare, the second is booked in economy. The agent asked for business and the answer says what was narrowed. The limits and the flag are lab-invented.', group: 'try-it', action: { type: 'route', href: '/#run-UC8' }, terms: ['constrained-booking', 'authorize-decision'] },
       { id: 'try-step-up', label: 'Run the booking over the higher limit', description: 'A booking over the second limit returns an approval obligation and the write is held until a person approves. Thresholds are lab-invented.', group: 'try-it', action: { type: 'route', href: '/#run-UC6' }, terms: ['authorize-decision', 'step-up-hitl'] },
       { id: 'try-replay', label: 'Run the DPoP replay attack (UC12)', description: 'The first proof is accepted and the replay is refused with 401. Needs the feature ff_dpop; the lab runs it on its own steps here.', group: 'try-it', action: { type: 'route', href: '/#run-UC12' }, terms: ['gateway-check'] },
-      { id: 'concept-why-appfire-agent-governance', label: 'Why it matters: a customer-facing agent that cannot overreach', description: why, group: 'concept', action: { type: 'route', href: '/#talk' }, terms: ['appfire-agent-governance', 'delegation', 'authorize-decision'] },
+      { id: 'concept-why-agent-governance', label: 'Why it matters: a customer-facing agent that cannot overreach', description: why, group: 'concept', action: { type: 'route', href: '/#talk' }, terms: ['aeroguard-agent-governance', 'delegation', 'authorize-decision'] },
       { id: 'concept-idp-only-path', label: 'The identity-provider-only path', description: 'It reaches the identity provider only and lists what it did not run. UNVERIFIED on a real tenant.', group: 'concept', action: { type: 'route', href: '/#talk' }, terms: ['idp-only-path'] },
       { id: 'concept-lab-tokens', label: 'Lab-issued tokens', description: 'Every token is signed with a public key and shown raw with its decoded claims.', group: 'concept', action: { type: 'route', href: '/#tokens' }, terms: ['lab-tokens'] },
       { id: 'ref-doctor', label: 'Doctor and health', description: 'Preflight checks and the demo-health/1 endpoint.', group: 'setup', action: { type: 'route', href: '/api/health' } },

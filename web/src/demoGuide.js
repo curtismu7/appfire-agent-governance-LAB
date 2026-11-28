@@ -1,4 +1,4 @@
-// The step-by-step demo guide, in the order of the Appfire session agenda ("Demo walkthrough": one agent workflow, request to audit record,
+// The step-by-step demo guide, in the order of the AeroGuard session agenda ("Demo walkthrough": one agent workflow, request to audit record,
 // shown alongside HIVE's back-end role). One entry per step. Each carries three customer-safe fields: what the step is (req, the agenda's words),
 // how this lab shows it (prove, naming the use case to run and the thing to point at) and the talking points the presenter says (say).
 // `ucs` wires the Run buttons: one button per use case; a step with none is a look-and-listen step.
@@ -31,7 +31,7 @@ export const DEMO_GUIDE = [
     short: "Tool call",
     title: "3 · The agent tries to call an MCP tool",
     req: "The agent attempts to call an MCP tool or access a protected resource.",
-    prove: "In the sequence, find the tools/call hops: first with no token (the gateway answers 401), then with the delegated token. The tool the model proposed is on the Decision card. The dashed HIVE lane at the far right is where Appfire's back-end policy and MCP-server eligibility sit; the lab never calls it.",
+    prove: "In the sequence, find the tools/call hops: first with no token (the gateway answers 401), then with the delegated token. The tool the model proposed is on the Decision card. The dashed HIVE lane at the far right is where the back-end policy and MCP-server eligibility sit; the lab never calls it.",
     say: "The agent proposes the call. It does not get to decide it. HIVE keeps its back-end role: data policy and which MCP servers may be used. What Ping adds is everything in front of that.",
     ucs: [{ uc: "UC1", label: "Run the workflow, then find the tool call" }],
   },
@@ -61,7 +61,7 @@ export const DEMO_GUIDE = [
     short: "Risk",
     title: "6 · A higher-risk request is denied, constrained or sent for approval",
     req: "A higher-risk write or sensitive-data request is denied, constrained or routed for approval, based on policy.",
-    prove: "Run the buttons in order. {{prompt:UC7|The first write}} steps up (ESCALATED: a second factor). {{prompt:UC8|The next write}} needs a person (ESCALATED: approve it on the phone). {{prompt:UC6|The largest write}} is refused (DENIED), and so is the third-party call outside what the agent may use. The actor-injection attack is refused too: nothing is dispatched. The typed prompts for this step add more refusals where the vertical lists them: another person's private {{castAsset}}, an approval the agent forged, and a lower rung of human approval. “Poisoned instructions” and “Compare two runs” open the Compare page side by side: a careful agent against one told to ignore its limits, and a held write against a refused one. The amounts are the lab's own; Appfire sets the real ones in policy.",
+    prove: "Run the buttons in order. {{prompt:UC7|The first write}} steps up (ESCALATED: a second factor). {{prompt:UC8|The next write}} needs a person (ESCALATED: approve it on the phone). {{prompt:UC6|The largest write}} is refused (DENIED), and so is the third-party call outside what the agent may use. The actor-injection attack is refused too: nothing is dispatched. The typed prompts for this step add more refusals where the vertical lists them: another person's private {{castAsset}}, an approval the agent forged, and a lower rung of human approval. “Poisoned instructions” and “Compare two runs” open the Compare page side by side: a careful agent against one told to ignore its limits, and a held write against a refused one. The amounts are the lab's own; AeroGuard sets the real ones in policy.",
     say: "Controlled autonomy. A risky write stops for a second factor, a riskier one for a person, and an out-of-bounds one is refused. A manipulated agent still meets the same decision, because the enforcement point is not the model.",
     ucs: [
       { uc: "UC7", label: "Higher risk: needs a second factor" },
@@ -117,7 +117,7 @@ export const GUIDE_OVERRIDES = {
 // The session agenda's seven timed topics (the 60 minutes). Only two are run in the lab; the rest are covered in the slide deck.
 export const TOPICS = [
   { time: "0:00", title: "Welcome and objectives", inLab: false },
-  { time: "0:05", title: "Appfire today", inLab: false },
+  { time: "0:05", title: "AeroGuard today", inLab: false },
   { time: "0:15", title: "Agent identity and least privilege", inLab: false },
   { time: "0:25", title: "Demo: authorizing agent and MCP actions", inLab: true },
   { time: "0:40", title: "Risk-based approval and prompt-injection containment", inLab: true },

@@ -8,7 +8,7 @@ import RunObservability from "../run-observability/RunObservability.jsx";
 // Where this lab's run leaves logs and where they can stream (the README says the same). The owner granted this lab
 // the wording exception (mock/real/simulated allowed); the rows use it honestly.
 export const LOG_STREAMS = [
-  { product: "Appfire agent governance LAB (this lab's container)", lives: "its stdout. Each decision of a run is one line: the time, a step, the layer, the actor, a result and a run id. A line never holds a token, a person's name or an address. Mock writes the mock engine's hops; Real writes the same rows for a real run, saying which hops were MOCK-labelled", streams: "nowhere today: the family log collector's source list does not name this container, so it would need an entry first" },
+  { product: "AeroGuard agent governance demo lab (this lab's container)", lives: "its stdout. Each decision of a run is one line: the time, a step, the layer, the actor, a result and a run id. A line never holds a token, a person's name or an address. Mock writes the mock engine's hops; Real writes the same rows for a real run, saying which hops were MOCK-labelled", streams: "nowhere today: the family log collector's source list does not name this container, so it would need an entry first" },
 ];
 
 const TITLE = "What each layer logged for this run";

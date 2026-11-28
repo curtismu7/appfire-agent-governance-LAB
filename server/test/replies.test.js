@@ -72,7 +72,7 @@ test('no run in any full vertical or persona says "mock result of" or leaves a {
   }
 });
 
-// ---- the software pack (Appfire Work Suite) ----
+// ---- the software pack (AeroGuard Work Suite) ----
 const BANKING_WORDS = /\b(balance|transfer|checking|savings|mortgage|bank(ing)?|deposit|portfolio|branch(es)?|fee waiver|credit|account|accounts)\b|\$/i;
 const SW_TOOLS = ['get_my_issues', 'bulk_update_issues', 'get_project_security_settings', 'get_release_summary', 'list_marketplace_apps', 'get_deployment_status', 'request_admin_access', 'scan_repository'];
 

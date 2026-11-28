@@ -65,7 +65,7 @@ describe("header, banner and side nav", () => {
 
   test("header: app name, workspace id, theme picker, Reset, Presenter; no Mock | Real control, no mode chip, no Mode: text", async () => {
     await boot();
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appfire Agent Governance LAB");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("AeroGuard Agent Governance Demo Lab");
     expect(screen.queryByTestId("mode-select")).toBeNull();
     expect(screen.queryByTestId("real-hosted-note")).toBeNull();
     expect(screen.getByTestId("mode").textContent).toBe(""); // the hidden marker holds the mode as data, no words
@@ -454,7 +454,7 @@ describe("theme, presenter, reset", () => {
     expect(screen.getByTestId("banner").textContent).toBe(BANNER_LOCAL_TEXT);
     expect(screen.getByTestId("banner")).toBeVisible();
     expect(screen.getByTestId("presenter").getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByTestId("presenter-say").textContent).toMatch(/Appfire today: the split between HIVE and Ping/);
+    expect(screen.getByTestId("presenter-say").textContent).toMatch(/AeroGuard today: the split between HIVE and Ping/);
     await u.keyboard("{Escape}");
     expect(screen.getByTestId("nav")).toBeTruthy();
     await u.click(screen.getByTestId("search"));
@@ -609,7 +609,7 @@ describe("fix pass 2026-11-01", () => {
   test("the header has no REAL / MOCK pill beside the title and no Mode switch", async () => {
     await boot({});
     expect(screen.queryByTestId("mode-badge")).toBeNull();
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Appfire Agent Governance LAB");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("AeroGuard Agent Governance Demo Lab");
   });
 
   test("keyboard focus stays on the Run button while the run is in flight and after it, and a second press does nothing", async () => {

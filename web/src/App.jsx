@@ -453,8 +453,8 @@ export default function App() {
       <button type="button" className="skip" onClick={() => document.getElementById("main")?.focus()} data-testid="skip">Skip to the main content</button>
       <header className="shell-bar">
         <div className="shell-brand">
-          <span className="shell-logo" aria-hidden="true">Af</span>
-          <h1 className="shell-name">Appfire Agent Governance LAB</h1>
+          <span className="shell-logo" aria-hidden="true">AG</span>
+          <h1 className="shell-name">AeroGuard Agent Governance Demo Lab</h1>
         </div>
         {!presenter && (
           <nav className="shell-nav" aria-label="Agent areas">

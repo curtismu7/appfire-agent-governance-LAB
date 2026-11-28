@@ -276,7 +276,7 @@ test('review fix: the token notice survives the response mask intact', () => {
   }
 });
 
-// ---- the software pack (Appfire Work Suite): the engine words, not the outcomes ----
+// ---- the software pack (AeroGuard Work Suite): the engine words, not the outcomes ----
 const hopOf = (r, kind) => r.hops.find((h) => h.kind === kind && h.verdict !== 'skip');
 const claimsOf = (r) => r.tokens.map((t) => JSON.stringify(t.claims));
 

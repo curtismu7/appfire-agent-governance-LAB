@@ -239,9 +239,9 @@ test('the hosted k8s manifests: placeholders only, no namespace, mock-only hoste
 });
 
 test('owner 2026-11-16: the hosted banner prefix is pinned the same way in the data, the served-page tests, deploy.sh and the CI image job; the opening mode is derived, not baked into the image', () => {
-  const prefix = 'Hosted copy. HIVE, Appfire';
+  const prefix = 'Hosted copy. The back-end platform, HIVE';
   assert.ok(read('server/src/data.js').includes(`HOSTED_BANNER = "${prefix}`) || read('server/src/data.js').includes(`HOSTED_BANNER = '${prefix}`), 'data.js');
-  assert.match(read('server/test/hosted.test.js'), /Hosted copy\\\. HIVE, Appfire/);
+  assert.match(read('server/test/hosted.test.js'), /Hosted copy\\\. The back-end platform, HIVE/);
   for (const f of ['deploy/k8s/deploy.sh', '.github/workflows/image.yml']) assert.ok(read(f).includes('data-testid="banner">Hosted copy\\. HIVE'), `${f} greps the neutral hosted banner`);
   for (const f of ['deploy/k8s/deploy.sh', '.github/workflows/image.yml']) assert.ok(!/HOSTED AND SIMULATED/.test(read(f)), `${f} no longer greps the old banner`);
   assert.ok(!/AAG_LAB_MODE/.test(read('Dockerfile')), 'the image does not pin the opening mode: the lab derives it (Real when configured)');

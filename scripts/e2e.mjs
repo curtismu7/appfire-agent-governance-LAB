@@ -63,8 +63,8 @@ const overlapScript = `(() => {
 })()`;
 
 // The fixed neutral banner lines (owner 2026-11-16: the page never says how it runs; one honesty line stays, first on every page).
-const BANNER_LOCAL = "HIVE, Appfire's platform, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.";
-const BANNER_HOSTED = "Hosted copy. HIVE, Appfire's platform, is represented and never called. Thresholds, personas and amounts are the lab's own (lab-invented). No tenant or live system is reached.";
+const BANNER_LOCAL = "The back-end platform, HIVE, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.";
+const BANNER_HOSTED = "Hosted copy. The back-end platform, HIVE, is represented and never called. Thresholds, personas and amounts are the lab's own (lab-invented). No tenant or live system is reached.";
 
 // There is no Mock | Real control on the page any more. The lab opens in Real when Real is fully configured; tests and scripts switch a tab's workspace with
 // POST /api/mode (the server contract of rule 19, unchanged) and reopen the page, then read the hidden data-mode marker (no words, "mock" or "live").

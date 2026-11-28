@@ -8,7 +8,7 @@
 // So exchange 1 (user + agent actor, agent scope) mints act, exchange 2 (the exchange-1 token, gateway scope) keeps it, and the OLD single exchange (the
 // user's token + the agent actor + the gateway scope) or an exchange 2 on a plain user token mints NO act: the bug this fake lets the tests pin.
 // (act: 'empty' mints a useless act: {} with no sub; 'blank' an act with an empty sub.)
-// A third resource, the tools resource (2026-11-16, the owner's "Appfire Work Suite Tools": audience appfire-work-tools, six scopes, act passed through, a
+// A third resource, the tools resource (2026-11-16, the owner's "AeroGuard Work Suite Tools": audience appfire-work-tools, six scopes, act passed through, a
 // groups claim from state.tools.groups): exchange 2 for ONE tool scope mints for it. Every token is signed ES256 with a fixed public test key (kid fake-es-1),
 // its iss is this fake's own base (http://127.0.0.1:<port>/<env>/as) and discovery and /as/jwks serve it, so the lab's tool server can verify it for real.
 // state.full picks a variant: { signin: 'ok' | 'resume' | 'bad-password' | 'mfa' | 'echo-pw' | 'bad-state' | 'no-state',

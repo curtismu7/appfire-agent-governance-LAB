@@ -123,12 +123,12 @@ test('banner: /api/info and the served page carry the hosted banner; the local b
     await withServer(async (url) => {
       const info = await (await get(url, '/api/info')).json();
       assert.equal(info.hosted, true); assert.equal(info.hostedBanner, HOSTED_BANNER);
-      assert.match(HOSTED_BANNER, /^Hosted copy\. HIVE, Appfire's platform, is represented and never called\./);
+      assert.match(HOSTED_BANNER, /^Hosted copy\. The back-end platform, HIVE, is represented and never called\./);
       for (const p of ['/', '/index.html', '/some/page']) {
         const r = await get(url, p);
         assert.equal(r.status, 200, p);
         const html = await r.text();
-        assert.match(html, /<div id="root"><p class="banner" role="note" data-state="hosted" data-testid="banner">Hosted copy\. HIVE, Appfire&#39;s platform, is represented and never called\./, p);
+        assert.match(html, /<div id="root"><p class="banner" role="note" data-state="hosted" data-testid="banner">Hosted copy\. The back-end platform, HIVE, is represented and never called\./, p);
       }
     }, { env: HOSTED, bind: '0.0.0.0', webDist: dist });
     await withServer(async (url) => {

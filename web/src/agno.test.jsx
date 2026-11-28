@@ -77,7 +77,7 @@ describe("Agno layout: setup sidebar, agent column, evidence column", () => {
   test("the shell bar holds the app name, the pill nav, Quick Config, Reset, Presenter and the theme (no Mock | Real control); the banner comes right after it", async () => {
     await boot();
     const bar = document.querySelector(".shell-bar");
-    expect(within(bar).getByRole("heading", { level: 1 }).textContent).toBe("Appfire Agent Governance LAB");
+    expect(within(bar).getByRole("heading", { level: 1 }).textContent).toBe("AeroGuard Agent Governance Demo Lab");
     for (const id of ["nav", "top-menu", "qc-open", "reset", "presenter", "theme-select"]) expect(within(bar).getByTestId(id)).toBeTruthy();
     expect(bar.nextElementSibling).toBe(screen.getByTestId("banner"));
     expect(screen.getByTestId("banner").getAttribute("role")).toBe("note");
