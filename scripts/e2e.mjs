@@ -81,9 +81,19 @@ const switchMode = async (page, source) => {
   return r;
 };
 // The run bodies the page received, so a check can read the data (hop.source, run.mode, run.realGate) the page no longer shows.
+// The live-sequence run (owner 2026-11-28) answers text/x-ndjson for a full Real run: the run arrives on the done line.
+const runBodyOf = async (r) => {
+  const ct = r.headers()?.['content-type'] || '';
+  const text = await r.text();
+  if (ct.includes('text/x-ndjson')) {
+    for (const line of text.split('\n').reverse()) { if (!line.trim()) continue; try { const evt = JSON.parse(line); if (evt.type === 'done') return evt.run || null; } catch { /* not the done line */ } }
+    return null;
+  }
+  try { return JSON.parse(text).run || null; } catch { return null; }
+};
 const watchRuns = (page) => {
   const runs = [];
-  page.on('response', async (r) => { if (r.request().method() === 'POST' && /\/api\/run\//.test(r.url())) { try { runs.push((await r.json()).run || null); } catch { runs.push(null); } } });
+  page.on('response', async (r) => { if (r.request().method() === 'POST' && /\/api\/run\//.test(r.url())) { runs.push(await runBodyOf(r).catch(() => null)); } });
   return { runs, next: async (n) => { for (let i = 0; i < 100 && !runs.slice(n).some(Boolean); i++) await sleep(50); return runs.slice(n).filter(Boolean).pop() || null; } };
 };
 
@@ -1241,7 +1251,7 @@ try {
       check(run?.realGate?.real === false && run.mode === 'mock' && (run.hops || []).every((h) => h.provider === undefined) && /human approval|lab only/.test(run.realGate?.reason || ''), `${tag}: ${id} stays on the lab's own steps and says why (${run?.realGate?.reason})`);
       if (await t('mp-deny').isVisible().catch(() => false)) { await t('mp-deny').click(); await t('mp-outcome').waitFor().catch(() => {}); }
     }
-    const via = await page.evaluate(async (b) => { const r = await fetch(`${b}/api/run/UC48`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: JSON.stringify({ vertical: 'airline', persona: 'standard' }) }); return { status: r.status, run: (await r.json()).run || null }; }, fullBase);
+    const via = await page.evaluate(async (b) => { const r = await fetch(`${b}/api/run/UC48`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: JSON.stringify({ vertical: 'airline', persona: 'standard' }) }); const ct = r.headers.get('content-type') || ''; const text = await r.text(); if (ct.includes('text/x-ndjson')) { for (const line of text.split('\n').reverse()) { if (!line.trim()) continue; try { const evt = JSON.parse(line); if (evt.type === 'done') return { status: r.status, run: evt.run || null }; } catch { /* not the done line */ } } return { status: r.status, run: null }; } return { status: r.status, run: JSON.parse(text).run || null }; }, fullBase);
     check(via.status === 200 && via.run?.realGate?.real === false && via.run.mode === 'mock', `${tag}: the over-the-limit walkthrough booking stays on the lab's own steps (data: realGate.real false)`);
 
     // No SE gateway call, no foreign origin, no error, and software and banking Real are checked by their own blocks
