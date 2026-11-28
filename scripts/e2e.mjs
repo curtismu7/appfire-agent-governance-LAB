@@ -743,6 +743,8 @@ try {
     for (const scheme of ['light', 'dark']) {
       const tag = `live-${name}-${scheme}`;
       fake.seen.length = 0; fake.state.behaviour = 'ok';
+      // The pinned workspace id is shared by the four viewports of this block: a Reset keeps each viewport's history at zero.
+      await fetch(`${liveBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: liveBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
       const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: scheme });
       const page = await ctx.newPage();
       const external = []; const errors = [];
@@ -807,6 +809,8 @@ try {
     // A clean slate: an explicit Sign out also forgets the lab's PingOne session (owner 2026-11-16), so this case starts signed out whatever ran before.
     await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     fullGw.seen.length = 0; fullP1.seen.length = 0; fullGw.state.behaviour = 'ok';
+    // The pinned workspace id is shared by the four viewports of this block: a Reset keeps each viewport's history at zero.
+    await fetch(`${fullBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: scheme });
     const page = await ctx.newPage();
     const external = []; const errors = []; const navs = [];
@@ -974,6 +978,8 @@ try {
     await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     fullGw.seen.length = 0; fullGw.state.behaviour = 'ok'; fullP1.state.full.exchange = 'ok'; fullP1.state.resources.gateway.act = 'passthrough';
     const setGroups = (g) => { fullP1.state.tools = fullP1.state.tools || {}; fullP1.state.tools.groups = g; };
+    // The pinned workspace id is shared across blocks: a Reset keeps the history checks exact.
+    await fetch(`${fullBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     setGroups([]);
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
@@ -1110,6 +1116,8 @@ try {
     await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     fullGw.seen.length = 0; fullGw.state.behaviour = 'ok'; fullP1.state.full.exchange = 'ok'; fullP1.state.resources.gateway.act = 'passthrough';
     const setGroups = (g) => { fullP1.state.tools = fullP1.state.tools || {}; fullP1.state.tools.groups = g; };
+    // The pinned workspace id is shared across blocks: a Reset keeps the history checks exact.
+    await fetch(`${fullBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     setGroups([]);
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
@@ -1283,7 +1291,8 @@ try {
   // ---- Real with only the lab's own provider: no SE gateway name at all, AAG_PROVIDER=local (the lab runs standalone on another machine) -----------------------------------
   {
     const tag = 'local-only';
-    await fetch(`${soloBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: soloBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
+    // The pinned workspace id is shared across blocks: a Reset keeps the run counts exact.
+    await fetch(`${soloBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: soloBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
     const external = []; const errors = [];
@@ -1330,6 +1339,7 @@ try {
     const az = authP1.authorize;
     az.reset(); az.setMode('ok');
     await fetch(`${authBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: authBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
+    await fetch(`${authBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: authBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
     const external = []; const errors = []; const approvalStarts = [];
@@ -1453,6 +1463,8 @@ try {
     await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     fullGw.seen.length = 0; fullGw.state.behaviour = 'ok';
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    // The pinned workspace id is shared across blocks: a Reset keeps the history checks exact.
+    await fetch(`${fullBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     const page = await ctx.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
