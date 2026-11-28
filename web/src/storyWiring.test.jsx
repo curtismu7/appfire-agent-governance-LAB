@@ -15,21 +15,21 @@ describe("host: runs", () => {
     const host = createHost({});
     const m = host.mark();
     const p = host.waitForRun(m, 500);
-    fire("appfire:run-start"); fire("appfire:run-end", { ok: true });
+    fire("paad:run-start"); fire("paad:run-end", { ok: true });
     await expect(p).resolves.toEqual({ ok: true });
     const m2 = host.mark();
-    fire("appfire:run-end", { ok: true });
+    fire("paad:run-end", { ok: true });
     const p2 = host.waitForRun(m2, 300);
-    fire("appfire:run-start"); fire("appfire:run-end", { ok: true });
+    fire("paad:run-start"); fire("paad:run-end", { ok: true });
     await expect(p2).resolves.toEqual({ ok: true });
     host.dispose();
   });
 
   test("a run that finished between the mark and the wait resolves at once; a failed request is not ok; a run that never ends times out", async () => {
     const host = createHost({});
-    const m = host.mark(); fire("appfire:run-end", { ok: true });
+    const m = host.mark(); fire("paad:run-end", { ok: true });
     await expect(host.waitForRun(m, 500)).resolves.toEqual({ ok: true });
-    const m2 = host.mark(); fire("appfire:run-start"); fire("appfire:run-end", { ok: false });
+    const m2 = host.mark(); fire("paad:run-start"); fire("paad:run-end", { ok: false });
     await expect(host.waitForRun(m2, 500)).resolves.toEqual({ ok: false, reason: expect.stringMatching(/failed/i) });
     const m3 = host.mark();
     await expect(host.waitForRun(m3, 80)).resolves.toEqual({ ok: false, reason: expect.stringMatching(/did not finish/i) });
@@ -40,15 +40,15 @@ describe("host: runs", () => {
     const host = createHost({});
     const seen = vi.fn();
     const off = host.onRun(seen);
-    fire("appfire:run-start"); expect(host.runInFlight()).toBe(true);
-    fire("appfire:run-end", { ok: true }); expect(host.runInFlight()).toBe(false);
-    expect(seen).toHaveBeenCalledTimes(2); off(); fire("appfire:run-start"); expect(seen).toHaveBeenCalledTimes(2);
+    fire("paad:run-start"); expect(host.runInFlight()).toBe(true);
+    fire("paad:run-end", { ok: true }); expect(host.runInFlight()).toBe(false);
+    expect(seen).toHaveBeenCalledTimes(2); off(); fire("paad:run-start"); expect(seen).toHaveBeenCalledTimes(2);
     host.dispose();
   });
 
   test("after dispose the host no longer counts runs", () => {
     const host = createHost({}); host.dispose();
-    const m = host.mark(); fire("appfire:run-start"); expect(host.runStarted(m)).toBe(false);
+    const m = host.mark(); fire("paad:run-start"); expect(host.runStarted(m)).toBe(false);
   });
 });
 
