@@ -82,3 +82,24 @@ test('no secret and no password ever reaches a streamed hop line', async () => {
     assert.ok(text.includes(DEMO_USERNAME), 'the username is not a secret');
   });
 });
+
+test('GET /api/run-last serves the workspace last run whole (the e2e reads it instead of draining a stream); Reset clears it', async () => {
+  await withFull(async (url) => {
+    assert.equal((await post(url, '/api/signin', { password: DEMO_PASSWORD }, { 'x-workspace': 'ws-last' })).status, 200);
+    const w = await fetch(`${url}/api/mode`, { method: 'PUT', headers: { 'content-type': 'application/json', origin: url, 'x-workspace': 'ws-last' }, body: JSON.stringify({ mode: 'live' }) });
+    assert.equal(w.status, 200);
+    const before = await fetch(`${url}/api/run-last`, { headers: { 'x-workspace': 'ws-last' } }).then((r) => r.json());
+    assert.equal(before.run, null);
+    const { events, status } = await runStream(url, 'UC1', { vertical: 'banking' }, { 'x-workspace': 'ws-last' });
+    assert.equal(status, 200);
+    const done = events.find((e) => e.type === 'done');
+    assert.equal(done.seq, 1);
+    const last = await fetch(`${url}/api/run-last`, { headers: { 'x-workspace': 'ws-last' } }).then((r) => r.json());
+    assert.deepEqual(last.run, { ...done.run, seq: 1 }, 'the stored run is the one the done line carried, plus its seq');
+    assert.equal(typeof last.run.seq, 'number');
+    const mock = await post(url, '/api/run/UC1', { vertical: 'banking' }, { 'x-workspace': 'ws-last' });
+    assert.equal(mock.status, 200);
+    const afterMock = await fetch(`${url}/api/run-last`, { headers: { 'x-workspace': 'ws-last' } }).then((r) => r.json());
+    assert.equal(afterMock.run.kind, 'real', 'the next run (Real mode: the workspace is live) updates lastRun too, and its seq moved on');
+  });
+});

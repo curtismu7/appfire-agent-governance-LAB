@@ -24,7 +24,7 @@ test('a new workspace is refused at the cap (nothing evicted); an idle one expir
 
 test('peek never creates a workspace and returns a fresh default for an unknown one', () => {
   const ws = createWorkspaces({ defaultMode: 'live' });
-  assert.deepEqual(ws.peek('nope'), { mode: 'live', seq: 0, runs: [] }); assert.equal(ws.size(), 0);
+  assert.deepEqual(ws.peek("nope"), { mode: "live", seq: 0, runs: [], lastRun: null }); assert.equal(ws.size(), 0);
 });
 
 test('review fix: a new workspace never inherits the state of an existing "default" workspace', async () => {
@@ -34,5 +34,5 @@ test('review fix: a new workspace never inherits the state of an existing "defau
   await ws.write('b', (s) => { seen = { seq: s.seq, mode: s.mode, runs: s.runs.length }; s.seq = 1; });
   assert.deepEqual(seen, { seq: 0, mode: 'mock', runs: 0 });
   assert.equal(ws.peek(DEFAULT_WORKSPACE).seq, 7); assert.equal(ws.peek(DEFAULT_WORKSPACE).runs.length, 1); assert.equal(ws.peek('b').seq, 1);
-  assert.deepEqual(ws.peek('never-written'), { mode: 'mock', seq: 0, runs: [] });
+  assert.deepEqual(ws.peek("never-written"), { mode: "mock", seq: 0, runs: [], lastRun: null });
 });

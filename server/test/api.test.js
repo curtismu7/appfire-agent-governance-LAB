@@ -277,7 +277,7 @@ test('Reset clears this workspace only, and puts its mode back', async () => {
   });
   const ws = createWorkspaces({ defaultMode: 'mock' });
   await ws.write('m', (s) => { s.mode = 'live'; s.runs.push({}); });
-  await ws.reset('m'); assert.deepEqual(ws.peek('m'), { mode: 'mock', seq: 0, runs: [] });
+  await ws.reset('m'); assert.deepEqual(ws.peek("m"), { mode: "mock", seq: 0, runs: [], lastRun: null });
   await ws.reset('absent'); assert.equal(ws.size(), 1, 'resetting an unknown workspace creates nothing');
 });
 

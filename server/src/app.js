@@ -135,12 +135,14 @@ export function createApp({
   };
 
   // A Real run (full or identity provider only) joins the workspace's history. The network calls are done outside the workspace lock; the cap is
-  // checked again inside it.
+  // checked again inside it. lastRun keeps the full run object so tests (and only tests: the page never calls it) can read it without draining a
+  // streamed answer; Reset clears it with the rest.
   const recordLive = async (id, uc, vertical, run, res) => {
     const out = await workspaces.write(id, (s) => {
       if (s.runs.length >= MAX_RUNS) throw refuse('workspace_full', `this workspace already holds ${MAX_RUNS} runs; Reset it to continue`, 409);
       s.seq += 1;
       s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: null, outcome: run.outcome, matchesExpected: null, traceId: run.traceId });
+      s.lastRun = { ...run, seq: s.seq };
       return { seq: s.seq, run };
     });
     // Rule 27: a Real run's hops are recorded the same way; its rows say which hops were real calls and which were MOCK-labelled.
@@ -443,6 +445,15 @@ export function createApp({
     res.json({ workspace: id, mode: modeFor(req, s.mode), count: s.runs.length, max: MAX_RUNS, runs: s.runs });
   });
 
+  // The workspace's last run, whole. The page never calls this (it holds its own runs); the e2e uses it so its checks do
+  // not have to drain a streamed answer (Playwright's response body races the page's stream reader and can hang).
+  api.get('/run-last', (req, res) => {
+    const id = ws(req, res); if (!id) return;
+    noStore(res);
+    const s = workspaces.peek(id);
+    res.json({ workspace: id, run: s.lastRun ?? null });
+  });
+
   api.post('/run/:id', jsonWrites, async (req, res, next) => {
     try {
       const id = ws(req, res); if (!id) return;
@@ -479,6 +490,7 @@ export function createApp({
           if (gate) { run.realGate = { real: false, reason: gate.reason }; run.live = liveNote(uc); }
           s.seq += 1;
           s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: run.persona, outcome: run.outcome, matchesExpected: run.matchesExpected, ...(run.useCase?.labelSource ? { labelSource: run.useCase.labelSource } : {}), traceId: run.traceId });
+          s.lastRun = { ...run, seq: s.seq };
           return { seq: s.seq, run };
         });
         // Rule 27: the run's hops become the observability record, computed once. The head key is `obs` (the answer already carries `run`, the engine's full run object).

@@ -81,20 +81,38 @@ const switchMode = async (page, source) => {
   return r;
 };
 // The run bodies the page received, so a check can read the data (hop.source, run.mode, run.realGate) the page no longer shows.
-// The live-sequence run (owner 2026-11-28) answers text/x-ndjson for a full Real run: the run arrives on the done line.
-const runBodyOf = async (r) => {
-  const ct = r.headers()?.['content-type'] || '';
-  const text = await r.text();
-  if (ct.includes('text/x-ndjson')) {
-    for (const line of text.split('\n').reverse()) { if (!line.trim()) continue; try { const evt = JSON.parse(line); if (evt.type === 'done') return evt.run || null; } catch { /* not the done line */ } }
-    return null;
-  }
-  try { return JSON.parse(text).run || null; } catch { return null; }
-};
-const watchRuns = (page) => {
-  const runs = [];
-  page.on('response', async (r) => { if (r.request().method() === 'POST' && /\/api\/run\//.test(r.url())) { runs.push(await runBodyOf(r).catch(() => null)); } });
-  return { runs, next: async (n) => { for (let i = 0; i < 100 && !runs.slice(n).some(Boolean); i++) await sleep(50); return runs.slice(n).filter(Boolean).pop() || null; } };
+// The run bodies a check reads, so a check can inspect the data (hop.source, run.mode, run.realGate) the page no longer shows.
+// The live-sequence run (owner 2026-11-28) answers a full Real run as text/x-ndjson, and the page's fetch reader drains that
+// body: Playwright's response.text() on the same stream can then hang. The watcher never reads run POST bodies. It tracks the
+// run count by watching the response HEADERS only (a POST to /api/run/ started), and a check's run body comes from
+// GET /api/run-last (the workspace's last run, whole, with its seq) once the page has signalled completion.
+const watchRuns = (page, base) => {
+  const posts = [];
+  page.on('response', (r) => { if (r.request().method() === 'POST' && /\/api\/run\//.test(r.url())) posts.push(Date.now()); });
+  return {
+    posts,
+    get runs() { return posts; },
+    // Waits for the n-th run POST after `n` to have been made, then for the page to show it is done (the outcome tag, the
+    // refusal or the phone), then reads the run from the server. `len` is the marker count at click time.
+    next: async (n, { page: p = page, timeout = 120000 } = {}) => {
+      const t0 = Date.now();
+      while (posts.length <= n && Date.now() - t0 < timeout) await sleep(100);
+      if (posts.length <= n) return null;
+      // The page is done when a result/outcome, a refusal or the phone is on the page (a hold opens the phone).
+      await p.waitForFunction(() => {
+        const o = document.querySelector('[data-testid="outcome"]');
+        const r = document.querySelector('[data-testid="refusal"]');
+        const m = document.querySelector('[data-testid="mock-phone"]');
+        return Boolean(o || r || m);
+      }, null, { timeout: 60000 }).catch(() => {});
+      for (let i = 0; i < 50; i++) {
+        const body = await fetch(`${base}/api/run-last`, { headers: { 'x-workspace': 'w-eeeeeeeeeeeeeeee' } }).then((x) => x.json()).catch(() => null);
+        if (body?.run) return body.run;
+        await sleep(100);
+      }
+      return null;
+    },
+  };
 };
 
 // The hop of a run that the tool (not the sign-in or the exchanges) answered, in the data.
@@ -249,7 +267,7 @@ try {
   // Today's demo set (the lab opens on all use cases; the eight are one click away): every block below drives the whole catalog, so its pages are pinned to "All use cases" (the choice is read from localStorage `aag.set`).
   // The toggle block uses `rawContext`, which leaves the saved choice alone. Every block also pins the setup sidebar open (`aag.setup` = "0"): the lab opens it collapsed, and these blocks drive its picker.
   const rawContext = browser.newContext.bind(browser);
-  browser.newContext = async (o) => { const c = await rawContext(o); await c.addInitScript(() => { try { window.localStorage.setItem('aag.set', 'all'); window.localStorage.setItem('aag.setup', '0'); } catch { /* storage blocked */ } }); return c; };
+  browser.newContext = async (o) => { const c = await rawContext(o); await c.addInitScript(() => { try { window.localStorage.setItem('aag.set', 'all'); window.localStorage.setItem('aag.setup', '0'); window.sessionStorage.setItem('cal.workspace', 'w-eeeeeeeeeeeeeeee'); } catch { /* storage blocked */ } }); return c; };
   for (const [width, height, name] of [[1280, 900, 'desktop'], [375, 800, 'phone']]) {
     for (const scheme of ['light', 'dark']) {
       const tag = `${name}-${scheme}`;
@@ -576,7 +594,7 @@ try {
   {
     const tag = 'demo-set';
     const ctx = await rawContext({ viewport: { width: 1280, height: 900 } });
-    await ctx.addInitScript(() => { try { window.localStorage.setItem('aag.setup', '0'); } catch { /* storage blocked */ } });   // the sidebar opens collapsed: this block drives its picker
+    await ctx.addInitScript(() => { try { window.localStorage.setItem("aag.setup", "0"); window.sessionStorage.setItem("cal.workspace", "w-eeeeeeeeeeeeeeee"); } catch { /* storage blocked */ } });   // the sidebar opens collapsed: this block drives its picker
     const page = await ctx.newPage();
     const t = (id) => page.getByTestId(id);
     await page.goto(`${base}/`); await t('uc-UC1').waitFor(); // on All use cases the first track is open and the others are folded
@@ -732,7 +750,7 @@ try {
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
       const t = (id) => page.getByTestId(id);
-      const watch = watchRuns(page);
+      const watch = watchRuns(page, liveBase);
       const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
       const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       await page.goto(`${liveBase}/`);
@@ -768,7 +786,7 @@ try {
       await t('nav-diagram').click(); await page.locator('.react-flow__node').first().waitFor();
       check((await overflow()) <= 0, `${tag}: the diagram page in live does not scroll sideways`);
       const toMock = await switchMode(page, 'mock');
-      const seenBefore = fake.seen.length; const runsBefore = watch.runs.length;
+      const seenBefore = fake.seen.length; const runsBefore = watch.posts.length;
       await t('nav-agent').click(); await pick('UC7'); await t('run').click();
       const ownRun = await watch.next(runsBefore);
       await page.waitForFunction(() => { const o = document.querySelector('[data-testid="outcome"]'); return o && !o.textContent.startsWith('LIVE_'); });
@@ -797,7 +815,7 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, fullBase);
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     await page.goto(`${fullBase}/`);
     await t('uc-UC1').waitFor();
@@ -927,7 +945,7 @@ try {
     check((await t('turn-answer-text').last().innerText()).includes('answered HTTP 503 and did not complete the call'), `${tag}: a 503 is an honest refusal saying the service did not complete the call, with no advice to leave Real`);
     // A use case the gateway cannot serve (UC2, agent-to-agent) runs whole on the lab's own steps inside a Real page: the gateway is not called, the page shows it like any
     // other run (no label, no notice), and the data says so (run.realGate, hop.source).
-    const gwFallback = fullGw.seen.length; const rn = watch.runs.length;
+    const gwFallback = fullGw.seen.length; const rn = watch.posts.length;
     await t('search').fill('UC2'); await page.locator('[data-testid="uc-UC2"]').click(); await t('search').fill('');
     await t('run').click();
     const fbRun = await watch.next(rn);
@@ -935,7 +953,7 @@ try {
     const fsrc = (fbRun?.hops || []).map((h) => h.source);
     check(fullGw.seen.length === gwFallback && fbRun?.realGate?.real === false && fbRun?.mode === 'mock' && fsrc.length > 0 && fsrc.every((x) => x === 'mock' || x === 'not-run') && (await t('mock-in-real').count()) === 0 && (await t('hop-source').count()) === 0, `${tag}: a use case the gateway cannot serve runs whole on the lab's own steps in a Real page: no gateway call, realGate.real false, every hop source mock or not-run in the data, and nothing on the page says so (${new Set(fsrc).size} source kinds)`);
     await walk(page, `${tag}: a whole-run fallback shown like any other run`);
-    const seen = fullGw.seen.length; const rn2 = watch.runs.length;
+    const seen = fullGw.seen.length; const rn2 = watch.posts.length;
     const toOwn = await switchMode(page, 'mock');
     await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
     await t('run').click();
@@ -965,13 +983,13 @@ try {
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
     page.on('response', async (r) => { if (r.status() === 400) console.log(`INFO  ${tag}: HTTP 400 from ${r.request().method()} ${new URL(r.url()).pathname}: ${(await r.text().catch(() => '')).slice(0, 200)} request body ${String(r.request().postData() || '').slice(0, 300)}`); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, fullBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     // Run the picked use case; when Real asks for the sign-in, sign in (the password is the fake's); return the run the page received.
     const runIt = async () => {
-      const n = watch.runs.length;
+      const n = watch.posts.length;
       await t('run').click();
-      for (let i = 0; i < 900 && !watch.runs.slice(n).some(Boolean); i++) {
+      for (let i = 0; i < 900 && watch.posts.length <= n; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
         await sleep(100);
       }
@@ -1032,7 +1050,7 @@ try {
     await t('mp-deny').waitFor({ timeout: 10000 }); await t('mp-deny').click(); await t('mp-outcome').waitFor();
 
     // UC8: held for a person, approved on the phone, the retry carries the receipt and completes (the lab's own approval service)
-    const before = watch.runs.length;
+    const before = watch.posts.length;
     await pick('UC8');
     await t('run').click();
     await t('mp-approve').waitFor({ timeout: 20000 });
@@ -1100,12 +1118,12 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, fullBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
-      const n = watch.runs.length;
+      const n = watch.posts.length;
       await t('run').click();
-      for (let i = 0; i < 900 && !watch.runs.slice(n).some(Boolean); i++) {
+      for (let i = 0; i < 900 && watch.posts.length <= n; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
         await sleep(100);
       }
@@ -1202,7 +1220,7 @@ try {
     await page.setViewportSize({ width: 1280, height: 900 }); await sleep(300);
 
     // UC6: Paris, $2,400: held for a person (428), approved on the phone, retried with the receipt and booked AS ASKED (an approval beats a narrowing)
-    const before = watch.runs.length;
+    const before = watch.posts.length;
     await pick('UC6');
     await t('run').click();
     await t('mp-approve').waitFor({ timeout: 20000 });
@@ -1273,12 +1291,12 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, soloBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
-      const n = watch.runs.length;
+      const n = watch.posts.length;
       await t('run').click();
-      for (let i = 0; i < 900 && !watch.runs.slice(n).some(Boolean); i++) {
+      for (let i = 0; i < 900 && watch.posts.length <= n; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
         await sleep(100);
       }
@@ -1319,12 +1337,12 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501|503)/.test(m.text())) errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, authBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
-      const n = watch.runs.length;
+      const n = watch.posts.length;
       await t('run').click();
-      for (let i = 0; i < 400 && !watch.runs.slice(n).some(Boolean); i++) {
+      for (let i = 0; i < 400 && watch.posts.length <= n; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
         await sleep(100);
       }
@@ -1381,7 +1399,7 @@ try {
     await cardWords(`${tag}: the Toronto booking decided by PingOne Authorize`);
 
     // Paris: $2,400: Authorize says a person must approve (428), the phone approves on the lab's own approval service, the retry carries the receipt and Authorize answers approved
-    const start = watch.runs.length;
+    const start = watch.posts.length;
     await pick('UC6');
     await t('run').click();
     await t('mp-approve').waitFor({ timeout: 30000 });
@@ -1440,14 +1458,14 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, fullBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     // Run the picked use case; when Real asks for the sign-in, sign in (the dialog is walked once); return the run the page received.
     let dialogWalked = false;
     const runIt = async () => {
-      const n = watch.runs.length;
+      const n = watch.posts.length;
       await t('run').click();
-      for (let i = 0; i < 200 && !watch.runs.slice(n).some(Boolean); i++) {
+      for (let i = 0; i < 200 && watch.posts.length <= n; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) {
           if (!dialogWalked) { dialogWalked = true; await walk(page, `${tag}: the sign-in dialog`); }
           await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {});
@@ -1591,7 +1609,7 @@ try {
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error' && !/status of 409/.test(m.text())) errors.push(m.text()); });
       const t = (id) => page.getByTestId(id);
-      const watch = watchRuns(page);
+      const watch = watchRuns(page, hostedBase);
       const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       await page.goto(`${hostedBase}/`);
       await t('uc-UC1').waitFor();
