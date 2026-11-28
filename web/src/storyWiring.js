@@ -49,11 +49,23 @@ export function createHost({ win = window, doc = document, mode = () => 'mock', 
     send(step) {
       const presses = step.prompt && step.prompt.press;
       if (!presses) return;
-      for (const sel of (Array.isArray(presses) ? presses : [presses])) {
+      const picks = (step.prompt && step.prompt.pick) || [];
+      const pickList = Array.isArray(picks) ? picks : [picks];
+      (Array.isArray(presses) ? presses : [presses]).forEach((sel, i) => {
+        // The prompt picker (a select since the dropdown amendment) is driven by value + change, not a click; a chip-style
+        // control (a story pack that still names one) is pressed as before.
         const el = q(sel);
         if (!el || el.disabled) throw new Error(`the control ${sel} is not available: pick a use case first`);
-        el.click();
-      }
+        if (el.tagName === 'SELECT') {
+          const uc = pickList[i];
+          const opt = uc && el.querySelector(`option[value="${uc}"]`);
+          if (!opt || opt.disabled) throw new Error(`the control ${sel} is not available: pick a use case first`);
+          el.value = uc;
+          el.dispatchEvent(new win.Event('change', { bubbles: true }));
+        } else {
+          el.click();
+        }
+      });
     },
     assetUrl: () => null,   // no screenshot ships; a slide is text-only
     dispose() { win.removeEventListener('paad:run-start', onStart); win.removeEventListener('paad:run-end', onEnd); timers.forEach(clearTimeout); timers.clear(); waiters.clear(); watchers.clear(); },

@@ -31,13 +31,15 @@ test('story: the five-act order is the script\'s bubble order, and every prompt 
   const bubbles = STEPS.filter((s) => s.type === 'bubble' && !STORY_ONLY.includes(s.key)).map((s) => s.key);
   // The five acts: hero (prompt, panel is story-only, summary, chain is story-only, streams), the turn (five), the close (slide only — no bubble after it).
   assert.deepEqual(bubbles, ['hero_run_prompt', 'hero_summary', 'hero_streams', 'turn_overlimit', 'turn_hold', 'turn_denied', 'turn_blocked', 'turn_compare']);
-  // Every prompt step presses the chip the page really renders: the chip runs the use case itself (there is no separate Run control for it).
-  const chips = new Set(['UC1', 'UC27', 'UC6', 'UC13', 'UC31']);   // the hero chip and the turn chips (demoGuide.js: the escalate step's buttons)
+  // Every prompt step presses the prompt picker (a select since the dropdown amendment, UI standard amendment 2) and names the
+  // use case it picks (prompt.pick): the picker runs the use case itself (there is no separate Run control for it).
+  const chips = new Set(['UC1', 'UC27', 'UC6', 'UC13', 'UC31']);   // the hero pick and the turn picks (demoGuide.js: the escalate step's buttons)
   for (const s of STEPS.filter((st) => st.prompt)) {
-    for (const sel of [].concat(s.prompt.press)) {
-      const m = sel.match(/^\[data-testid=wtt-(UC[\d.]+)\]$/);
-      assert.ok(m && chips.has(m[1]), `${s.key}: the prompt presses a real testid: ${sel}`);
-    }
+    const sels = [].concat(s.prompt.press);
+    const picks = [].concat(s.prompt.pick ?? []);
+    assert.equal(sels.length, picks.length, `${s.key}: a press names what it picks`);
+    for (const sel of sels) assert.equal(sel, '[data-testid=wtt-select]', `${s.key}: the prompt presses the picker: ${sel}`);
+    for (const pick of picks) assert.ok(chips.has(pick), `${s.key}: the picker picks a real use case: ${pick}`);
   }
 });
 
