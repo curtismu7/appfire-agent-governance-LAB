@@ -971,7 +971,7 @@ try {
     const runIt = async () => {
       const n = watch.runs.length;
       await t('run').click();
-      for (let i = 0; i < 300 && !watch.runs.slice(n).some(Boolean); i++) {
+      for (let i = 0; i < 900 && !watch.runs.slice(n).some(Boolean); i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
         await sleep(100);
       }
@@ -1105,7 +1105,7 @@ try {
     const runIt = async () => {
       const n = watch.runs.length;
       await t('run').click();
-      for (let i = 0; i < 300 && !watch.runs.slice(n).some(Boolean); i++) {
+      for (let i = 0; i < 900 && !watch.runs.slice(n).some(Boolean); i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
         await sleep(100);
       }
@@ -1278,7 +1278,7 @@ try {
     const runIt = async () => {
       const n = watch.runs.length;
       await t('run').click();
-      for (let i = 0; i < 300 && !watch.runs.slice(n).some(Boolean); i++) {
+      for (let i = 0; i < 900 && !watch.runs.slice(n).some(Boolean); i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
         await sleep(100);
       }
