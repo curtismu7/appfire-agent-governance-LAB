@@ -76,7 +76,7 @@ test('every shown prompt runs here or hands off; either way, in its vertical the
   }
 });
 
-// Software (the Appfire Work Suite) and airline (Larkspur Air) list the 14 core use cases banking lists, in the same order, and five extras after them (lab-written, named here on
+// Software (the AeroGuard Work Suite) and airline (Larkspur Air) list the 14 core use cases banking lists, in the same order, and five extras after them (lab-written, named here on
 // purpose so a new extra needs a decision): an allowed and a refused third-party tool call, another person's private project, a forged approval and a
 // lower human-approval rung. The other verticals list exactly the 14.
 const SOFTWARE_EXTRAS = ['UC30', 'UC31', 'UC10', 'UC27', 'UC22'];

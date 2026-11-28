@@ -91,8 +91,8 @@ export const HOT_CLAIMS = ["intent", "amr"];
 
 // The one neutral line that opens every page (rule 2): what is represented, and whose numbers these are. The hosted copy adds that nothing live is reached.
 // The server serves the same two sentences (the story and the hosted banner); the page shows these when the server has not answered yet.
-export const BANNER_LOCAL = "HIVE, Appfire's platform, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.";
-export const BANNER_HOSTED = "Hosted copy. HIVE, Appfire's platform, is represented and never called. Thresholds, personas and amounts are the lab's own (lab-invented). No tenant or live system is reached.";
+export const BANNER_LOCAL = "The back-end platform, HIVE, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.";
+export const BANNER_HOSTED = "Hosted copy. The back-end platform, HIVE, is represented and never called. Thresholds, personas and amounts are the lab's own (lab-invented). No tenant or live system is reached.";
 // The vertical the page opens on (owner, 2026-11-16: the invented airline, Larkspur Air). The server's default (cast.js DEFAULT_VERTICAL) is the same id; the picker starts here.
 export const DEFAULT_VERTICAL = "airline";
 // The full packs whose own tool names the lab uses for a held write (server: the pack's `castToolServer`, the tool server the lab ships; the airline pack names its own booking tool too); the other packs keep the catalog's tool name.

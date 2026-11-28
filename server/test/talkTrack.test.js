@@ -26,7 +26,7 @@ test('talk track: entries follow the walkthrough order, general entries after th
   const idx = stepped.map((t) => STEP_IDS.indexOf(t.step));
   assert.deepEqual(idx, [...idx].sort((a, b) => a - b));
   assert.equal(TALK_TRACK.findIndex((t) => !t.step), stepped.length, 'entries without a step come last');
-  assert.deepEqual(TALK_TRACK.map((t) => t.id), ['say-first', 'ask-iam', 'ask-privilege', 'ask-authorize', 'step-allow', 'theme-hitl', 'attacks', 'audit', 'real', 'honesty', 'why-appfire-agent-governance']);
+  assert.deepEqual(TALK_TRACK.map((t) => t.id), ['say-first', 'ask-iam', 'ask-privilege', 'ask-authorize', 'step-allow', 'theme-hitl', 'attacks', 'audit', 'real', 'honesty', 'why-agent-governance']);
 });
 
 test('the story carries the step through and fills the cast', () => {

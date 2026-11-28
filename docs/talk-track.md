@@ -2,11 +2,11 @@
 
 <!-- Generated from server/src/data.js by `npm run talk-track`. Do not edit by hand. -->
 
-> HIVE, Appfire's platform, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.
+> The back-end platform, HIVE, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.
 
-## Appfire today: the split between HIVE and Ping
+## AeroGuard today: the split between HIVE and Ping
 
-HIVE manages Appfire's backend authorization rules and MCP-server eligibility. This lab shows the front end Ping governs: the agent travel-assistant at Larkspur Air gets an identity, receives delegated privileges from the principal it acts for (elena.novak), and every tool call gets a policy decision — enforced and recorded. In this vertical the agent works with trips and bookings. The two layers complement each other; neither replaces the other.
+HIVE manages AeroGuard's backend authorization rules and MCP-server eligibility. This lab shows the front end Ping governs: the agent travel-assistant at Larkspur Air gets an identity, receives delegated privileges from the principal it acts for (elena.novak), and every tool call gets a policy decision — enforced and recorded. In this vertical the agent works with trips and bookings. The two layers complement each other; neither replaces the other.
 
 ## Step 2 · The agent gets its own identity
 
@@ -42,11 +42,11 @@ When you sign in with PingOne, “Delegated access” and the other use cases th
 
 ## What the lab does not call
 
-HIVE is Appfire's platform and is never called: its side of the split is represented, not run. The thresholds, personas and amounts are the lab's own (lab-invented). The two limits, the international flag and the CONSTRAINED word are the lab's own. The step-up second factor is not completed here, and a use case that needs a feature flag or a trusted-caller header keeps running on the lab's own steps (the picker tags the flag).
+HIVE is the back-end platform and is never called: its side of the split is represented, not run. The thresholds, personas and amounts are the lab's own (lab-invented). The two limits, the international flag and the CONSTRAINED word are the lab's own. The step-up second factor is not completed here, and a use case that needs a feature flag or a trusted-caller header keeps running on the lab's own steps (the picker tags the flag).
 
-## Why it matters: governed agent autonomy for Appfire
+## Why it matters: governed agent autonomy for AeroGuard
 
-Challenge: Appfire's HIVE platform already manages the backend: data policy and which MCP servers may be used. The open question is the agent-facing front end: who or what the agent is, what it is allowed to do, under which conditions, and how each decision is enforced and recorded — without a person approving every step. Technical: Ping governs the front end: the agent gets its own identity, receives delegated privileges (RFC 8693 act chain), and every tool call, MCP-server hop and data access gets a policy decision with a risk-based outcome — auto-allow for low-risk reads, step-up or human approval for risky writes, deny for out-of-scope actions — all enforced at the tool, data and action layers, not left to the model. Business: Controlled autonomy: low-risk actions proceed inside policy, higher-risk ones are constrained or approved, and every decision leaves an audit record naming the agent, the principal it acted for, the resource and the decision — the visibility Appfire's AI Governance program is asking for, complementing (not replacing) HIVE. (Lab summary of the AI-DEMO2 catalog text, not a Ping claim.)
+Challenge: The HIVE platform already manages the backend: data policy and which MCP servers may be used. The open question is the agent-facing front end: who or what the agent is, what it is allowed to do, under which conditions, and how each decision is enforced and recorded — without a person approving every step. Technical: Ping governs the front end: the agent gets its own identity, receives delegated privileges (RFC 8693 act chain), and every tool call, MCP-server hop and data access gets a policy decision with a risk-based outcome — auto-allow for low-risk reads, step-up or human approval for risky writes, deny for out-of-scope actions — all enforced at the tool, data and action layers, not left to the model. Business: Controlled autonomy: low-risk actions proceed inside policy, higher-risk ones are constrained or approved, and every decision leaves an audit record naming the agent, the principal it acted for, the resource and the decision — the visibility AeroGuard's AI Governance program is asking for, complementing (not replacing) HIVE. (Lab summary of the AI-DEMO2 catalog text, not a Ping claim.)
 
 ## Not demonstrated
 

@@ -104,9 +104,9 @@ test('bad query values are 400 with fixed text, and nothing typed comes back', a
     assert.equal((await get(url, '/api/story?vertical=nope')).status, 400);
     assert.equal((await get(url, '/api/story?vertical=government')).status, 501);
     const s = await (await get(url, '/api/story?vertical=retail')).json();
-    assert.equal(s.cast.castBrand, 'Appfire Retail Suite'); assert.equal(s.total, 87); assert.ok(!JSON.stringify(s).includes('{{'));
+    assert.equal(s.cast.castBrand, 'AeroGuard Retail Suite'); assert.equal(s.total, 87); assert.ok(!JSON.stringify(s).includes('{{'));
     const sw = await (await get(url, '/api/story?vertical=software')).json();
-    assert.equal(sw.cast.castBrand, 'Appfire Work Suite'); assert.equal(sw.cast.castUnit, 'issues'); assert.ok(!JSON.stringify(sw).includes('{{'));
+    assert.equal(sw.cast.castBrand, 'AeroGuard Work Suite'); assert.equal(sw.cast.castUnit, 'issues'); assert.ok(!JSON.stringify(sw).includes('{{'));
     assert.deepEqual(sw.fullVerticals, ['airline', 'banking', 'healthcare', 'retail', 'software']);
     const air = await (await get(url, '/api/story?vertical=airline')).json();
     assert.equal(air.cast.castBrand, 'Larkspur Air'); assert.equal(air.cast.castFareLimit, '$400'); assert.equal(air.cast.castFareHold, '$1,500'); assert.ok(!JSON.stringify(air).includes('{{'));
@@ -380,12 +380,12 @@ test('step 2: every use case says whether it is guided (33) or computed (54), an
 
 test('step 2: the built web app is served from the same origin with a same-origin CSP, any non-API path gets the page, and /api never does', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cal-dist-'));
-  fs.writeFileSync(path.join(dir, 'index.html'), '<!doctype html><title>Appfire Agent Governance LAB</title><div id="root"></div>');
+  fs.writeFileSync(path.join(dir, 'index.html'), '<!doctype html><title>AeroGuard Agent Governance Demo Lab</title><div id="root"></div>');
   fs.mkdirSync(path.join(dir, 'assets')); fs.writeFileSync(path.join(dir, 'assets', 'a.js'), 'export {}');
   try {
     await withServer(async (url) => {
       const page = await get(url, '/');
-      assert.equal(page.status, 200); assert.match(await page.text(), /Appfire Agent Governance LAB/);
+      assert.equal(page.status, 200); assert.match(await page.text(), /AeroGuard Agent Governance Demo Lab/);
       const csp = page.headers.get('content-security-policy');
       assert.match(csp, /default-src 'self'/); assert.match(csp, /script-src 'self'/); assert.match(csp, /connect-src 'self'/); assert.match(csp, /frame-ancestors 'none'/);
       assert.ok(!/unsafe-eval|https?:/.test(csp), 'no eval and no foreign origin in the CSP');

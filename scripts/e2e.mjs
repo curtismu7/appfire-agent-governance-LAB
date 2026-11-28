@@ -63,8 +63,8 @@ const overlapScript = `(() => {
 })()`;
 
 // The fixed neutral banner lines (owner 2026-11-16: the page never says how it runs; one honesty line stays, first on every page).
-const BANNER_LOCAL = "HIVE, Appfire's platform, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.";
-const BANNER_HOSTED = "Hosted copy. HIVE, Appfire's platform, is represented and never called. Thresholds, personas and amounts are the lab's own (lab-invented). No tenant or live system is reached.";
+const BANNER_LOCAL = "The back-end platform, HIVE, is represented here and never called. Thresholds, personas and amounts are the lab's own (lab-invented); the use cases come from the AI-DEMO2 catalog.";
+const BANNER_HOSTED = "Hosted copy. The back-end platform, HIVE, is represented and never called. Thresholds, personas and amounts are the lab's own (lab-invented). No tenant or live system is reached.";
 
 // There is no Mock | Real control on the page any more. The lab opens in Real when Real is fully configured; tests and scripts switch a tab's workspace with
 // POST /api/mode (the server contract of rule 19, unchanged) and reopen the page, then read the hidden data-mode marker (no words, "mock" or "live").
@@ -1613,7 +1613,7 @@ try {
   // The hosted HTML carries the banner before any script runs: the same prefix the deploy script and the image workflow grep for.
   const hostedHtml = await (await fetch(`${hostedBase}/`)).text();
   const deploySh = fs.readFileSync(path.join(root, 'deploy', 'k8s', 'deploy.sh'), 'utf8'); const imageYml = fs.readFileSync(path.join(root, '.github', 'workflows', 'image.yml'), 'utf8');
-  check(/banner">Hosted copy\. HIVE/.test(hostedHtml) && deploySh.includes('banner">Hosted copy\\. HIVE') && imageYml.includes('banner">Hosted copy\\. HIVE'), 'hosted: the served HTML opens its banner with the text deploy.sh and image.yml grep for');
+  check(/banner">Hosted copy\. The back-end platform, HIVE/.test(hostedHtml) && deploySh.includes('banner">Hosted copy\\. The back-end platform, HIVE') && imageYml.includes('banner">Hosted copy\\. The back-end platform, HIVE'), 'hosted: the served HTML opens its banner with the text deploy.sh and image.yml grep for');
   console.log(`INFO  the word scan read ${wordsRead} strings in all`);
 } finally { if (browser) await browser.close(); server.kill(); liveServer.kill(); hostedServer.kill(); fullServer.kill(); soloServer.kill(); authServer.kill(); await fake.close(); await fullP1.close(); await soloP1.close(); await authP1.close(); await fullGw.close(); fs.rmSync(settingsDir, { recursive: true, force: true }); fs.rmSync(noEnvDir, { recursive: true, force: true }); }
 console.log(`\n${checks - failures} of ${checks} checks passed`);

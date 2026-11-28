@@ -3,7 +3,7 @@ import { DEMO_GUIDE, buttonKey, guideStep } from "../demoGuide";
 import { keepButtons } from "../demoSet";
 
 // The step-by-step demo guide (owner request 2026-11-12): a pop-out tooltip beside the demo. One card per requirement in
-// the Appfire brief, each with what was asked (req), how the lab proves it (prove, with a Run button wired to the use case)
+// the AeroGuard brief, each with what was asked (req), how the lab proves it (prove, with a Run button wired to the use case)
 // and the customer-safe talking points (say). Floats over the demo, drag-anywhere, and can pop out to its own window so the
 // presenter can put it on a second screen.
 function Step({ step, onRun, onCompare, activeUc, only = false, cast }) {
@@ -26,7 +26,7 @@ function Step({ step, onRun, onCompare, activeUc, only = false, cast }) {
 
 export default function DemoGuide({ isOpen, onClose, onRun, onCompare, activeUc, catalog, cast, prompts, only = false }) {
   return (
-    <FloatingDialog isOpen={isOpen} onClose={onClose} title="Appfire demo guide" ariaLabel="Step-by-step demo guide"
+    <FloatingDialog isOpen={isOpen} onClose={onClose} title="AeroGuard demo guide" ariaLabel="Step-by-step demo guide"
       defaultWidth={460} defaultHeight={640} placement="right" storageKey="aag.guide" testId="demo-guide">
       <div className="stack">
         <p className="muted" data-testid="guide-intro">Seven steps, the demo walkthrough from the session agenda: one agent workflow from request to audit record. Each has what it is, how the lab shows it, and what to say.</p>

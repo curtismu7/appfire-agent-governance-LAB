@@ -33,25 +33,25 @@ export const VERTICALS = {
     castFareRule: 'fare', castFareLimit: '$400', castFareHold: '$1,500', castToolServer: 'larkspur-air',
   },
   banking: {
-    castBrand: 'Appfire Platform', castHost: 'appfire-platform', castUser: 'alex.morgan', castUser2: 'sam.rivera', castOwner2: 'dana.whitfield', castAgent: 'triage-agent', castAgent2: 'analytics-specialist', castAgent3: 'report-generalist',
+    castBrand: 'AeroGuard Platform', castHost: 'aeroguard-platform', castUser: 'alex.morgan', castUser2: 'sam.rivera', castOwner2: 'dana.whitfield', castAgent: 'triage-agent', castAgent2: 'analytics-specialist', castAgent3: 'report-generalist',
     castAdmin: 'priya.nair', castMoney: 'checking', castReadTool: 'get_account_balance', castWriteTool: 'create_transfer', castSensitiveTool: 'get_sensitive_account_details', castA2aTool: 'get_portfolio_summary',
     castAsset: 'account', castAction: 'transfer', castGroup: 'premium-tier',
   },
   healthcare: {
-    castBrand: 'Appfire Health Suite', castHost: 'appfire-health', castUser: 'grace.liu', castUser2: 'kofi.mensah', castOwner2: 'lena.ortiz', castAgent: 'care-assistant', castAgent2: 'records-specialist', castAgent3: 'report-generalist',
+    castBrand: 'AeroGuard Health Suite', castHost: 'aeroguard-health', castUser: 'grace.liu', castUser2: 'kofi.mensah', castOwner2: 'lena.ortiz', castAgent: 'care-assistant', castAgent2: 'records-specialist', castAgent3: 'report-generalist',
     castAdmin: 'tariq.hassan', castMoney: 'patient billing', castReadTool: 'view_coverage', castWriteTool: 'pay_bill', castSensitiveTool: 'sensitive_patient_records', castA2aTool: 'sensitive_patient_records',
     castAsset: 'coverage record', castAction: 'bill payment', castGroup: 'premium-tier',
   },
   retail: {
-    castBrand: 'Appfire Retail Suite', castHost: 'appfire-retail', castUser: 'olu.adeyemi', castUser2: 'anna.berg', castOwner2: 'diego.ruiz', castAgent: 'shopping-assistant', castAgent2: 'orders-specialist', castAgent3: 'report-generalist',
+    castBrand: 'AeroGuard Retail Suite', castHost: 'aeroguard-retail', castUser: 'olu.adeyemi', castUser2: 'anna.berg', castOwner2: 'diego.ruiz', castAgent: 'shopping-assistant', castAgent2: 'orders-specialist', castAgent3: 'report-generalist',
     castAdmin: 'hana.sato', castMoney: 'store credit', castReadTool: 'list_orders', castWriteTool: 'checkout', castSensitiveTool: 'sensitive_order_history', castA2aTool: 'sensitive_order_history',
     castAsset: 'order', castAction: 'checkout', castGroup: 'premium-tier',
   },
-  // The Appfire Work Suite (owner, 2026-11-16): Jira and Confluence work management. The write tool's `amount` is the NUMBER OF ISSUES in a bulk edit
+  // The AeroGuard Work Suite (owner, 2026-11-16): Jira and Confluence work management. The write tool's `amount` is the NUMBER OF ISSUES in a bulk edit
   // (castUnit); castPerson is what the signed-in human is called in the agent's instructions; castToolServer marks a pack whose tools the lab's own tool
   // server (the local provider, or an SE-hosted instance of it) serves: the SE Agent Gateway serves none of them (owner 2026-11-16, reversing "software is mock-only").
   software: {
-    castBrand: 'Appfire Work Suite', castHost: 'appfire-work', castUser: 'maya.chen', castUser2: 'raj.patel', castOwner2: 'noor.haddad', castAgent: 'release-assistant', castAgent2: 'release-specialist', castAgent3: 'report-generalist',
+    castBrand: 'AeroGuard Work Suite', castHost: 'aeroguard-work', castUser: 'maya.chen', castUser2: 'raj.patel', castOwner2: 'noor.haddad', castAgent: 'release-assistant', castAgent2: 'release-specialist', castAgent3: 'report-generalist',
     castAdmin: 'ivan.petrov', castMoney: 'projects and issues', castReadTool: 'get_my_issues', castWriteTool: 'bulk_update_issues', castSensitiveTool: 'get_project_security_settings', castA2aTool: 'get_release_summary',
     castAsset: 'project', castAction: 'bulk edit', castGroup: 'enterprise-tier',
     castPublicTool: 'list_marketplace_apps', castStatusTool: 'get_deployment_status', castRequestTool: 'request_admin_access', castScanTool: 'scan_repository', castUnit: 'issues', castPerson: 'user',

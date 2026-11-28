@@ -10,7 +10,7 @@ import { narrowedChip } from "../fare";
 
 const STATUS = { idle: ["Ready", "info"], running: ["Running", "info"], waiting: ["Waiting for you", "warn"], handoff: ["Ready to hand off", "info"], done: ["Done", "ok"], refused: ["Refused", "bad"] };
 
-// "Banking · Appfire Platform": the vertical's name, then its brand when that says something more.
+// "Banking · AeroGuard Platform": the vertical's name, then its brand when that says something more.
 export const verticalHeading = (id, label) => {
   const name = verticalName(id);
   return label && label.toLowerCase() !== name.toLowerCase() ? `${name} · ${label}` : name || label || "";

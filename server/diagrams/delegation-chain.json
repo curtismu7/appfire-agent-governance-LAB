@@ -2,7 +2,7 @@
   "schema": "diagram-studio/1",
   "id": "delegation-chain",
   "title": "Delegation: from sign-in to a dispatched tool call",
-  "lede": "The customer signs in, consents, and the BFF exchanges the user token and the agent token for a delegated token whose act claim names the agent. The gateway checks it, Authorize decides, and only then does the tool run. HIVE, Appfire's own platform, is drawn dashed: its side is represented, not run.",
+  "lede": "The customer signs in, consents, and the BFF exchanges the user token and the agent token for a delegated token whose act claim names the agent. The gateway checks it, Authorize decides, and only then does the tool run. HIVE, the back-end platform's own side, is drawn dashed: it is represented, not run.",
   "groups": {
     "people": {
       "label": "Customer side",
@@ -21,7 +21,7 @@
       "color": "grey"
     },
     "appfire": {
-      "label": "Appfire (represented, not called)",
+      "label": "Back-end platform (represented, not called)",
       "color": "grey"
     }
   },
@@ -70,7 +70,7 @@
     },
     {
       "id": "hive",
-      "label": "HIVE: Appfire's back-end policy (represented, not called)",
+      "label": "HIVE: the back-end policy (represented, not called)",
       "group": "appfire",
       "x": 1000,
       "y": 600
@@ -198,7 +198,7 @@
     },
     {
       "title": "HIVE (represented, not called)",
-      "what": "HIVE is Appfire's platform. It manages back-end data policy and which MCP servers may be used. The lab never calls it: this dashed arrow only shows where its job sits, beside the tool, behind the gateway.",
+      "what": "HIVE is the back-end platform. It manages back-end data policy and which MCP servers may be used. The lab never calls it: this dashed arrow only shows where its job sits, beside the tool, behind the gateway.",
       "edges": [
         6
       ]

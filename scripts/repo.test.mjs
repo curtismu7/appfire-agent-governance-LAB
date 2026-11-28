@@ -132,8 +132,8 @@ test('step 2: the app CSS follows the CSS standard (tokens only, no theme media 
   const nonDef = css.split('\n').filter((l) => !/^\s*--[a-z-]+:/.test(l)).join('\n');
   assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/.test(nonDef), 'no colour literal outside a token definition');
   assert.ok(!/prefers-color-scheme/.test(css)); assert.ok(!/!important/.test(css)); assert.ok(!/font-style:\s*italic/.test(css)); assert.ok(!/purple|violet/i.test(css));
-  // Auto theme on a dark system: the shared dark tokens would make --accent-soft a Ping-red tint next to the Appfire blue accent (red means an error here).
-  assert.match(css, /:root:not\(\[data-theme="light"\]\)\s*\{[^}]*--accent-soft:\s*color-mix\(in srgb, var\(--accent\)/, 'the tint is derived from the Appfire accent in the Auto theme');
+  // Ping brand standard (2026-11-28): the Appfire re-brand is gone, so no lab-level :root token block re-points the shared brand tokens.
+  assert.ok(!/:root\s*\{[^}]*--accent:/.test(css), 'the lab does not re-point the shared brand tokens');
   const widths = [...css.matchAll(/\((?:max|min)-width:\s*(\d+)px\)/g)].map((m) => Number(m[1]));
   assert.ok(widths.length > 0 && widths.every((n) => n === 600 || n === 900), widths.join());
   for (const sel of css.split('{').map((b) => b.split('}').pop().trim()).filter((x) => x && !x.startsWith('@') && !x.startsWith('/*'))) {
@@ -239,10 +239,10 @@ test('the hosted k8s manifests: placeholders only, no namespace, mock-only hoste
 });
 
 test('owner 2026-11-16: the hosted banner prefix is pinned the same way in the data, the served-page tests, deploy.sh and the CI image job; the opening mode is derived, not baked into the image', () => {
-  const prefix = 'Hosted copy. HIVE, Appfire';
+  const prefix = 'Hosted copy. The back-end platform, HIVE';
   assert.ok(read('server/src/data.js').includes(`HOSTED_BANNER = "${prefix}`) || read('server/src/data.js').includes(`HOSTED_BANNER = '${prefix}`), 'data.js');
-  assert.match(read('server/test/hosted.test.js'), /Hosted copy\\\. HIVE, Appfire/);
-  for (const f of ['deploy/k8s/deploy.sh', '.github/workflows/image.yml']) assert.ok(read(f).includes('data-testid="banner">Hosted copy\\. HIVE'), `${f} greps the neutral hosted banner`);
+  assert.match(read('server/test/hosted.test.js'), /Hosted copy\\\. The back-end platform, HIVE/);
+  for (const f of ['deploy/k8s/deploy.sh', '.github/workflows/image.yml']) assert.ok(read(f).includes('data-testid="banner">Hosted copy\\. The back-end platform, HIVE'), `${f} greps the neutral hosted banner`);
   for (const f of ['deploy/k8s/deploy.sh', '.github/workflows/image.yml']) assert.ok(!/HOSTED AND SIMULATED/.test(read(f)), `${f} no longer greps the old banner`);
   assert.ok(!/AAG_LAB_MODE/.test(read('Dockerfile')), 'the image does not pin the opening mode: the lab derives it (Real when configured)');
   assert.match(read('docker-compose.yml'), /^\s+AAG_LAB_MODE: \$\{AAG_LAB_MODE:-\}$/m, 'compose passes AAG_LAB_MODE through, empty by default');

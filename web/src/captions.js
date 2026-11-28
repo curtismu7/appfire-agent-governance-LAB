@@ -11,7 +11,7 @@ export const NOT_IN_PATH = {
 };
 
 export const CAPTIONS = {
-  website: { agenda: "start", say: "The person is in the Appfire application, signed in as themselves. Nothing about the agent is trusted yet.", point: "Who is on the left of the diagram: the person's browser, not the agent." },
+  website: { agenda: "start", say: "The person is in the AeroGuard application, signed in as themselves. Nothing about the agent is trusted yet.", point: "Who is on the left of the diagram: the person's browser, not the agent." },
   "sign-in": { agenda: "start", say: "The person proves who they are to the identity provider. Everything the agent does later traces back to this sign-in.", point: "The token the person gets: the sub claim is the person." },
   prompt: { agenda: "start", say: "They ask for something in plain words. This is only a request; it carries no permission.", point: "The message in the request body. Note there is no agent credential on it." },
   "agent-receive": { agenda: "start", say: "The application hands the request to the AI agent. From here the agent works on the person's behalf, but it is not the person.", point: "The agent is a separate actor in the diagram, with its own lane." },

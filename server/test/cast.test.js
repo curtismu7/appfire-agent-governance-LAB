@@ -98,9 +98,9 @@ test('customer.config.json can set only the brand and a one-label host; a bad va
       const d = loadCast(f, 'retail'); assert.equal(d.castBrand, VERTICALS.retail.castBrand); assert.equal(d.castHost, VERTICALS.retail.castHost);
     }
     fs.writeFileSync(f, 'not json'); assert.equal(loadCast(f).castBrand, 'Larkspur Air');
-    assert.equal(loadCast('/nonexistent/c.json', 'healthcare').castBrand, 'Appfire Health Suite');
+    assert.equal(loadCast('/nonexistent/c.json', 'healthcare').castBrand, 'AeroGuard Health Suite');
     assert.equal(loadCast(f, '__proto__').castBrand, 'Larkspur Air', 'an unknown vertical falls back to the default');
-    assert.equal(loadCast(f, 'banking').castBrand, 'Appfire Platform'); assert.equal(loadCast('/nonexistent/c.json', 'software').castUnit, 'issues');
+    assert.equal(loadCast(f, 'banking').castBrand, 'AeroGuard Platform'); assert.equal(loadCast('/nonexistent/c.json', 'software').castUnit, 'issues');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

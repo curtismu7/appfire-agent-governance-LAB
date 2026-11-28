@@ -7,7 +7,7 @@ import express from 'express';
 import { allPassed, runChecks as defaultChecks } from './doctor.js';
 
 const { version } = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../package.json'), 'utf8'));
-export const DEMO = { id: 'appfire-agent-governance-lab', name: 'Appfire Agent Governance LAB', version };
+export const DEMO = { id: 'appfire-agent-governance-lab', name: 'AeroGuard Agent Governance Demo Lab', version };
 
 export function createHealth({ runChecks = defaultChecks, now = () => new Date(), intervalMs = 60_000, runtime = () => 'offline' } = {}) {
   let last = { state: 'unknown', at: null };

@@ -1,16 +1,16 @@
 {
   "schema": "demo-content-pack/1",
   "id": "appfire-agent-governance-lab",
-  "title": "Appfire Agent Governance LAB",
+  "title": "AeroGuard Agent Governance Demo Lab",
   "version": "0.1.0",
   "demo": {
     "id": "appfire-agent-governance-lab",
-    "name": "Appfire Agent Governance LAB",
+    "name": "AeroGuard Agent Governance Demo Lab",
     "catalog": "D000",
     "baseUrl": "http://localhost:7814",
     "doctor": "/api/health",
     "tags": [
-      "appfire-agent-governance",
+      "aeroguard-agent-governance",
       "token-exchange",
       "act-claim",
       "authorize",
@@ -23,7 +23,7 @@
   },
   "glossary": [
     {
-      "id": "appfire-agent-governance",
+      "id": "aeroguard-agent-governance",
       "term": "Customer-facing agent",
       "definition": "An AI agent that acts for a customer: it asks for a list of trips, a flight booking, a flight status. The use case is from the AI-DEMO2 catalog; the amounts and events are lab-invented.",
       "aliases": [
@@ -134,7 +134,7 @@
         "href": "/#track-foundations"
       },
       "terms": [
-        "appfire-agent-governance"
+        "aeroguard-agent-governance"
       ],
       "story": "S01"
     },
@@ -148,7 +148,7 @@
         "href": "/#track-learn"
       },
       "terms": [
-        "appfire-agent-governance"
+        "aeroguard-agent-governance"
       ],
       "story": "S02"
     },
@@ -162,7 +162,7 @@
         "href": "/#track-controls"
       },
       "terms": [
-        "appfire-agent-governance"
+        "aeroguard-agent-governance"
       ],
       "story": "S03"
     },
@@ -176,7 +176,7 @@
         "href": "/#track-hitl"
       },
       "terms": [
-        "appfire-agent-governance"
+        "aeroguard-agent-governance"
       ],
       "story": "S04"
     },
@@ -190,7 +190,7 @@
         "href": "/#track-demo"
       },
       "terms": [
-        "appfire-agent-governance"
+        "aeroguard-agent-governance"
       ],
       "story": "S05"
     },
@@ -204,7 +204,7 @@
         "href": "/#track-attacks"
       },
       "terms": [
-        "appfire-agent-governance"
+        "aeroguard-agent-governance"
       ],
       "story": "S06"
     },
@@ -218,7 +218,7 @@
         "href": "/#track-tools"
       },
       "terms": [
-        "appfire-agent-governance"
+        "aeroguard-agent-governance"
       ],
       "story": "S07"
     },
@@ -232,7 +232,7 @@
         "href": "/#track-nhi"
       },
       "terms": [
-        "appfire-agent-governance"
+        "aeroguard-agent-governance"
       ],
       "story": "S08"
     },
@@ -293,16 +293,16 @@
       ]
     },
     {
-      "id": "concept-why-appfire-agent-governance",
+      "id": "concept-why-agent-governance",
       "label": "Why it matters: a customer-facing agent that cannot overreach",
-      "description": "Challenge: Appfire's HIVE platform already manages the backend: data policy and which MCP servers may be used. The open question is the agent-facing front end: who or what the agent is, what it is allowed to do, under which conditions, and how each decision is enforced and recorded — without a person approving every step. Technical: Ping governs the front end: the agent gets its own identity, receives delegated privileges (RFC 8693 act chain), and every tool call, MCP-server hop and data access gets a policy decision with a risk-based outcome — auto-allow for low-risk reads, step-up or human approval for risky writes, deny for out-of-scope actions — all enforced at the tool, data and action layers, not left to the model. Business: Controlled autonomy: low-risk actions proceed inside policy, higher-risk ones are constrained or approved, and every decision leaves an audit record naming the agent, the principal it acted for, the resource and the decision — the visibility Appfire's AI Governance program is asking for, complementing (not replacing) HIVE. (Lab summary of the AI-DEMO2 catalog text, not a Ping claim.)",
+      "description": "Challenge: The HIVE platform already manages the backend: data policy and which MCP servers may be used. The open question is the agent-facing front end: who or what the agent is, what it is allowed to do, under which conditions, and how each decision is enforced and recorded — without a person approving every step. Technical: Ping governs the front end: the agent gets its own identity, receives delegated privileges (RFC 8693 act chain), and every tool call, MCP-server hop and data access gets a policy decision with a risk-based outcome — auto-allow for low-risk reads, step-up or human approval for risky writes, deny for out-of-scope actions — all enforced at the tool, data and action layers, not left to the model. Business: Controlled autonomy: low-risk actions proceed inside policy, higher-risk ones are constrained or approved, and every decision leaves an audit record naming the agent, the principal it acted for, the resource and the decision — the visibility AeroGuard's AI Governance program is asking for, complementing (not replacing) HIVE. (Lab summary of the AI-DEMO2 catalog text, not a Ping claim.)",
       "group": "concept",
       "action": {
         "type": "route",
         "href": "/#talk"
       },
       "terms": [
-        "appfire-agent-governance",
+        "aeroguard-agent-governance",
         "delegation",
         "authorize-decision"
       ]
