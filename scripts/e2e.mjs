@@ -93,18 +93,19 @@ const watchRuns = (page, base) => {
   return {
     posts,
     get runs() { return posts; },
-    // Waits for the n-th run POST after `n` to have been made, then polls /api/run-last until the workspace's last run
-    // is NEWER than the one at call time (by seq, falling back to traceId when a block Reset rewinds the seq). A 401
-    // run produces no run at all; the caller's own sign-in handling makes the page go again, and this keeps polling.
-    next: async (n, { timeout = 120000 } = {}) => {
+    // The run at this instant: capture it BEFORE the click (a fast run finishes before next() is called).
+    last: () => lastRun(),
+    // Waits for the n-th run POST after `n` to have been made, then polls /api/run-last until the last run is a
+    // DIFFERENT one than `prev` (the pre-click snapshot, by traceId). A 401 run stores nothing; the caller's own
+    // sign-in handling makes the page go again, and this keeps polling until the budget is spent.
+    next: async (n, prev = null, { timeout = 120000 } = {}) => {
       const t0 = Date.now();
-      const before = await lastRun();
       while (posts.length <= n && Date.now() - t0 < timeout) await sleep(100);
       if (posts.length <= n) return null;
       for (;;) {
         if (Date.now() - t0 > timeout) return null;
         const run = await lastRun();
-        if (run && (!before || run.seq !== before.seq || run.traceId !== before.traceId)) return run;
+        if (run && (!prev || run.traceId !== prev.traceId)) return run;
         await sleep(200);
       }
     },
@@ -759,8 +760,9 @@ try {
       check(toReal.status === 200 && toReal.body?.source === 'real' && (await t('banner').innerText()) === BANNER_LOCAL && (await t('banner').getAttribute('data-state')) === 'info', `${tag}: POST /api/mode real is allowed, the marker says live, and the banner is the same neutral line`);
       await t('search').fill('UC7'); await page.locator('[data-testid="uc-UC7"]').click(); await t('search').fill('');
       check(await t('live-persona-note').isVisible() && (await t('persona').count()) === 0 && (await t('lab-inputs').count()) === 0, `${tag}: the persona and the lab inputs are hidden in live and the note says why`);
+      const prev764 = await watch.last();
       await t('run').click(); await t('result').waitFor();
-      const liveRun = await watch.next(0);
+      const liveRun = await watch.next(0, prev764);
       check((await t('outcome').innerText()) === 'LIVE_OK' && (await t('live-note-tag').count()) === 0 && (await t('matches').count()) === 0, `${tag}: UC7 here is LIVE_OK, with no source chip and no catalog-match claim`);
       check((await page.getByTestId(/^row-\d+$/).count()) === 2 && (await t('hop-source').count()) === 0 && (await t('hop-sources').count()) === 0 && liveRun?.hops?.map((h) => h.source).join() === 'real,real', `${tag}: two hops, no source chip on the page, and both hops are source real in the data`);
       await t('evtab-tokens').click();
@@ -784,9 +786,9 @@ try {
       await t('nav-diagram').click(); await page.locator('.react-flow__node').first().waitFor();
       check((await overflow()) <= 0, `${tag}: the diagram page in live does not scroll sideways`);
       const toMock = await switchMode(page, 'mock');
-      const seenBefore = fake.seen.length; const runsBefore = watch.posts.length;
+      const seenBefore = fake.seen.length; const runsBefore = watch.posts.length; const prev790 = await watch.last();
       await t('nav-agent').click(); await pick('UC7'); await t('run').click();
-      const ownRun = await watch.next(runsBefore);
+      const ownRun = await watch.next(runsBefore, prev790);
       await page.waitForFunction(() => { const o = document.querySelector('[data-testid="outcome"]'); return o && !o.textContent.startsWith('LIVE_'); });
       check(toMock.status === 200 && ownRun?.mode === 'mock' && (await t('refusal').count()) === 0 && fake.seen.length === seenBefore, `${tag}: back on the lab's own steps without a restart, a run signs in with the demo persona and runs (outcome ${await t('outcome').innerText()}), no call to the fake`);
       if (await t('mp-deny').isVisible().catch(() => false)) { await t('mp-deny').click(); await t('mp-outcome').waitFor(); }
@@ -903,7 +905,8 @@ try {
     const authz = fullP1.seen.filter((x) => x.url.includes('/as/authorize'));
     check(authz.length >= 1 && authz.every((x) => new URL(x.url, 'http://x').searchParams.get('response_mode') === 'pi.flow' && new URL(x.url, 'http://x').searchParams.get('code_challenge_method') === 'S256'), `${tag}: the sign-in was pi.flow with PKCE S256`);
     check(navs.length === 1 && navs[0].startsWith(fullBase), `${tag}: the page never navigated (no redirect login): ${navs.join(' | ')}`);
-    const realRun = await watch.next(0);
+    const prev907 = await watch.last();
+    const realRun = await watch.next(0, prev907);
     const srcs = (realRun?.hops || []).map((h) => h.source);
     check(srcs.length === 9 && srcs.every((x) => x === 'real') && (await t('hop-source').count()) === 0 && (await t('hop-sources').count()) === 0, `${tag}: nine hops (two token exchanges), every one source real in the data, and no source chip or "where each hop ran" list on the page (${srcs.join(',')})`);
     const seqText = await t('sequence-view').innerText();
@@ -945,19 +948,19 @@ try {
     check((await t('turn-answer-text').last().innerText()).includes('answered HTTP 503 and did not complete the call'), `${tag}: a 503 is an honest refusal saying the service did not complete the call, with no advice to leave Real`);
     // A use case the gateway cannot serve (UC2, agent-to-agent) runs whole on the lab's own steps inside a Real page: the gateway is not called, the page shows it like any
     // other run (no label, no notice), and the data says so (run.realGate, hop.source).
-    const gwFallback = fullGw.seen.length; const rn = watch.posts.length;
+    const gwFallback = fullGw.seen.length; const rn = watch.posts.length; const prev952 = await watch.last();
     await t('search').fill('UC2'); await page.locator('[data-testid="uc-UC2"]').click(); await t('search').fill('');
     await t('run').click();
-    const fbRun = await watch.next(rn);
+    const fbRun = await watch.next(rn, prev952);
     await t('result').waitFor({ timeout: 20000 });
     const fsrc = (fbRun?.hops || []).map((h) => h.source);
     check(fullGw.seen.length === gwFallback && fbRun?.realGate?.real === false && fbRun?.mode === 'mock' && fsrc.length > 0 && fsrc.every((x) => x === 'mock' || x === 'not-run') && (await t('mock-in-real').count()) === 0 && (await t('hop-source').count()) === 0, `${tag}: a use case the gateway cannot serve runs whole on the lab's own steps in a Real page: no gateway call, realGate.real false, every hop source mock or not-run in the data, and nothing on the page says so (${new Set(fsrc).size} source kinds)`);
     await walk(page, `${tag}: a whole-run fallback shown like any other run`);
-    const seen = fullGw.seen.length; const rn2 = watch.posts.length;
+    const seen = fullGw.seen.length; const rn2 = watch.posts.length; const prev961 = await watch.last();
     const toOwn = await switchMode(page, 'mock');
     await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
     await t('run').click();
-    const ownRun = await watch.next(rn2);
+    const ownRun = await watch.next(rn2, prev961);
     await page.waitForFunction(() => { const o = document.querySelector('[data-testid="outcome"]'); return o && !o.textContent.startsWith('REAL_'); });
     const msrc = (ownRun?.hops || []).map((h) => h.source);
     check(toOwn.status === 200 && ownRun?.mode === 'mock' && fullGw.seen.length === seen && msrc.length > 0 && msrc.every((x) => x === 'mock' || x === 'not-run'), `${tag}: switched with POST /api/mode, no restart: the run is on the lab's own steps, no gateway call, every hop source mock or not-run`);
@@ -990,12 +993,13 @@ try {
     // Run the picked use case; when Real asks for the sign-in, sign in (the password is the fake's); return the run the page received.
     const runIt = async () => {
       const n = watch.posts.length;
+      const prev = await watch.last();
       await t('run').click();
       for (let i = 0; i < 900 && watch.posts.length <= n; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
         await sleep(100);
       }
-      const run = await watch.next(n);
+      const run = await watch.next(n, prev);
       await sleep(400);
       return run;
     };
@@ -1052,15 +1056,15 @@ try {
     await t('mp-deny').waitFor({ timeout: 10000 }); await t('mp-deny').click(); await t('mp-outcome').waitFor();
 
     // UC8: held for a person, approved on the phone, the retry carries the receipt and completes (the lab's own approval service)
-    const before = watch.posts.length;
+    const before = watch.posts.length; const prev1061 = await watch.last();
     await pick('UC8');
     await t('run').click();
     await t('mp-approve').waitFor({ timeout: 20000 });
-    const held = await watch.next(before);
+    const held = await watch.next(before, prev1061);
     check(held?.outcome === 'REAL_HOLD' && typeof held.challenge === 'string' && held.provider === 'local' && held.reply?.approval?.head === 'Held for approval', `${tag}: UC8 (300 issues) is held for a person: REAL_HOLD with a challenge, provider local`);
     check(approvalStarts.length >= 1 && approvalStarts[approvalStarts.length - 1].provider === 'local' && approvalStarts[approvalStarts.length - 1].kind === 'real', `${tag}: the page told the server which service minted the challenge (provider local)`);
     await t('mp-approve').click();
-    const retried = await watch.next(before + 1); // the page retries the held use case by itself once the phone approves
+    const retried = await watch.next(before + 1, held); // the page retries the held use case by itself once the phone approves
     check(retried?.outcome === 'REAL_PERMIT' && retried.provider === 'local' && toolHop(retried)?.answeredBy === 'tool server (local)', `${tag}: after the phone approves, the retry with the receipt completes (REAL_PERMIT) through the lab's own approval service (${retried?.outcome}: ${String(retried?.reply?.text || retried?.narration || '').slice(0, 160)})`);
     await walk(page, `${tag}: after the approval`);
 
@@ -1126,12 +1130,13 @@ try {
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
       const n = watch.posts.length;
+      const prev = await watch.last();
       await t('run').click();
       for (let i = 0; i < 900 && watch.posts.length <= n; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
         await sleep(100);
       }
-      const run = await watch.next(n);
+      const run = await watch.next(n, prev);
       await sleep(400);
       return run;
     };
@@ -1224,18 +1229,18 @@ try {
     await page.setViewportSize({ width: 1280, height: 900 }); await sleep(300);
 
     // UC6: Paris, $2,400: held for a person (428), approved on the phone, retried with the receipt and booked AS ASKED (an approval beats a narrowing)
-    const before = watch.posts.length;
+    const before = watch.posts.length; const prev1234 = await watch.last();
     await pick('UC6');
     await t('run').click();
     await t('mp-approve').waitFor({ timeout: 20000 });
-    const held = await watch.next(before);
+    const held = await watch.next(before, prev1234);
     check(held?.outcome === 'REAL_HOLD' && typeof held.challenge === 'string' && held.provider === 'local' && held.booking?.booked === null && held.booking.fare === 2400 && held.reply?.approval?.head === 'Held for approval', `${tag}: the Paris booking is held for a person (REAL_HOLD, a challenge, booking.booked null, the fare the rule judged is 2400)`);
     check((await t('decision-word').innerText()) === 'ESCALATED' && (await t('risk-4').getAttribute('aria-current')) === 'step' && (await textOf('decision-seat')).includes('business asked, not booked yet (held)'), `${tag}: the card says ESCALATED on the fourth rung, business asked, not booked yet`);
     check((await t('mock-phone').innerText()).includes('2,400'), `${tag}: the phone opens showing the fare the rule judged ($2,400)`);
     check(approvalStarts.length >= 1 && approvalStarts[approvalStarts.length - 1].provider === 'local' && approvalStarts[approvalStarts.length - 1].kind === 'real', `${tag}: the page told the server which service minted the challenge (provider local)`);
     check(!JSON.stringify({ hops: held.hops, tokens: held.tokens, gatewayTrace: held.gatewayTrace, reply: held.reply }).includes(held.challenge), `${tag}: the challenge id is in no hop, no token and not in the reply (it is a field of the run only)`);
     await t('mp-approve').click();
-    const retried = await watch.next(before + 1);
+    const retried = await watch.next(before + 1, held);
     check(retried?.outcome === 'REAL_PERMIT' && retried.booking?.booked === 'business' && !retried.constrained && retried.provider === 'local', `${tag}: after the phone approves, the retry books business as asked: REAL_PERMIT, no narrowing (${retried?.outcome} ${retried?.booking?.booked})`);
     await sleep(500);
     // The retry is not a new chat turn (the page retries the held use case by itself); the evidence column shows its run and its data carries the reply.
@@ -1300,12 +1305,13 @@ try {
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
       const n = watch.posts.length;
+      const prev = await watch.last();
       await t('run').click();
       for (let i = 0; i < 900 && watch.posts.length <= n; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
         await sleep(100);
       }
-      const run = await watch.next(n);
+      const run = await watch.next(n, prev);
       await sleep(400);
       return run;
     };
@@ -1347,12 +1353,13 @@ try {
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
       const n = watch.posts.length;
+      const prev = await watch.last();
       await t('run').click();
       for (let i = 0; i < 400 && watch.posts.length <= n; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
         await sleep(100);
       }
-      const run = await watch.next(n);
+      const run = await watch.next(n, prev);
       await sleep(400);
       return run;
     };
@@ -1405,14 +1412,14 @@ try {
     await cardWords(`${tag}: the Toronto booking decided by PingOne Authorize`);
 
     // Paris: $2,400: Authorize says a person must approve (428), the phone approves on the lab's own approval service, the retry carries the receipt and Authorize answers approved
-    const start = watch.posts.length;
+    const start = watch.posts.length; const prev1417 = await watch.last();
     await pick('UC6');
     await t('run').click();
     await t('mp-approve').waitFor({ timeout: 30000 });
-    const held = await watch.next(start);
+    const held = await watch.next(start, prev1417);
     check(held?.outcome === 'REAL_HOLD' && held.decidedBy === 'pingone-authorize' && decisionHop(held)?.authorize?.code === 'airline-approval-required' && (await t('decision-word').innerText()) === 'ESCALATED' && (await textOf('decision-policy')).includes(LINE('airline-approval-required', 'hold for a person to approve')), `${tag}: the Paris booking is held for a person because PingOne Authorize answered airline-approval-required (the approval itself runs on the lab's own approval service)`);
     await t('mp-approve').click();
-    const retried = await watch.next(start + 1);
+    const retried = await watch.next(start + 1, held);
     await sleep(500);
     const parisCalls = az.seen.filter((x) => x.parameters.AirFare === '2400').map((x) => x.parameters.AirApproval);
     check(retried?.outcome === 'REAL_PERMIT' && retried.decidedBy === 'pingone-authorize' && retried.booking?.booked === 'business' && !retried.constrained && decisionHop(retried)?.authorize?.code === 'airline-approved-as-asked', `${tag}: after the phone approves, the retry books business as asked, decided by PingOne Authorize (airline-approved-as-asked)`);
@@ -1472,6 +1479,7 @@ try {
     let dialogWalked = false;
     const runIt = async () => {
       const n = watch.posts.length;
+      const prev = await watch.last();
       await t('run').click();
       for (let i = 0; i < 200 && watch.posts.length <= n; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) {
@@ -1480,7 +1488,7 @@ try {
         }
         await sleep(100);
       }
-      const run = await watch.next(n);
+      const run = await watch.next(n, prev);
       await sleep(400);
       return run;
     };
@@ -1626,8 +1634,9 @@ try {
       check((await t('mode-select').count()) === 0 && (await t('real-hosted-note').count()) === 0 && (await t('mode-real').count()) === 1, `${tag}: no Mock | Real control and no hosted Real note; only the rule-19 marker`);
       watching = true;
       await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
+      const prev1636 = await watch.last();
       await t('run').click(); await t('result').waitFor();
-      const hostedRun = await watch.next(0);
+      const hostedRun = await watch.next(0, prev1636);
       check((await t('outcome').innerText()) === 'PERMIT' && hostedRun?.mode === 'mock' && modeCalls.length === 0, `${tag}: a use case runs on the hosted copy (PERMIT, no /api/mode write by the page: ${modeCalls.join(' | ')})`);
       await walk(page, `${tag}: the hosted page after a run`);
       if (tag === 'hosted-desktop-light') {
