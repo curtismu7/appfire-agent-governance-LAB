@@ -18,10 +18,10 @@ export const STEPS = [
 
   { key: 'the_cast', type: 'slide', trigger: 'load' },
 
-  { key: 'turn_overlimit', type: 'bubble', trigger: 'run-done', target: { roSummary: true }, prefer: 'above', lines: 'summary' },
-  { key: 'turn_hold', type: 'bubble', trigger: 'run-done', target: { roSummary: true }, prefer: 'above', lines: 'summary' },
-  { key: 'turn_denied', type: 'bubble', trigger: 'run-done', target: { roSummary: true }, prefer: 'above', lines: 'summary' },
-  { key: 'turn_blocked', type: 'bubble', trigger: 'run-done', target: { roSummary: true }, prefer: 'above', lines: 'summary' },
+  { key: 'turn_overlimit', type: 'bubble', trigger: 'run-done', target: { roSummary: true }, prefer: 'above', lines: 'summary', prompt: { press: ['[data-testid=wtt-UC27]'] } },
+  { key: 'turn_hold', type: 'bubble', trigger: 'run-done', target: { roSummary: true }, prefer: 'above', lines: 'summary', prompt: { press: ['[data-testid=wtt-UC6]'] } },
+  { key: 'turn_denied', type: 'bubble', trigger: 'run-done', target: { roSummary: true }, prefer: 'above', lines: 'summary', prompt: { press: ['[data-testid=wtt-UC13]'] } },
+  { key: 'turn_blocked', type: 'bubble', trigger: 'run-done', target: { roSummary: true }, prefer: 'above', lines: 'summary', prompt: { press: ['[data-testid=wtt-UC31]'] } },
   { key: 'turn_compare', type: 'bubble', trigger: 'run-done', target: { roPanel: true }, prefer: 'left' },
 
   { key: 'closing', type: 'slide', trigger: 'load' },
