@@ -1,5 +1,5 @@
 import { replyOf } from "../chat";
-import Working from "./Working";
+import PingSpinner from "./PingSpinner";
 import { isHandoff, routeOf } from "../handoff";
 import { outcomeState } from "../lib";
 import { visible } from "../safeText";
@@ -42,7 +42,7 @@ export default function Turn({ turn, onHop, onPreview, userId, running }) {
               {" "}The evidence is not kept: run it again to see it.
             </p>
           )}
-          {turn.status === "running" && <p data-testid="turn-running"><Working /></p>}
+          {turn.status === "running" && <p data-testid="turn-running"><PingSpinner size={36} label="Working on it" /></p>}
           {res && !res.ok && <p className="turn__refused" data-testid="turn-refused">The server refused this run{res.status ? ` (HTTP ${res.status})` : " (no answer)"}: {visible(res.body?.detail || res.body?.message || "no reason given")}</p>}
           {run && guide && <p data-testid="turn-guide-say">This one is a guide: the learning pages and scripts cover it, and there is no lab for it yet.</p>}
           {reply?.approval && (
