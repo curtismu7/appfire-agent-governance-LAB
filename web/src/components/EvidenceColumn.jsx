@@ -61,7 +61,10 @@ export function HandoffSummary({ uc, catalog, vertical, userId }) {
 
 // `children`: the selected use case's panel (inputs, persona, Run and the raw result), at the bottom of the column (owner, 2026-11-09).
 export default function EvidenceColumn({ running, run, selHop, onSelect, config, onTab, onFull, vertical, resetSignal, lastRun, uc, catalog, userId, showHandoff, why, children }) {
+  // Live sequence (owner 2026-11-28): while a run streams in, `run` holds the hops so far and only the diagram is drawn —
+  // the decision card, the panels and the Why line wait for the finished run, whose outcome is the one that counts.
   const hops = run?.hops || [];
+  const complete = Boolean(run) && !running;
   const tabs = VIEWS.filter((v) => DIAGRAMS.includes(v) || config.views.tokens === "embedded");
   const tab = tabs.includes(config.tab) && (config.tab === "tokens" || config.views[config.tab] === "embedded") ? config.tab : null;
   return (
@@ -73,19 +76,19 @@ export default function EvidenceColumn({ running, run, selHop, onSelect, config,
         <button type="button" onClick={() => onFull("compare")} data-testid="open-compare" title="Two runs side by side: what is decided differently">Compare</button>
         <button type="button" onClick={() => onFull("sequence")} data-testid="full-sequence" title="The sequence view on a page of its own">Full page</button>
       </header>
-      {running && (
+      {running && !run && (
         <div className="evcol__running" data-testid="evidence-running">
           <Working label="Running the use case" />
-          <span className="muted">The sequence and the decision are drawn here when the run finishes.</span>
+          <span className="muted">The sequence is drawn here hop by hop while the run works; the decision follows when it finishes.</span>
         </div>
       )}
       {showHandoff ? <HandoffSummary uc={uc} catalog={catalog} vertical={vertical} userId={userId} /> : (
         <>
-          {run && <DecisionCard run={run} />}
-          {run && <PrivilegePanel run={run} />}
+          {complete && run && <DecisionCard run={run} />}
+          {complete && run && <PrivilegePanel run={run} />}
           {/* A Here + go deeper use case: the lab that covers this run in depth (moved out of the chat, owner 2026-11-09). */}
-          {run && uc && run.useCase?.id === uc.id && <GoDeeper uc={uc} vertical={vertical} userId={userId} />}
-          {run && <Why steps={why} testId="evidence-why" />}
+          {complete && run && uc && run.useCase?.id === uc.id && <GoDeeper uc={uc} vertical={vertical} userId={userId} />}
+          {complete && run && <Why steps={why} testId="evidence-why" />}
           {/* A segmented control, not a second tablist: the page's tabpanel is the agent area itself. Pressed = the view on show. */}
           <div className="evtabs seg" role="group" aria-label="Evidence view" data-testid="evidence-tabs">
             {tabs.map((v) => (
@@ -106,6 +109,7 @@ export default function EvidenceColumn({ running, run, selHop, onSelect, config,
                 {run ? <TokenView tokens={run.tokens} /> : <p className="muted">Run a use case to see its tokens.</p>}
               </div>
             )}
+            {running && tab === "sequence" && hops.length > 0 && <p className="muted" data-testid="live-seq-note">Drawing the run live: {hops.length} hop{hops.length === 1 ? "" : "s"} so far.</p>}
           </div>
         </>
       )}

@@ -155,7 +155,7 @@ describe("run view", () => {
     await u.selectOptions(screen.getByTestId("persona"), "premium");
     await runIt(u);
     const post = api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC1");
-    expect(post.body).toEqual({ vertical: "airline", persona: "premium" });
+    expect(post.body).toEqual({ vertical: "airline", persona: "premium", stream: true });
     expect(post.headers.traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
     expect(screen.getByTestId("outcome").textContent).toBe("PERMIT");
     expect(screen.getByTestId("matches").textContent).toBe("matches the catalog label");
@@ -530,11 +530,11 @@ describe("fix pass 2026-11-01", () => {
     expect(screen.getByTestId("persona").value).toBe("premium");
     expect(screen.getByTestId("lab-inputs").textContent).toMatch(/persona.*premium/);
     await runIt(u);
-    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC21").body).toEqual({ vertical: "airline", persona: "premium" });
+    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC21").body).toEqual({ vertical: "airline", persona: "premium", stream: true });
     await u.click(screen.getByTestId("uc-UC9"));
     expect(screen.getByTestId("persona").value).toBe("standard");
     await runIt(u);
-    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC9").body).toEqual({ vertical: "airline", persona: "standard" });
+    expect(api.calls.find((c) => c.method === "POST" && c.path === "/api/run/UC9").body).toEqual({ vertical: "airline", persona: "standard", stream: true });
     await u.click(screen.getByTestId("uc-UC21"));
     await u.selectOptions(screen.getByTestId("persona"), "standard");
     expect(screen.getByTestId("persona").value).toBe("standard");

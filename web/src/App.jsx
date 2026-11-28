@@ -14,7 +14,7 @@ import QuickConfig from "./components/QuickConfig";
 import { SET_KEY, activeSet, promptsInSet, savedSet } from "./demoSet";
 import SetupSidebar, { VerticalSelect } from "./components/SetupSidebar";
 import Rail from "./rail/Rail";
-import { getJson, postJson, resetWorkspace } from "./api";
+import { getJson, postJson, postJsonStream, resetWorkspace } from "./api";
 import { BANNER_HOSTED, BANNER_LOCAL, DEFAULT_VERTICAL, EXTRAS, OWN_TOOL_VERTICALS, focusHop, holdWords, newTraceparent, setUseCaseTitles, titleOfUc } from "./lib";
 import { matchPrompt, pickStands, reasoningOf } from "./chat";
 import { isHandoff } from "./handoff";
@@ -223,7 +223,11 @@ export default function App() {
   const uc = allUc.find((u) => u.id === selectedId) || null;
   const personas = info?.personas || ["standard", "premium"];
   const result = uc ? results[resultKey(uc.id, vertical, persona, mode)] : null;
-  const evRun = result?.ok ? result.body.run : null;
+  // Live sequence (owner 2026-11-28): while a streamed run is in flight, liveRun holds the hops so far as a partial run
+  // object, so the evidence column and the full-page sequence draw each hop the moment it happens. The finished run
+  // replaces it; a partial run never reaches results, history, the decision card or a turn.
+  const [liveRun, setLiveRun] = useState(null);
+  const evRun = liveRun || (result?.ok ? result.body.run : null);
   // The Why line above the evidence tabs: how the turn that made this run chose its use case, then what the run did (the chat shows the reply only).
   const evTurn = evRun ? [...turns].reverse().find((t) => t.result?.ok && t.result.body.run === evRun) : null;
   const why = evRun && uc ? reasoningOf(evTurn ? { ...evTurn, uc } : { uc, how: "picked" }, evRun) : null;
@@ -273,9 +277,19 @@ export default function App() {
     // A typed or chip turn tells the server what was said and which brain actually picked the use case ("llama" only when llama.cpp did;
     // a fallback is "scripted"). A picked or previewed run sends neither.
     const typed = turn && turn.how !== "picked" ? { said: String(turn.said).slice(0, 400), brain: turn.how === "llm" ? "llama" : "scripted" } : {};
-    const res = await postJson(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(instrEdit !== null ? { instructions: instrEdit } : {}), ...(extra ?? {}) }, { traceparent: newTraceparent() }).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
+    // Stream the run (owner 2026-11-28): the page asks for NDJSON so the sequence draws hop by hop while the run works.
+    // The server streams only a full Real run; everything else arrives as one JSON answer and behaves exactly as before.
+    // While hops land, liveRun draws them; the done line's run is authoritative and replaces the partial one.
+    setLiveRun(null);
+    const streamedHops = [];
+    const res = await postJsonStream(`/api/run/${encodeURIComponent(u.id)}`, { vertical, persona: who, ...typed, ...(instrEdit !== null ? { instructions: instrEdit } : {}), ...(extra ?? {}) }, { traceparent: newTraceparent() }, (hop) => {
+      streamedHops.push(hop);
+      if (mine !== runSeq.current) return;
+      setLiveRun((prev) => ({ ...(prev || { useCase: { id: u.id, title: u.title }, vertical, hops: [], tokens: [] }), hops: [...streamedHops] }));
+    }, ).catch(() => ({ ok: false, status: 0, body: { error: "network", detail: "The server did not answer. Is it running?" } }));
     if (mine !== runSeq.current) return; // a Reset or a newer run took over
     setRunning(false);
+    setLiveRun(null); // the finished run (or the refusal) replaces the live hops
     window.dispatchEvent(new CustomEvent("paad:run-end", { detail: { ok: res.status < 500 } })); // a 4xx answer still completed (the rows show it)
     // Real runs as the person: no sign-in yet opens the Sign in dialog, and the run goes again once it succeeds.
     if (res.status === 401 && res.body?.error === "sign_in_required") { pendingRun.current = { u, turn: turn ? { said: turn.said, how: turn.how, source: turn.source } : null, who }; setSignOpen(true); }
