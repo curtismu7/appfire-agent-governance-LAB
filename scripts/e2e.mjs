@@ -86,6 +86,17 @@ const switchMode = async (page, source) => {
 // body: Playwright's response.text() on the same stream can then hang. The watcher never reads run POST bodies. It tracks the
 // run count by watching the response HEADERS only (a POST to /api/run/ started), and a check's run body comes from
 // GET /api/run-last (the workspace's last run, whole, with its seq) once the page has signalled completion.
+// Polls lastRun() until the workspace's last run differs from prev (by traceId), or the budget is spent.
+const watchSettled = async (lastRun, prev, timeout = 120000) => {
+  const t0 = Date.now();
+  for (;;) {
+    if (Date.now() - t0 > timeout) return null;
+    const run = await lastRun();
+    if (run && (!prev || run.traceId !== prev.traceId)) return run;
+    await sleep(200);
+  }
+};
+
 const watchRuns = (page, base) => {
   const posts = [];
   page.on('response', (r) => { if (r.request().method() === 'POST' && /\/api\/run\//.test(r.url())) posts.push(Date.now()); });
@@ -102,17 +113,17 @@ const watchRuns = (page, base) => {
       const t0 = Date.now();
       while (posts.length <= n && Date.now() - t0 < timeout) await sleep(100);
       if (posts.length <= n) return null;
-      for (;;) {
-        if (Date.now() - t0 > timeout) return null;
-        const run = await lastRun();
-        if (run && (!prev || run.traceId !== prev.traceId)) return run;
-        await sleep(200);
-      }
+      return watchSettled(lastRun, prev, timeout - (Date.now() - t0));
     },
+    // Polls /api/run-last until the last run differs from `prev` (or prev is null and ANY run exists).
+    settled: (prev = null, timeout = 120000) => watchSettled(lastRun, prev, timeout),
   };
 };
 
 // The hop of a run that the tool (not the sign-in or the exchanges) answered, in the data.
+// The workspace's last run, whole (GET /api/run-last) — what the e2e's run-wait loops poll for.
+const lastRunOf = (watch) => watch.last();
+
 const toolHop = (run) => (run?.hops || []).find((h) => ['tool-dispatched', 'tool-held', 'tool-refused'].includes(h.kind) && h.source === 'real');
 
 // NO-MOCK-WORDS (owner 2026-11-16): everything a person can read or hear on a page, text, aria-label, title, placeholder, alt, an input's value and option
@@ -993,14 +1004,17 @@ try {
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     // Run the picked use case; when Real asks for the sign-in, sign in (the password is the fake's); return the run the page received.
     const runIt = async () => {
-      const n = watch.posts.length;
       const prev = await watch.last();
       await t('run').click();
-      for (let i = 0; i < 900 && watch.posts.length <= n; i++) {
+      // A signed-out Real run's first POST is a 401 (no run stored): keep the loop alive, handling the dialog, until a
+      // NEW run (a different traceId) is in the workspace — the same shape the old body-reading watcher waited for.
+      for (let i = 0; i < 900; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        const r = await lastRunOf(watch);
+        if (r && (!prev || r.traceId !== prev.traceId)) return r;
         await sleep(100);
       }
-      const run = await watch.next(n, prev);
+      const run = await watch.settled(prev, { timeout: 5000 });
       await sleep(400);
       return run;
     };
@@ -1130,14 +1144,17 @@ try {
     const watch = watchRuns(page, fullBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
-      const n = watch.posts.length;
       const prev = await watch.last();
       await t('run').click();
-      for (let i = 0; i < 900 && watch.posts.length <= n; i++) {
+      // A signed-out Real run's first POST is a 401 (no run stored): keep the loop alive, handling the dialog, until a
+      // NEW run (a different traceId) is in the workspace — the same shape the old body-reading watcher waited for.
+      for (let i = 0; i < 900; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        const r = await lastRunOf(watch);
+        if (r && (!prev || r.traceId !== prev.traceId)) return r;
         await sleep(100);
       }
-      const run = await watch.next(n, prev);
+      const run = await watch.settled(prev, { timeout: 5000 });
       await sleep(400);
       return run;
     };
@@ -1305,14 +1322,17 @@ try {
     const watch = watchRuns(page, soloBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
-      const n = watch.posts.length;
       const prev = await watch.last();
       await t('run').click();
-      for (let i = 0; i < 900 && watch.posts.length <= n; i++) {
+      // A signed-out Real run's first POST is a 401 (no run stored): keep the loop alive, handling the dialog, until a
+      // NEW run (a different traceId) is in the workspace — the same shape the old body-reading watcher waited for.
+      for (let i = 0; i < 900; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        const r = await lastRunOf(watch);
+        if (r && (!prev || r.traceId !== prev.traceId)) return r;
         await sleep(100);
       }
-      const run = await watch.next(n, prev);
+      const run = await watch.settled(prev, { timeout: 5000 });
       await sleep(400);
       return run;
     };
@@ -1353,14 +1373,15 @@ try {
     const watch = watchRuns(page, authBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
-      const n = watch.posts.length;
       const prev = await watch.last();
       await t('run').click();
-      for (let i = 0; i < 400 && watch.posts.length <= n; i++) {
+      for (let i = 0; i < 400; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        const r = await lastRunOf(watch);
+        if (r && (!prev || r.traceId !== prev.traceId)) return r;
         await sleep(100);
       }
-      const run = await watch.next(n, prev);
+      const run = await watch.settled(prev, { timeout: 5000 });
       await sleep(400);
       return run;
     };
@@ -1479,17 +1500,18 @@ try {
     // Run the picked use case; when Real asks for the sign-in, sign in (the dialog is walked once); return the run the page received.
     let dialogWalked = false;
     const runIt = async () => {
-      const n = watch.posts.length;
       const prev = await watch.last();
       await t('run').click();
-      for (let i = 0; i < 200 && watch.posts.length <= n; i++) {
+      for (let i = 0; i < 200; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) {
           if (!dialogWalked) { dialogWalked = true; await walk(page, `${tag}: the sign-in dialog`); }
           await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {});
         }
+        const r = await lastRunOf(watch);
+        if (r && (!prev || r.traceId !== prev.traceId)) return r;
         await sleep(100);
       }
-      const run = await watch.next(n, prev);
+      const run = await watch.settled(prev, { timeout: 5000 });
       await sleep(400);
       return run;
     };
