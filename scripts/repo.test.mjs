@@ -59,6 +59,7 @@ test('no shipped text names a real customer, company or tenant', () => {
       const p = path.join(dir, name);
       if (fs.statSync(p).isDirectory()) walk(p);
       else if (!/\.test\.m?js$|scripts\/gen-manifest\.mjs$/.test(p)) { // the tests and the generator's one redaction rule name the words on purpose
+        if (/\.(webm|mp4|png|jpe?g|gif|ico|pdf|woff2?|ttf|zip|wasm)$/i.test(p)) continue; // binary media: reading it as UTF-8 matches words in compressed noise (the .webm did), not shipped text
         let t = fs.readFileSync(p, 'utf8').toLowerCase();
         for (const h of allowed[path.relative(root, p)] || []) t = t.split(h).join('');
         for (const w of ['united airlines', 'mileageplus', 'datapower', 'optum', 'unitedhealth', 'uhg', 'member benefit', 'air canada', 'walbuy', 'ping-devops', 'cmuir']) if (t.includes(w)) hits.push(`${path.relative(root, p)}: ${w}`);
