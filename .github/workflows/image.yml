@@ -49,7 +49,7 @@ jobs:
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:7814/api/health >/dev/null 2>&1 && break; sleep 1; done
           curl -fsS http://127.0.0.1:7814/api/health | grep -q '"schema":"demo-health/1"'
           curl -fsS http://127.0.0.1:7814/api/info | grep -q '"hosted":true'
-          curl -fsS http://127.0.0.1:7814/ | grep -q 'data-state="hosted" data-testid="banner">Hosted copy\. HIVE'
+          curl -fsS http://127.0.0.1:7814/ | grep -q 'data-state="hosted" data-testid="banner">Hosted copy\. The back-end platform, HIVE'
           curl -fsS -H 'host: appfire-agent-governance.lab.example' -H 'x-forwarded-for: 203.0.113.7' -H 'content-type: application/json' -H 'x-workspace: w-smoke' \
             --data '{"vertical":"banking"}' http://127.0.0.1:7814/api/run/UC1 | grep -q '"hops":\['
           test "$(curl -s -o /dev/null -w '%{http_code}' -H 'host: attacker.example' http://127.0.0.1:7814/api/health)" = 403

@@ -242,7 +242,7 @@ test('owner 2026-11-16: the hosted banner prefix is pinned the same way in the d
   const prefix = 'Hosted copy. The back-end platform, HIVE';
   assert.ok(read('server/src/data.js').includes(`HOSTED_BANNER = "${prefix}`) || read('server/src/data.js').includes(`HOSTED_BANNER = '${prefix}`), 'data.js');
   assert.match(read('server/test/hosted.test.js'), /Hosted copy\\\. The back-end platform, HIVE/);
-  for (const f of ['deploy/k8s/deploy.sh', '.github/workflows/image.yml']) assert.ok(read(f).includes('data-testid="banner">Hosted copy\\. HIVE'), `${f} greps the neutral hosted banner`);
+  for (const f of ['deploy/k8s/deploy.sh', '.github/workflows/image.yml']) assert.ok(read(f).includes('data-testid="banner">Hosted copy\\. The back-end platform, HIVE'), `${f} greps the neutral hosted banner`);
   for (const f of ['deploy/k8s/deploy.sh', '.github/workflows/image.yml']) assert.ok(!/HOSTED AND SIMULATED/.test(read(f)), `${f} no longer greps the old banner`);
   assert.ok(!/AAG_LAB_MODE/.test(read('Dockerfile')), 'the image does not pin the opening mode: the lab derives it (Real when configured)');
   assert.match(read('docker-compose.yml'), /^\s+AAG_LAB_MODE: \$\{AAG_LAB_MODE:-\}$/m, 'compose passes AAG_LAB_MODE through, empty by default');
