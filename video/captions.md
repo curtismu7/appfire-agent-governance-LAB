@@ -223,11 +223,3 @@ The pane, the stdout line and the auditor's record are the same artifact: one ru
 Your agents are already crossing six boundaries. The only question is whether you can see it.
 
 ---
-
-# Step: closing_next
-
-## Title
-Where to go next
-
-## Text
-Try it yourself: run any use case in the picker, then break it on purpose. Every lab in this family shows the same pane — the hero run here, the HITL approval in its own lab, the stolen token in another.
