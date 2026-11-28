@@ -905,8 +905,9 @@ try {
     const authz = fullP1.seen.filter((x) => x.url.includes('/as/authorize'));
     check(authz.length >= 1 && authz.every((x) => new URL(x.url, 'http://x').searchParams.get('response_mode') === 'pi.flow' && new URL(x.url, 'http://x').searchParams.get('code_challenge_method') === 'S256'), `${tag}: the sign-in was pi.flow with PKCE S256`);
     check(navs.length === 1 && navs[0].startsWith(fullBase), `${tag}: the page never navigated (no redirect login): ${navs.join(' | ')}`);
-    const prev907 = await watch.last();
-    const realRun = await watch.next(0, prev907);
+    // The run was clicked (and the first POST answered 401) before the sign-in: the block Reset cleared the workspace,
+    // so the first stored run IS the UC1 run — no pre-click snapshot is possible or needed here.
+    const realRun = await watch.next(0, null);
     const srcs = (realRun?.hops || []).map((h) => h.source);
     check(srcs.length === 9 && srcs.every((x) => x === 'real') && (await t('hop-source').count()) === 0 && (await t('hop-sources').count()) === 0, `${tag}: nine hops (two token exchanges), every one source real in the data, and no source chip or "where each hop ran" list on the page (${srcs.join(',')})`);
     const seqText = await t('sequence-view').innerText();
