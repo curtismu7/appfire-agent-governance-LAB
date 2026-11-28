@@ -135,15 +135,16 @@ describe("a hand-off use case never sits in a step's chips on the airline pack",
     expect(on.more.map((p) => p.uc).sort()).toEqual(["UC22", "UC30", "UC31"]);
     expect(promptGroups(prompts).more).toEqual([]);
   });
-  test("the chips list shows them under Opens its own app", () => {
+  test("the picker shows the hand-off prompts under Opens its own app", () => {
     render(<WhatToType prompts={prompts} vertical="airline" verticalLabel="Larkspur Air" verticals={[]} stub={false} typeAndSend={() => {}} fare />);
-    const away = screen.getByTestId("wtt-away");
-    expect([...away.querySelectorAll("button")].map((b) => b.getAttribute("data-testid")).sort()).toEqual(["wtt-UC22", "wtt-UC30", "wtt-UC31"]);
-    expect(screen.getByTestId("wtt-step-escalate").querySelectorAll("button")).toHaveLength(2);
+    const sel = screen.getByTestId("wtt-select");
+    const awayGroup = [...sel.querySelectorAll("optgroup")].find((g) => g.label === "Opens its own app");
+    expect([...awayGroup.querySelectorAll("option")].map((o) => o.value).sort()).toEqual(["UC22", "UC30", "UC31"]);
     cleanup();
     render(<WhatToType prompts={prompts} vertical="banking" verticalLabel="Appfire Platform" verticals={[]} stub={false} typeAndSend={() => {}} />);
-    expect(screen.getByTestId("wtt-step-escalate").querySelectorAll("button")).toHaveLength(4);
-    expect(screen.queryByTestId("wtt-away")).toBeNull();
+    // On banking the hand-off prompts sit in a walkthrough step, so no Opens-its-own-app optgroup
+    const sel2 = screen.getByTestId("wtt-select");
+    expect([...sel2.querySelectorAll("optgroup")].some((g) => g.label === "Opens its own app")).toBe(false);
   });
 });
 

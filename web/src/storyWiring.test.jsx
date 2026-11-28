@@ -63,10 +63,23 @@ describe("host: the page", () => {
     host.dispose();
   });
 
-  test("send throws when a control is busy or missing (Play stops with a message)", () => {
-    document.body.innerHTML = '<button data-testid="wtt-UC1" disabled>…</button>';
+  test("send drives the prompt picker by value + change (the dropdown amendment)", () => {
+    document.body.innerHTML = '<select data-testid="wtt-select"><option value="" disabled>pick</option><option value="UC1">show my trips</option></select>';
     const host = createHost({});
-    expect(() => host.send({ prompt: { press: ["[data-testid=wtt-UC1]"] } })).toThrow(/not available/);
+    const sel = document.querySelector('[data-testid=wtt-select]');
+    let seen = null;
+    sel.addEventListener("change", (e) => { seen = e.target.value; expect(e.isTrusted).toBe(false); });
+    host.send({ prompt: { press: ["[data-testid=wtt-select]"], pick: "UC1" } });
+    expect(seen).toBe("UC1");
+    host.dispose();
+  });
+
+  test("send throws when the picker lacks the picked option or is busy (Play stops with a message)", () => {
+    document.body.innerHTML = '<select data-testid="wtt-select" disabled><option value="UC1">show my trips</option></select>';
+    const host = createHost({});
+    expect(() => host.send({ prompt: { press: ["[data-testid=wtt-select]"], pick: "UC1" } })).toThrow(/not available/);
+    document.body.innerHTML = '<select data-testid="wtt-select"><option value="UC1">show my trips</option></select>';
+    expect(() => host.send({ prompt: { press: ["[data-testid=wtt-select]"], pick: "UC99" } })).toThrow(/not available/);
     host.dispose();
   });
 
@@ -97,7 +110,7 @@ describe("buildSteps", () => {
   test("targets: the panel, its summary, the chain, the streams section; skipped when the panel is empty", () => {
     page();
     const by = Object.fromEntries(buildSteps({ captions, host }).map((s) => [s.key, s]));
-    expect(by.hero_run_prompt.target).toBe("[data-testid=wtt-UC1]");
+    expect(by.hero_run_prompt.target).toBe("[data-testid=wtt-select]");
     expect(by.hero_panel.target()).toBe(document.querySelector("[data-testid=run-observability]"));
     expect(by.hero_summary.target()).toBe(document.querySelector("[data-testid=ro-summary]"));
     expect(by.hero_chain.target()).toBe(document.querySelector("[data-testid=ro-chain]"));
