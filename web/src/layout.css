@@ -5,7 +5,7 @@
    sidebar | agent | evidence sit side by side from a ~1090px viewport up (1100, 1280, 1440, 1600 all fit) and stack below that; one column on phones. The gateway-trace .gw-io pane collapses at 900px per the 2200px frame rule. */
 
 /* ===== shell bar (UI patterns 1): dark in both themes, Ping Red gradient rule, pill nav ===== */
-.shell-bar { position: sticky; top: 0; z-index: 40; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 -16px; padding: 10px 16px; background: var(--box-dark); color: var(--on-box); border-bottom: 3px solid transparent; border-image: var(--accent-gradient) 1; box-shadow: 0 2px 8px rgb(0 0 0 / 0.25); }
+.shell-bar { position: sticky; top: 0; z-index: 40; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 -16px; padding: 10px 16px; background: var(--box-dark); color: var(--on-box); border-bottom: 3px solid transparent; border-image: var(--accent-gradient) 1; box-shadow: 0 2px 8px var(--shadow-ink); }
 .shell-brand  { display: inline-flex; align-items: center; gap: 10px; min-width: 0; max-width: 44%; }
 .shell-logo { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 4px; background: var(--accent-gradient); color: var(--on-accent); font-weight: 800; font-size: 13px; }
 .shell-name { margin: 0; font-size: 16px; color: var(--on-box); }
