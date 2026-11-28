@@ -25,7 +25,6 @@ export const STEPS = [
   { key: 'turn_compare', type: 'bubble', trigger: 'run-done', target: { roPanel: true }, prefer: 'left' },
 
   { key: 'closing', type: 'slide', trigger: 'load' },
-  { key: 'closing_next', type: 'bubble', trigger: 'load', target: '[data-testid=uc-panel]', prefer: 'left' },
 ];
 
 // Wording only the video uses.

@@ -29,8 +29,8 @@ test('story: the parity check really fails when the wording and the script drift
 
 test('story: the five-act order is the script\'s bubble order, and every prompt step presses a control the page has', () => {
   const bubbles = STEPS.filter((s) => s.type === 'bubble' && !STORY_ONLY.includes(s.key)).map((s) => s.key);
-  // The five acts: hero (prompt, panel is story-only, summary, chain is story-only, streams), the turn (five), the close.
-  assert.deepEqual(bubbles, ['hero_run_prompt', 'hero_summary', 'hero_streams', 'turn_overlimit', 'turn_hold', 'turn_denied', 'turn_blocked', 'turn_compare', 'closing_next']);
+  // The five acts: hero (prompt, panel is story-only, summary, chain is story-only, streams), the turn (five), the close (slide only — no bubble after it).
+  assert.deepEqual(bubbles, ['hero_run_prompt', 'hero_summary', 'hero_streams', 'turn_overlimit', 'turn_hold', 'turn_denied', 'turn_blocked', 'turn_compare']);
   // Every prompt step presses the chip the page really renders: the chip runs the use case itself (there is no separate Run control for it).
   const chips = new Set(['UC1', 'UC27', 'UC6', 'UC13', 'UC31']);   // the hero chip and the turn chips (demoGuide.js: the escalate step's buttons)
   for (const s of STEPS.filter((st) => st.prompt)) {
