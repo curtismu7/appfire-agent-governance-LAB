@@ -535,7 +535,12 @@ export function createApp({
               return recordLive(id, uc, vertical, run, { set: () => {}, json: (payload) => { line({ type: 'done', ...payload }); res.end(); } });
             } catch (e) {
               if (e instanceof RealRefused) { line({ type: 'error', error: e.code === 'busy' ? 'live_busy' : e.code, detail: e.message }); return res.end(); }
-              throw e;
+              // A non-refusal failure (a bug, a network collapse): the headers are already ndjson, so the error handler
+              // cannot answer JSON. End the stream with an error line instead — an open stream would leave the page's
+              // postJsonStream waiting forever and `running` stuck true, refusing every later run.
+              reportFailure('run-stream', e);
+              line({ type: 'error', error: 'internal_error', detail: 'The run failed unexpectedly; the server log says why.' });
+              return res.end();
             }
           }
           try { run = await real.run(uc, { vertical, tool: gate.tool, traceparent, session, receipt: approvalReceipt ?? null, a2a: gate.a2a === true, pick }); } catch (e) {
