@@ -89,28 +89,24 @@ const switchMode = async (page, source) => {
 const watchRuns = (page, base) => {
   const posts = [];
   page.on('response', (r) => { if (r.request().method() === 'POST' && /\/api\/run\//.test(r.url())) posts.push(Date.now()); });
+  const lastRun = async () => fetch(`${base}/api/run-last`, { headers: { 'x-workspace': 'w-eeeeeeeeeeeeeeee' } }).then((x) => x.json()).then((b) => b?.run ?? null).catch(() => null);
   return {
     posts,
     get runs() { return posts; },
-    // Waits for the n-th run POST after `n` to have been made, then for the page to show it is done (the outcome tag, the
-    // refusal or the phone), then reads the run from the server. `len` is the marker count at click time.
-    next: async (n, { page: p = page, timeout = 120000 } = {}) => {
+    // Waits for the n-th run POST after `n` to have been made, then polls /api/run-last until the workspace's last run
+    // is NEWER than the one at call time (by seq, falling back to traceId when a block Reset rewinds the seq). A 401
+    // run produces no run at all; the caller's own sign-in handling makes the page go again, and this keeps polling.
+    next: async (n, { timeout = 120000 } = {}) => {
       const t0 = Date.now();
+      const before = await lastRun();
       while (posts.length <= n && Date.now() - t0 < timeout) await sleep(100);
       if (posts.length <= n) return null;
-      // The page is done when a result/outcome, a refusal or the phone is on the page (a hold opens the phone).
-      await p.waitForFunction(() => {
-        const o = document.querySelector('[data-testid="outcome"]');
-        const r = document.querySelector('[data-testid="refusal"]');
-        const m = document.querySelector('[data-testid="mock-phone"]');
-        return Boolean(o || r || m);
-      }, null, { timeout: 60000 }).catch(() => {});
-      for (let i = 0; i < 50; i++) {
-        const body = await fetch(`${base}/api/run-last`, { headers: { 'x-workspace': 'w-eeeeeeeeeeeeeeee' } }).then((x) => x.json()).catch(() => null);
-        if (body?.run) return body.run;
-        await sleep(100);
+      for (;;) {
+        if (Date.now() - t0 > timeout) return null;
+        const run = await lastRun();
+        if (run && (!before || run.seq !== before.seq || run.traceId !== before.traceId)) return run;
+        await sleep(200);
       }
-      return null;
     },
   };
 };
