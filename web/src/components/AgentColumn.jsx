@@ -17,52 +17,48 @@ export const verticalHeading = (id, label) => {
 };
 const opensApp = (p) => p.route === "Hand off";
 
-function Chips({ list, typeAndSend, disabled, label, testId }) {
-  return (
-    <ul className="wtt__list" aria-label={label} data-testid={testId}>
-      {list.map((p) => (
-        <li key={p.uc}>
-          <button type="button" className="wtt__chip" onClick={() => typeAndSend(p.text, "chip")} aria-disabled={disabled ? "true" : undefined} title={`${opensApp(p) ? "Hands off" : "Runs"} “${p.title}”`} data-testid={`wtt-${p.uc}`}>{p.text}</button>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 // What to type, per vertical: always visible above the input (owner rule). The prompts that run here come first; the ones whose use case opens
 // its own app sit in their own group. A stub vertical says it has no demo pack yet.
+// Prompt picker (UI standard amendment 2, owner 2026-11-28): the prompts render as a dropdown above the composer,
+// not a chip wall — a collapsed select listing every prompt (grouped by walkthrough step via optgroups; Presenter
+// mode narrows to the current step). Picking an entry keeps the chip's fill → flash → send path (typeAndSend).
 export function WhatToType({ prompts, vertical, verticalLabel, verticals, stub, typeAndSend, disabled, step = null, onNextStep, fare = false }) {
   const heading = verticalHeading(vertical, verticalLabel);
   const at = step ? DEMO_GUIDE.findIndex((g) => g.id === step.id) : -1;
   const mine = step ? promptsOfStep(step.id, prompts, { fare }) : [];
   const { groups, more } = promptGroups(prompts, { fare });
+  const pickerList = step ? mine : [...groups.flatMap((g) => g.items), ...more];
   return (
     <section className="wtt" aria-label={`What to type, ${heading}`} data-testid="what-to-type">
       <p className="kicker" data-testid="wtt-heading">What to type · {step ? `Step ${at + 1} · ${step.short} · ${heading}` : heading}</p>
-      {stub ? <p className="muted" data-testid="wtt-stub">{heading}: no demo pack yet. {pickFullPack(verticals)} to chat.</p> : prompts.length === 0 ? <p className="muted">Loading the prompts…</p> : step ? (
-        // Presenter mode: only this step's prompts, then on to the next step (the same Next as the step bar).
-        <div className="wtt__groups" data-testid="wtt-step">
-          {mine.length ? <Chips list={mine} typeAndSend={typeAndSend} disabled={disabled} label={`Prompts for step ${at + 1}`} testId={`wtt-step-${step.id}`} /> : <p className="muted" data-testid="wtt-none">No typed prompt for this step: use its buttons above.</p>}
-          <div className="wtt__nav"><button type="button" onClick={onNextStep} disabled={at >= DEMO_GUIDE.length - 1} data-testid="wtt-next">{at >= DEMO_GUIDE.length - 1 ? "Last step" : `Next step: ${DEMO_GUIDE[at + 1]?.short} ›`}</button></div>
-        </div>
-      ) : (
-        // The full list, grouped under the walkthrough's steps in agenda order; what no step uses is last.
-        <div className="wtt__groups">
-          {groups.map((g) => (
-            <div key={g.id} className="wtt__step">
-              <p className="wtt__group">{g.n} · {g.short}</p>
-              <Chips list={g.items} typeAndSend={typeAndSend} disabled={disabled} label={`Step ${g.n}, ${g.short}`} testId={`wtt-step-${g.id}`} />
-            </div>
-          ))}
-          {more.some((p) => !opensApp(p)) && <div className="wtt__step">
-            <p className="wtt__group">More prompts</p>
-            <Chips list={more.filter((p) => !opensApp(p))} typeAndSend={typeAndSend} disabled={disabled} label="More prompts" testId="wtt-more" />
-          </div>}
-          {more.some(opensApp) && <div className="wtt__step">
-            <p className="wtt__group">Opens its own app</p>
-            <Chips list={more.filter(opensApp)} typeAndSend={typeAndSend} disabled={disabled} label="Opens its own app" testId="wtt-away" />
-          </div>}
-        </div>
+      {stub ? <p className="muted" data-testid="wtt-stub">{heading}: no demo pack yet. {pickFullPack(verticals)} to chat.</p> : prompts.length === 0 ? <p className="muted">Loading the prompts…</p> : (
+        <>
+          <div className="wtt__picker" data-testid="wtt-picker">
+            <label className="sr-only" htmlFor="wtt-select">Pick a prompt</label>
+            <select id="wtt-select" value="" disabled={disabled} aria-label={`Pick a prompt, ${heading}`} data-testid="wtt-select"
+              onChange={(e) => { const p = prompts.find((x) => x.uc === e.target.value); if (p) { typeAndSend(p.text, "chip"); e.target.value = ""; } }}>
+              <option value="" disabled>{step ? `Prompts for step ${at + 1} (${mine.length})` : `Pick a prompt (${pickerList.length})`}</option>
+              {step ? mine.map((p) => <option key={p.uc} value={p.uc}>{p.text}</option>) : groups.map((g) => (
+                <optgroup key={g.id} label={`${g.n} · ${g.short}`}>
+                  {g.items.map((p) => <option key={p.uc} value={p.uc}>{p.text}</option>)}
+                </optgroup>
+              ))}
+              {!step && more.some((p) => !opensApp(p)) && (
+                <optgroup label="More prompts">
+                  {more.filter((p) => !opensApp(p)).map((p) => <option key={p.uc} value={p.uc}>{p.text}</option>)}
+                </optgroup>
+              )}
+              {!step && more.some(opensApp) && (
+                <optgroup label="Opens its own app">
+                  {more.filter(opensApp).map((p) => <option key={p.uc} value={p.uc}>{p.text}</option>)}
+                </optgroup>
+              )}
+            </select>
+          </div>
+          {step && (
+            <div className="wtt__nav" data-testid="wtt-step"><button type="button" onClick={onNextStep} disabled={at >= DEMO_GUIDE.length - 1} data-testid="wtt-next">{at >= DEMO_GUIDE.length - 1 ? "Last step" : `Next step: ${DEMO_GUIDE[at + 1]?.short} ›`}</button></div>
+          )}
+        </>
       )}
     </section>
   );

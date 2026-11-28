@@ -55,11 +55,17 @@ const boot = async (state) => {
   A = api(state); vi.stubGlobal("fetch", A);
   const view = render(<App />);
   await screen.findByTestId("uc-UC1");
-  await screen.findByTestId("wtt-UC1");
+  await screen.findByTestId("wtt-select");
   await waitFor(() => expect(screen.getByTestId("agent-column").textContent).toMatch(/triage-agent/));
   return view;
 };
 const posts = (id) => A.calls.filter((c) => c.method === "POST" && c.path === `/api/run/${id}`);
+// The prompt picker (UI standard amendment 2): a select, not chips. fireEvent.change with the option's value is how a pick happens.
+const pickPrompt = async (uc) => {
+  const sel = screen.getByTestId("wtt-select");
+  await waitFor(() => expect([...sel.querySelectorAll("option")].some((o) => o.value === uc)));
+  fireEvent.change(sel, { target: { value: uc } });
+};
 // A chat turn shows the message and one reply only: no reasoning, token cards or hop pills (they are in the evidence column).
 const onlyReply = (turn) => {
   for (const id of ["turn-reasoning", "turn-tokens", "turn-pills", "turn-not-run"]) expect(within(turn).queryByTestId(id), id).toBeNull();
@@ -115,12 +121,15 @@ describe("What to type and the Scripted brain", () => {
     await boot();
     expect(screen.getByTestId("starters")).toBeTruthy();
     expect(screen.getByTestId("wtt-heading").textContent).toBe("What to type · Airline · Larkspur Air");
-    expect(within(screen.getByTestId("wtt-away")).getAllByRole("button").map((b) => b.textContent)).toEqual(["simulate an agent identity mismatch"]);
-    expect(within(screen.getByTestId("what-to-type")).getByText("Opens its own app")).toBeTruthy();
+    // The dropdown groups the walkthrough steps and holds every prompt; the hand-off prompt sits in its own optgroup.
+    const sel = screen.getByTestId("wtt-select");
+    const optText = (uc) => sel.querySelector(`option[value="${uc}"]`)?.textContent;
+    expect(PROMPTS.map((p) => optText(p.uc))).toEqual(PROMPTS.map((p) => p.text));
+    expect(sel.querySelectorAll("optgroup").length).toBeGreaterThan(0); // prompts grouped by walkthrough step
+    expect(optText("UC2.6")).toBe("simulate an agent identity mismatch");
     expect(screen.queryByTestId("starter-UC2.6")).toBeNull(); // starter cards are prompts that run here
-    expect(screen.getAllByTestId(/^wtt-UC/).map((b) => b.textContent)).toEqual(PROMPTS.map((p) => p.text));
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     const turn = await screen.findByTestId("turn");
     await within(turn).findByTestId("turn-answer");
     expect(posts("UC1")).toHaveLength(1);
@@ -157,7 +166,7 @@ describe("What to type and the Scripted brain", () => {
     const skips = ["step-up", "vault-key-inject"].map((kind, i) => ({ ...base[0], n: base.length + i + 1, kind, label: kind, verdict: "skip", traceparent: undefined, request: {}, response: {} }));
     await boot({ runAnswer: (id) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(runBody(id, { hops: [...base, ...skips] })) }) });
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     const turn = await screen.findByTestId("turn");
     await within(turn).findByTestId("turn-answer");
     onlyReply(turn);
@@ -168,7 +177,7 @@ describe("What to type and the Scripted brain", () => {
   test("a step-up outcome is an approval card labelled Authorize that says what the policy does, and the header says Waiting for you", async () => {
     await boot({ runAnswer: (id) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(runBody(id, { outcome: "STEP_UP", hops: [...runBody().run.hops.slice(0, 3), { ...runBody().run.hops[3], verdict: "obligation" }] })) }) });
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC7"));
+    await pickPrompt("UC7");
     const card = await screen.findByTestId("turn-approval");
     expect(card.textContent).toMatch(/Step-up needed/);
     expect(card.textContent).toMatch(/second factor/);
@@ -187,7 +196,7 @@ describe("What to type and the Scripted brain", () => {
   test("the phone is asked about the control that held the call in plain words: no use-case id or catalog title goes to it", async () => {
     await boot({ runAnswer: (id) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(runBody(id, { outcome: "STEP_UP" })) }) });
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC7"));
+    await pickPrompt("UC7");
     await screen.findByTestId("turn-approval");
     await waitFor(() => expect(A.calls.some((c) => c.path === "/api/approval/start")).toBe(true));
     const start = A.calls.find((c) => c.path === "/api/approval/start");
@@ -201,7 +210,7 @@ describe("What to type and the Scripted brain", () => {
     await screen.findByTestId("wtt-stub");
     expect(screen.getByTestId("wtt-stub").textContent).toMatch(/no demo pack yet/);
     expect(screen.getByTestId("wtt-stub").textContent).toMatch(/Pick Airline, Software, Banking or Healthcare to chat\./); // built from the loaded vertical list
-    expect(screen.queryAllByTestId(/^wtt-UC/)).toHaveLength(0);
+    expect(screen.queryByTestId("wtt-select")).toBeNull();
   });
 
   test("the demo guide's words come from the cast and the typed prompts of the vertical on screen, not from banking", async () => {
@@ -219,7 +228,7 @@ describe("What to type and the Scripted brain", () => {
   test("See evidence on a turn brings the evidence column back to that run's sequence", async () => {
     await boot();
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     await screen.findByTestId("turn-answer");
     await u.click(screen.getByTestId("evtab-tokens"));
     expect(screen.getByTestId("evtab-sequence").getAttribute("aria-pressed")).toBe("false");
@@ -231,7 +240,7 @@ describe("What to type and the Scripted brain", () => {
   test("New chat clears the conversation and brings the starter cards back; sessions list this workspace's runs", async () => {
     await boot();
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     await screen.findByTestId("turn-answer");
     await waitFor(() => expect(screen.getAllByTestId("session-row")).toHaveLength(1));
     expect(screen.getByTestId("session-row").textContent).toMatch(/#1 Delegated access.*PERMIT/);
@@ -263,21 +272,21 @@ describe("the matcher on the real data: every shown prompt runs its use case", (
 describe("What to type follows the agenda", () => {
   test("the full list is grouped under the walkthrough's steps in agenda order, then More prompts and Opens its own app", async () => {
     await boot();
-    const heads = [...document.querySelectorAll(".wtt__group")].map((e) => e.textContent);
-    expect(heads[0]).toBe("1 · Start");
-    const order = heads.filter((h) => /^\d · /.test(h)).map((h) => Number(h[0]));
+    const labels = [...screen.getByTestId("wtt-select").querySelectorAll("optgroup")].map((g) => g.label);
+    expect(labels[0]).toBe("1 · Start");
+    const order = labels.filter((l) => /^\d · /.test(l)).map((l) => Number(l[0]));
     expect(order).toEqual([...order].sort((a, b) => a - b));
-    expect(heads.slice(-2)).toEqual(["More prompts", "Opens its own app"]);
+    expect(labels.slice(-2)).toEqual(["More prompts", "Opens its own app"]);
     expect(screen.getByTestId("wtt-heading").textContent).not.toMatch(/Step \d/);
   });
 
-  test("Presenter mode shows only the current step's prompts; Next step moves the chips and the step bar together", async () => {
+  test("Presenter mode shows only the current step's prompts; Next step moves the picker and the step bar together", async () => {
     await boot();
     const u = userEvent.setup();
     await u.click(screen.getByTestId("presenter"));
     expect(screen.getByTestId("wtt-heading").textContent).toMatch(/^What to type · Step 1 · Start/);
-    expect(screen.getByTestId("wtt-step-start")).toBeTruthy();
-    expect(screen.queryByTestId("wtt-more")).toBeNull();
+    expect(screen.getByTestId("wtt-step")).toBeTruthy(); // the picker narrowed to the step
+    expect(screen.queryByTestId("wtt-select").textContent).not.toContain("Opens its own app"); // the hand-off group is off-step
     await u.click(screen.getByTestId("wtt-next"));
     expect(screen.getByTestId("wtt-heading").textContent).toMatch(/^What to type · Step 2 · Identity/);
     expect(screen.getByTestId("agenda-pill-identity").getAttribute("aria-current")).toBe("step");
@@ -334,7 +343,7 @@ describe("hand-off and go deeper", () => {
   test("the Opens its own app chip answers with the hand-off reply and card, runs nothing, and the status reads Ready to hand off", async () => {
     await boot();
     const u = userEvent.setup();
-    await u.click(within(screen.getByTestId("wtt-away")).getByTestId("wtt-UC2.6"));
+    await pickPrompt("UC2.6");
     // The chip fills the composer and "sends" after a short flash (owner 2026-11-13): wait for the turn.
     const turn = await screen.findByTestId("turn");
     expect(turn.getAttribute("data-status")).toBe("handoff");
@@ -364,7 +373,7 @@ describe("hand-off and go deeper", () => {
     // the evidence summary lists exactly what the link carries, in order
     const summary = screen.getByTestId("handoff-summary");
     expect([...summary.querySelectorAll("dt")].map((d) => `${d.textContent}=${d.nextElementSibling.textContent}`)).toEqual([...new URLSearchParams(open.getAttribute("data-href").split("?")[1])].map(([k, v]) => `${k}=${v}`));
-    await u.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     await screen.findByTestId("turn-answer");
     // go deeper lives in the evidence column for that run, not in the reply (owner, 2026-11-09)
     expect(within(screen.getAllByTestId("turn")[1]).queryByTestId("go-deeper")).toBeNull();
@@ -374,7 +383,7 @@ describe("hand-off and go deeper", () => {
   test("a Here + go deeper run names the deeper lab in the evidence column (not the reply); off the proxy it says to start it from the Shelf", async () => {
     await boot();
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     await screen.findByTestId("turn-answer");
     expect(within(screen.getByTestId("turn")).queryByTestId("go-deeper")).toBeNull();
     expect(within(screen.getByTestId("agent-column")).queryByTestId("go-deeper")).toBeNull();
@@ -601,7 +610,7 @@ describe("evidence views, Quick Config and the full-page diagrams", () => {
     await boot();
     const u = userEvent.setup();
     expect(screen.getAllByTestId(/^evtab-/).map((b) => b.textContent)).toEqual(["Sequence", "Movie reel", "Topology", "Tokens"]);
-    await u.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     await screen.findByTestId("turn-answer");
     expect(screen.getByTestId("sequence-view")).toBeTruthy();
     await u.click(screen.getByTestId("evtab-tokens"));
@@ -709,9 +718,9 @@ describe("resume after a hand-off", () => {
   test("Back from a2a-lab restores the chat (words and outcomes, not the run), adds a note, selects the use case and cleans the address bar", async () => {
     await boot();
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     await within(await screen.findByTestId("turn")).findByTestId("turn-answer");
-    await u.click(within(screen.getByTestId("wtt-away")).getByTestId("wtt-UC2.6"));
+    await pickPrompt("UC2.6");
     await waitFor(() => expect(screen.getAllByTestId("turn")).toHaveLength(2));
     // The chip's turn is added from a timer (typeAndSend, 260 ms), outside act, so the save effect (App.jsx:112) can run a tick after the turn shows: wait for it.
     const saved = () => window.sessionStorage.getItem(`cal.resume.${workspaceId()}`);
@@ -735,12 +744,12 @@ describe("resume after a hand-off", () => {
   test("a plain reload starts fresh; a second Back for the same return adds no second note", async () => {
     await boot();
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     await screen.findByTestId("turn-answer");
     await stored();
     cleanup(); await boot(); // plain reload: no ?returned
     expect(screen.queryAllByTestId("turn")).toHaveLength(0);
-    await u.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     await screen.findByTestId("turn-answer");
     await stored();
     for (let i = 0; i < 2; i++) { cleanup(); window.history.replaceState(null, "", "/?returned=a2a-lab&uc=UC1"); await boot(); }
@@ -751,7 +760,7 @@ describe("resume after a hand-off", () => {
   test("an unknown returned app restores nothing and adds no note; Reset clears the stored chat", async () => {
     await boot();
     const u0 = userEvent.setup();
-    await u0.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     await screen.findByTestId("turn-answer");
     await stored();
     cleanup();
@@ -761,7 +770,7 @@ describe("resume after a hand-off", () => {
     expect(screen.queryAllByTestId("turn")).toHaveLength(0);
     expect(window.location.search).toBe("");
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC1"));
+    await pickPrompt("UC1");
     await screen.findByTestId("turn-answer");
     await u.click(screen.getByTestId("reset"));
     await waitFor(() => expect(JSON.parse(window.sessionStorage.getItem(`cal.resume.${workspaceId()}`)).turns).toEqual([]));
@@ -813,7 +822,7 @@ describe("a chat turn is the message and one reply (owner, 2026-11-09)", () => {
     const refusal = { dispatched: false, refused_by: "gateway", outcome: "DENY_403", reason: "insufficient_scope" };
     await boot({ runAnswer: answer(() => ({ outcome: "DENY_403", hops: [...base().slice(0, 3), hopOf(4, "tool-refused", 403, refusal, "deny")] })) });
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC5"));
+    await pickPrompt("UC5");
     const turn = await screen.findByTestId("turn");
     await within(turn).findByTestId("turn-answer");
     onlyReply(turn);
@@ -825,7 +834,7 @@ describe("a chat turn is the message and one reply (owner, 2026-11-09)", () => {
   test("a step-up turn keeps its approval card (the hold the customer must act on) and its See evidence control, nothing else", async () => {
     await boot({ runAnswer: answer(() => ({ outcome: "STEP_UP", hops: [...base().slice(0, 3), hopOf(4, "tool-held", 202, { dispatched: false, waiting_for: "STEP_UP", proposed: "I'm ready to move $600 from checking to savings." }, "held")] })) });
     const u = userEvent.setup();
-    await u.click(screen.getByTestId("wtt-UC7"));
+    await pickPrompt("UC7");
     const turn = await screen.findByTestId("turn");
     const card = await within(turn).findByTestId("turn-approval");
     onlyReply(turn);

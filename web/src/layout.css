@@ -286,5 +286,6 @@
 .composer--sending .primary { filter: brightness(1.25); transform: scale(1.03); }
 .composer .primary { transition: filter 0.15s ease, transform 0.15s ease; }
 .agentcol__compose { padding: 8px 12px 12px; }
-.wtt .wtt__list { margin-top: 2px; } /* Mock A: the sample pills read as one group with the input below them */
-.wtt .wtt__chip { font-size: 0.8125rem; min-height: 30px; padding: 3px 10px; }
+/* Prompt picker (UI standard amendment 2): one select, not a chip wall; the accent border matches the composer below it. */
+.wtt__picker select { width: 100%; min-height: 38px; padding: 4px 8px; font-size: 0.875rem; background: var(--surface-raised, var(--surface)); border-color: var(--accent); border-width: 2px; box-shadow: 0 1px 4px var(--line); }
+.wtt__picker { margin: 0 0 8px; }

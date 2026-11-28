@@ -445,6 +445,7 @@ try {
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error' && !/status of (403|409|501)/.test(m.text())) errors.push(m.text()); });
       const t = (id) => page.getByTestId(id);
+      const pick = async (uc) => { const sel = t('wtt-select'); await sel.waitFor(); await sel.selectOption(uc); };
       const rect = (sel) => page.evaluate((s) => { const r = document.querySelector(s)?.getBoundingClientRect(); return r ? { l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width, h: r.height } : null; }, sel);
       // every direct part of the shell bar sits on one row: their vertical ranges all overlap
       const oneRow = () => page.evaluate(() => {
@@ -456,14 +457,14 @@ try {
         return rows <= 2;
       });
       await page.goto(`${base}/`);
-      await t('wtt-UC1').waitFor();
+      await t('wtt-select').waitFor();
       await t('theme-select').selectOption(scheme);
       check(await oneRow(), `${tag}: the shell bar is one row`);
       const wtt = await t('what-to-type').innerText();
       check((await t('wtt-heading').innerText()).toUpperCase() === 'WHAT TO TYPE · AIRLINE · LARKSPUR AIR' && wtt.includes('show my upcoming trips'), `${tag}: What to type names the vertical and lists its prompts`);
-      check((await t('wtt-away').getByRole('button').count()) >= 1 && wtt.toLowerCase().includes('opens its own app'), `${tag}: What to type has an Opens its own app group`);
+      check((await t('wtt-select').locator('optgroup[label="Opens its own app"]').count()) >= 1, `${tag}: What to type has an Opens its own app group`);
 
-      await t('wtt-UC1').click(); await t('turn-answer').waitFor(); await sleep(300);
+      await pick('UC1'); await t('turn-answer').waitFor(); await sleep(300);
       // a chat turn is the message and one reply (owner 2026-11-09): no reasoning, token cards or hop pills; those stay in the evidence column
       const lastTurn = () => page.getByTestId('turn').last();
       const onlyReply = async () => { const tx = await lastTurn().innerText(); return (await lastTurn().getByRole('button', { name: /^Hop \d/ }).count()) === 0 && !/Reasoning|Tokens used|Step 1|routing table/i.test(tx); };
@@ -471,14 +472,14 @@ try {
       // go deeper and the use case panel are in the evidence column, not the chat (owner 2026-11-09)
       check((await lastTurn().getByTestId('go-deeper').count()) === 0 && (await t('agent-column').getByTestId('uc-panel').count()) === 0 && (await t('evidence-column').getByTestId('go-deeper').innerText()).toLowerCase().includes('go deeper in') && (await t('evidence-column').getByTestId('uc-panel').count()) === 1, `${tag}: go deeper and the use case panel sit in the evidence column, not the reply`);
       check((await t('evidence-why').innerText()).includes('Matched your words to “Delegated access (consent only)”') && (await t('evidence-count').innerText()).startsWith('Delegated access (consent only) ·'), `${tag}: the reasoning and the hops are in the evidence column`);
-      await t('wtt-UC13').click(); await page.getByTestId('turn').nth(1).getByTestId('turn-answer').waitFor();
+      await pick('UC13'); await page.getByTestId('turn').nth(1).getByTestId('turn-answer').waitFor();
       // Owner 2026-11-16: use-case ids mean nothing in the demo; the page says each use case in words. After two runs, nothing visible (text, tooltips, labels) names one by id.
       const idsShown = await page.evaluate(() => { const re = /\bUC[-\w.]*\d\w*/; const hit = []; const els = document.body.querySelectorAll('*');
         for (const e of els) { const r = e.getBoundingClientRect(); if (!r.width && !r.height) continue; const own = [...e.childNodes].filter((c) => c.nodeType === 3).map((c) => c.textContent).join(' ');
           for (const v of [own, e.getAttribute('title'), e.getAttribute('aria-label'), e.getAttribute('placeholder')]) if (v && re.test(v)) hit.push(v.trim().slice(0, 60)); } return hit.slice(0, 3); });
       check(idsShown.length === 0, `${tag}: no use-case id is shown anywhere on the page, only words (${idsShown.join(' | ')})`);
       check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'AUTHORIZE' && (await lastTurn().getByTestId('turn-answer-text').innerText()).startsWith('Authorize refused this request'), `${tag}: the forged actor is Authorize's refusal in plain words`);
-      await t('wtt-UC1').click(); await page.getByTestId('turn').nth(2).getByTestId('turn-answer').waitFor(); await sleep(300);
+      await pick('UC1'); await page.getByTestId('turn').nth(2).getByTestId('turn-answer').waitFor(); await sleep(300);
       const [side, agent, ev] = [await rect('.setup'), await rect('.agentcol'), await rect('.evcol')];
       check(Math.abs(side.t - agent.t) < 2 && Math.abs(agent.t - ev.t) < 2 && side.r <= agent.l && agent.r <= ev.l, `${tag}: sidebar | agent | evidence side by side (lefts ${Math.round(side.l)}, ${Math.round(agent.l)}, ${Math.round(ev.l)})`);
       check(agent.w >= 370 && agent.w <= 480 && ev.w > agent.w, `${tag}: agent column ${Math.round(agent.w)} px (380-470), evidence wider (${Math.round(ev.w)} px)`);
@@ -528,7 +529,7 @@ try {
       }
       await page.keyboard.press('Escape');
       check((await page.getByRole('dialog').count()) === 0, `${tag}: Escape closes the actor card`);
-      await t('wtt-UC27').click(); await t('turn-approval').waitFor();
+      await pick('UC27'); await t('turn-approval').waitFor();
       check(await onlyReply() && (await lastTurn().getByTestId('turn-who').innerText()).toUpperCase() === 'FARE RULE', `${tag}: the second-factor hold is labelled with the lab's fare rule (not Authorize) and carries no reasoning or pills`);
       check((await lastTurn().getByTestId('turn-approval-say').innerText()) === "I'm ready to book a business seat on LK 704 to Paris for $2,400.", `${tag}: the held booking says what the agent is ready to do, with the flight and the fare`);
       // The hold opened the mock phone; deny it so the rest of the flow is not behind its backdrop.
@@ -545,7 +546,7 @@ try {
         const r = c.getBoundingClientRect(); const box = c.closest('.agentcol__scroll').getBoundingClientRect();
         return { ok: r.top >= box.top - 1 && r.bottom <= box.bottom + 1 && r.bottom <= window.innerHeight, top: Math.round(r.top), bottom: Math.round(r.bottom), box: [Math.round(box.top), Math.round(box.bottom)] };
       });
-      await t('wtt-away').getByRole('button').first().click(); await sleep(300);
+      await pick(await t('wtt-select').locator('optgroup[label="Opens its own app"] option').first().getAttribute('value')); await sleep(300);
       let v = await visibleCard();
       check(v.ok, `${tag}: a hand-off chip shows the hand-off card in the conversation, in view without scrolling (${v.top}-${v.bottom} in ${v.box})`);
       check(await onlyReply() && (await lastTurn().getByTestId('turn-handoff-say').innerText()).startsWith('This is handled in ') && (await t('handoff-why').innerText()).includes('runs in its own app'), `${tag}: the hand-off reply is one line; its reasoning is in the evidence column`);
@@ -580,14 +581,14 @@ try {
     const t = (id) => page.getByTestId(id);
     await page.goto(`${base}/`); await t('uc-UC1').waitFor(); // on All use cases the first track is open and the others are folded
     check((await t('set-all').getAttribute('aria-pressed')) === 'true' && (await t('set-demo').innerText()).includes('(8)'), `${tag}: the page opens on All use cases, with Today's demo (8) one click away`);
-    check((await t('uc-UC1').count()) === 1 && (await t('wtt-UC1').count()) === 1, `${tag}: a use case outside the eight is listed, in the list and in What to type`);
+    check((await t('uc-UC1').count()) === 1 && (await t('wtt-select').locator('option[value="UC1"]').count()) === 1, `${tag}: a use case outside the eight is listed, in the list and in What to type`);
     await t('set-demo').click();
     check((await t('set-demo').getAttribute('aria-pressed')) === 'true' && (await t('uc-UC1').count()) === 0 && (await t('uc-UC6').count()) === 1, `${tag}: Today's demo (8) lists only the eight`);
-    check((await t('wtt-UC1').count()) === 0 && (await t('wtt-UC7').count()) === 1, `${tag}: What to type lists only the eight`);
+    check((await t('wtt-select').locator('option[value="UC1"]').count()) === 0 && (await t('wtt-select').locator('option[value="UC7"]').count()) === 1, `${tag}: What to type lists only the eight`);
     await page.reload(); await t('uc-UC7').waitFor();
     check((await t('set-demo').getAttribute('aria-pressed')) === 'true' && (await t('uc-UC1').count()) === 0, `${tag}: the choice is remembered after a reload`);
     await t('set-all').click(); await t('uc-UC1').waitFor();
-    check((await t('set-all').getAttribute('aria-pressed')) === 'true' && (await t('wtt-UC1').count()) === 1, `${tag}: All use cases brings the rest back`);
+    check((await t('set-all').getAttribute('aria-pressed')) === 'true' && (await t('wtt-select').locator('option[value="UC1"]').count()) === 1, `${tag}: All use cases brings the rest back`);
     await ctx.close();
   }
 
@@ -682,7 +683,7 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (403|409|501)/.test(m.text())) errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
-    await page.goto(`${base}/`); await t('wtt-UC1').waitFor();
+    await page.goto(`${base}/`); await t('wtt-select').waitFor();
     check((await t('nav-page-a2a').count()) === 0, `${tag}: no Agent to agent page before a run`);
     await t('composer-input').fill('hand my trip question to the bookings specialist'); await t('composer-send').click();
     const turn = page.getByTestId('turn').last();
