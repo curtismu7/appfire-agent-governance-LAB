@@ -39,7 +39,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIST = process.env.WEB_DIST || path.resolve(HERE, '../../web/dist');
 const CONFIG = process.env.CUSTOMER_CONFIG || path.resolve(HERE, '../../customer.config.json');
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-const KEYS = Object.freeze({ run: ['vertical', 'persona', 'mode', 'brain', 'said', 'instructions', 'approvalId'], mode: ['mode'], reset: [], pick: ['vertical', 'text'], signin: ['password'], signinForgot: [], signinCode: [], signinRecover: ['recoveryCode', 'newPassword'], signinChange: ['currentPassword', 'newPassword'], signinCancel: [], signout: [] });
+const KEYS = Object.freeze({ run: ['vertical', 'persona', 'mode', 'brain', 'said', 'instructions', 'approvalId', 'stream'], mode: ['mode'], reset: [], pick: ['vertical', 'text'], signin: ['password'], signinForgot: [], signinCode: [], signinRecover: ['recoveryCode', 'newPassword'], signinChange: ['currentPassword', 'newPassword'], signinCancel: [], signout: [] });
 
 // What a list or detail answer shows for a use case: the manifest row, plus the tool resolved for the vertical and whether the run is guided (the
 // lab opens the product's page and does not compute the outcome) or computed by the engine. `labInputs` are the lab-invented numbers and events fed to the engine (empty for most).
@@ -135,12 +135,14 @@ export function createApp({
   };
 
   // A Real run (full or identity provider only) joins the workspace's history. The network calls are done outside the workspace lock; the cap is
-  // checked again inside it.
+  // checked again inside it. lastRun keeps the full run object so tests (and only tests: the page never calls it) can read it without draining a
+  // streamed answer; Reset clears it with the rest.
   const recordLive = async (id, uc, vertical, run, res) => {
     const out = await workspaces.write(id, (s) => {
       if (s.runs.length >= MAX_RUNS) throw refuse('workspace_full', `this workspace already holds ${MAX_RUNS} runs; Reset it to continue`, 409);
       s.seq += 1;
       s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: null, outcome: run.outcome, matchesExpected: null, traceId: run.traceId });
+      s.lastRun = { ...run, seq: s.seq };
       return { seq: s.seq, run };
     });
     // Rule 27: a Real run's hops are recorded the same way; its rows say which hops were real calls and which were MOCK-labelled.
@@ -443,6 +445,15 @@ export function createApp({
     res.json({ workspace: id, mode: modeFor(req, s.mode), count: s.runs.length, max: MAX_RUNS, runs: s.runs });
   });
 
+  // The workspace's last run, whole. The page never calls this (it holds its own runs); the e2e uses it so its checks do
+  // not have to drain a streamed answer (Playwright's response body races the page's stream reader and can hang).
+  api.get('/run-last', (req, res) => {
+    const id = ws(req, res); if (!id) return;
+    noStore(res);
+    const s = workspaces.peek(id);
+    res.json({ workspace: id, run: s.lastRun ?? null });
+  });
+
   api.post('/run/:id', jsonWrites, async (req, res, next) => {
     try {
       const id = ws(req, res); if (!id) return;
@@ -479,6 +490,7 @@ export function createApp({
           if (gate) { run.realGate = { real: false, reason: gate.reason }; run.live = liveNote(uc); }
           s.seq += 1;
           s.runs.push({ seq: s.seq, id: uc.id, vertical, persona: run.persona, outcome: run.outcome, matchesExpected: run.matchesExpected, ...(run.useCase?.labelSource ? { labelSource: run.useCase.labelSource } : {}), traceId: run.traceId });
+          s.lastRun = { ...run, seq: s.seq };
           return { seq: s.seq, run };
         });
         // Rule 27: the run's hops become the observability record, computed once. The head key is `obs` (the answer already carries `run`, the engine's full run object).
@@ -513,6 +525,36 @@ export function createApp({
           // challenge id (server-side only) so the retry discharges the consent. The approval must belong to this
           // workspace and be approved — otherwise it is ignored (a plain run).
           const approvalReceipt = typeof body.approvalId === 'string' ? approvals.receiptOf(id, body.approvalId) : null;
+          // Owner 2026-11-28: body.stream = true draws the sequence live. The answer is NDJSON (text/x-ndjson): one
+          // {type:"hop", hop} line the moment the run finishes each hop (enriched, the same shape the finished run carries),
+          // then the ordinary full answer as one {type:"done", ...} line. A hop line and the done line never disagree:
+          // the done line's run is authoritative. An error before any hop still answers JSON with its status, so the
+          // page's existing error handling works; once the stream has begun it ends with {type:"error", ...} and status
+          // 200 on the line (the headers are already sent). Mock runs and the identity-provider-only Real path ignore
+          // stream: they are fast, and their answer shape is pinned by tests.
+          if (body.stream === true) {
+            res.status(200);
+            res.set('Content-Type', 'text/x-ndjson; charset=utf-8');
+            res.set('Cache-Control', 'no-store');
+            res.set('X-Accel-Buffering', 'no');
+            res.flushHeaders?.();
+            const line = (obj) => { if (!res.writableEnded) res.write(`${JSON.stringify(obj)}\n`); };
+            try {
+              run = await real.run(uc, {
+                vertical, tool: gate.tool, traceparent, session, receipt: approvalReceipt ?? null, a2a: gate.a2a === true, pick,
+                onHop: (hop) => line({ type: 'hop', hop }),
+              });
+              return recordLive(id, uc, vertical, run, { set: () => {}, json: (payload) => { line({ type: 'done', ...payload }); res.end(); } });
+            } catch (e) {
+              if (e instanceof RealRefused) { line({ type: 'error', error: e.code === 'busy' ? 'live_busy' : e.code, detail: e.message }); return res.end(); }
+              // A non-refusal failure (a bug, a network collapse): the headers are already ndjson, so the error handler
+              // cannot answer JSON. End the stream with an error line instead — an open stream would leave the page's
+              // postJsonStream waiting forever and `running` stuck true, refusing every later run.
+              reportFailure('run-stream', e);
+              line({ type: 'error', error: 'internal_error', detail: 'The run failed unexpectedly; the server log says why.' });
+              return res.end();
+            }
+          }
           try { run = await real.run(uc, { vertical, tool: gate.tool, traceparent, session, receipt: approvalReceipt ?? null, a2a: gate.a2a === true, pick }); } catch (e) {
             if (e instanceof RealRefused) return res.status(e.code === 'busy' ? 429 : e.status).json({ error: e.code === 'busy' ? 'live_busy' : e.code, detail: e.message });
             throw e;

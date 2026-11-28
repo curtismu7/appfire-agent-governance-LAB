@@ -81,13 +81,49 @@ const switchMode = async (page, source) => {
   return r;
 };
 // The run bodies the page received, so a check can read the data (hop.source, run.mode, run.realGate) the page no longer shows.
-const watchRuns = (page) => {
-  const runs = [];
-  page.on('response', async (r) => { if (r.request().method() === 'POST' && /\/api\/run\//.test(r.url())) { try { runs.push((await r.json()).run || null); } catch { runs.push(null); } } });
-  return { runs, next: async (n) => { for (let i = 0; i < 100 && !runs.slice(n).some(Boolean); i++) await sleep(50); return runs.slice(n).filter(Boolean).pop() || null; } };
+// The run bodies a check reads, so a check can inspect the data (hop.source, run.mode, run.realGate) the page no longer shows.
+// The live-sequence run (owner 2026-11-28) answers a full Real run as text/x-ndjson, and the page's fetch reader drains that
+// body: Playwright's response.text() on the same stream can then hang. The watcher never reads run POST bodies. It tracks the
+// run count by watching the response HEADERS only (a POST to /api/run/ started), and a check's run body comes from
+// GET /api/run-last (the workspace's last run, whole, with its seq) once the page has signalled completion.
+// Polls lastRun() until the workspace's last run differs from prev (by traceId), or the budget is spent.
+const watchSettled = async (lastRun, prev, timeout = 120000) => {
+  const t0 = Date.now();
+  for (;;) {
+    if (Date.now() - t0 > timeout) return null;
+    const run = await lastRun();
+    if (run && (!prev || run.traceId !== prev.traceId)) return run;
+    await sleep(200);
+  }
+};
+
+const watchRuns = (page, base) => {
+  const posts = [];
+  page.on('response', (r) => { if (r.request().method() === 'POST' && /\/api\/run\//.test(r.url())) posts.push(Date.now()); });
+  const lastRun = async () => fetch(`${base}/api/run-last`, { headers: { 'x-workspace': 'w-eeeeeeeeeeeeeeee' } }).then((x) => x.json()).then((b) => b?.run ?? null).catch(() => null);
+  return {
+    posts,
+    get runs() { return posts; },
+    // The run at this instant: capture it BEFORE the click (a fast run finishes before next() is called).
+    last: () => lastRun(),
+    // Waits for the n-th run POST after `n` to have been made, then polls /api/run-last until the last run is a
+    // DIFFERENT one than `prev` (the pre-click snapshot, by traceId). A 401 run stores nothing; the caller's own
+    // sign-in handling makes the page go again, and this keeps polling until the budget is spent.
+    next: async (n, prev = null, { timeout = 120000 } = {}) => {
+      const t0 = Date.now();
+      while (posts.length <= n && Date.now() - t0 < timeout) await sleep(100);
+      if (posts.length <= n) return null;
+      return watchSettled(lastRun, prev, timeout - (Date.now() - t0));
+    },
+    // Polls /api/run-last until the last run differs from `prev` (or prev is null and ANY run exists).
+    settled: (prev = null, timeout = 120000) => watchSettled(lastRun, prev, timeout),
+  };
 };
 
 // The hop of a run that the tool (not the sign-in or the exchanges) answered, in the data.
+// The workspace's last run, whole (GET /api/run-last) — what the e2e's run-wait loops poll for.
+const lastRunOf = (watch) => watch.last();
+
 const toolHop = (run) => (run?.hops || []).find((h) => ['tool-dispatched', 'tool-held', 'tool-refused'].includes(h.kind) && h.source === 'real');
 
 // NO-MOCK-WORDS (owner 2026-11-16): everything a person can read or hear on a page, text, aria-label, title, placeholder, alt, an input's value and option
@@ -239,7 +275,7 @@ try {
   // Today's demo set (the lab opens on all use cases; the eight are one click away): every block below drives the whole catalog, so its pages are pinned to "All use cases" (the choice is read from localStorage `aag.set`).
   // The toggle block uses `rawContext`, which leaves the saved choice alone. Every block also pins the setup sidebar open (`aag.setup` = "0"): the lab opens it collapsed, and these blocks drive its picker.
   const rawContext = browser.newContext.bind(browser);
-  browser.newContext = async (o) => { const c = await rawContext(o); await c.addInitScript(() => { try { window.localStorage.setItem('aag.set', 'all'); window.localStorage.setItem('aag.setup', '0'); } catch { /* storage blocked */ } }); return c; };
+  browser.newContext = async (o) => { const c = await rawContext(o); await c.addInitScript(() => { try { window.localStorage.setItem('aag.set', 'all'); window.localStorage.setItem('aag.setup', '0'); window.sessionStorage.setItem('cal.workspace', 'w-eeeeeeeeeeeeeeee'); } catch { /* storage blocked */ } }); return c; };
   for (const [width, height, name] of [[1280, 900, 'desktop'], [375, 800, 'phone']]) {
     for (const scheme of ['light', 'dark']) {
       const tag = `${name}-${scheme}`;
@@ -566,7 +602,7 @@ try {
   {
     const tag = 'demo-set';
     const ctx = await rawContext({ viewport: { width: 1280, height: 900 } });
-    await ctx.addInitScript(() => { try { window.localStorage.setItem('aag.setup', '0'); } catch { /* storage blocked */ } });   // the sidebar opens collapsed: this block drives its picker
+    await ctx.addInitScript(() => { try { window.localStorage.setItem("aag.setup", "0"); window.sessionStorage.setItem("cal.workspace", "w-eeeeeeeeeeeeeeee"); } catch { /* storage blocked */ } });   // the sidebar opens collapsed: this block drives its picker
     const page = await ctx.newPage();
     const t = (id) => page.getByTestId(id);
     await page.goto(`${base}/`); await t('uc-UC1').waitFor(); // on All use cases the first track is open and the others are folded
@@ -715,6 +751,8 @@ try {
     for (const scheme of ['light', 'dark']) {
       const tag = `live-${name}-${scheme}`;
       fake.seen.length = 0; fake.state.behaviour = 'ok';
+      // The pinned workspace id is shared by the four viewports of this block: a Reset keeps each viewport's history at zero.
+      await fetch(`${liveBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: liveBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
       const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: scheme });
       const page = await ctx.newPage();
       const external = []; const errors = [];
@@ -722,7 +760,7 @@ try {
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
       const t = (id) => page.getByTestId(id);
-      const watch = watchRuns(page);
+      const watch = watchRuns(page, liveBase);
       const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
       const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       await page.goto(`${liveBase}/`);
@@ -733,8 +771,9 @@ try {
       check(toReal.status === 200 && toReal.body?.source === 'real' && (await t('banner').innerText()) === BANNER_LOCAL && (await t('banner').getAttribute('data-state')) === 'info', `${tag}: POST /api/mode real is allowed, the marker says live, and the banner is the same neutral line`);
       await t('search').fill('UC7'); await page.locator('[data-testid="uc-UC7"]').click(); await t('search').fill('');
       check(await t('live-persona-note').isVisible() && (await t('persona').count()) === 0 && (await t('lab-inputs').count()) === 0, `${tag}: the persona and the lab inputs are hidden in live and the note says why`);
+      const prev764 = await watch.last();
       await t('run').click(); await t('result').waitFor();
-      const liveRun = await watch.next(0);
+      const liveRun = await watch.next(0, prev764);
       check((await t('outcome').innerText()) === 'LIVE_OK' && (await t('live-note-tag').count()) === 0 && (await t('matches').count()) === 0, `${tag}: UC7 here is LIVE_OK, with no source chip and no catalog-match claim`);
       check((await page.getByTestId(/^row-\d+$/).count()) === 2 && (await t('hop-source').count()) === 0 && (await t('hop-sources').count()) === 0 && liveRun?.hops?.map((h) => h.source).join() === 'real,real', `${tag}: two hops, no source chip on the page, and both hops are source real in the data`);
       await t('evtab-tokens').click();
@@ -758,9 +797,9 @@ try {
       await t('nav-diagram').click(); await page.locator('.react-flow__node').first().waitFor();
       check((await overflow()) <= 0, `${tag}: the diagram page in live does not scroll sideways`);
       const toMock = await switchMode(page, 'mock');
-      const seenBefore = fake.seen.length; const runsBefore = watch.runs.length;
+      const seenBefore = fake.seen.length; const runsBefore = watch.posts.length; const prev790 = await watch.last();
       await t('nav-agent').click(); await pick('UC7'); await t('run').click();
-      const ownRun = await watch.next(runsBefore);
+      const ownRun = await watch.next(runsBefore, prev790);
       await page.waitForFunction(() => { const o = document.querySelector('[data-testid="outcome"]'); return o && !o.textContent.startsWith('LIVE_'); });
       check(toMock.status === 200 && ownRun?.mode === 'mock' && (await t('refusal').count()) === 0 && fake.seen.length === seenBefore, `${tag}: back on the lab's own steps without a restart, a run signs in with the demo persona and runs (outcome ${await t('outcome').innerText()}), no call to the fake`);
       if (await t('mp-deny').isVisible().catch(() => false)) { await t('mp-deny').click(); await t('mp-outcome').waitFor(); }
@@ -779,6 +818,8 @@ try {
     // A clean slate: an explicit Sign out also forgets the lab's PingOne session (owner 2026-11-16), so this case starts signed out whatever ran before.
     await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     fullGw.seen.length = 0; fullP1.seen.length = 0; fullGw.state.behaviour = 'ok';
+    // The pinned workspace id is shared by the four viewports of this block: a Reset keeps each viewport's history at zero.
+    await fetch(`${fullBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     const ctx = await browser.newContext({ viewport: { width, height }, colorScheme: scheme });
     const page = await ctx.newPage();
     const external = []; const errors = []; const navs = [];
@@ -787,7 +828,7 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, fullBase);
     const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     await page.goto(`${fullBase}/`);
     await t('uc-UC1').waitFor();
@@ -875,7 +916,9 @@ try {
     const authz = fullP1.seen.filter((x) => x.url.includes('/as/authorize'));
     check(authz.length >= 1 && authz.every((x) => new URL(x.url, 'http://x').searchParams.get('response_mode') === 'pi.flow' && new URL(x.url, 'http://x').searchParams.get('code_challenge_method') === 'S256'), `${tag}: the sign-in was pi.flow with PKCE S256`);
     check(navs.length === 1 && navs[0].startsWith(fullBase), `${tag}: the page never navigated (no redirect login): ${navs.join(' | ')}`);
-    const realRun = await watch.next(0);
+    // The run was clicked (and the first POST answered 401) before the sign-in: the block Reset cleared the workspace,
+    // so the first stored run IS the UC1 run — no pre-click snapshot is possible or needed here.
+    const realRun = await watch.next(0, null);
     const srcs = (realRun?.hops || []).map((h) => h.source);
     check(srcs.length === 9 && srcs.every((x) => x === 'real') && (await t('hop-source').count()) === 0 && (await t('hop-sources').count()) === 0, `${tag}: nine hops (two token exchanges), every one source real in the data, and no source chip or "where each hop ran" list on the page (${srcs.join(',')})`);
     const seqText = await t('sequence-view').innerText();
@@ -917,19 +960,19 @@ try {
     check((await t('turn-answer-text').last().innerText()).includes('answered HTTP 503 and did not complete the call'), `${tag}: a 503 is an honest refusal saying the service did not complete the call, with no advice to leave Real`);
     // A use case the gateway cannot serve (UC2, agent-to-agent) runs whole on the lab's own steps inside a Real page: the gateway is not called, the page shows it like any
     // other run (no label, no notice), and the data says so (run.realGate, hop.source).
-    const gwFallback = fullGw.seen.length; const rn = watch.runs.length;
+    const gwFallback = fullGw.seen.length; const rn = watch.posts.length; const prev952 = await watch.last();
     await t('search').fill('UC2'); await page.locator('[data-testid="uc-UC2"]').click(); await t('search').fill('');
     await t('run').click();
-    const fbRun = await watch.next(rn);
+    const fbRun = await watch.next(rn, prev952);
     await t('result').waitFor({ timeout: 20000 });
     const fsrc = (fbRun?.hops || []).map((h) => h.source);
     check(fullGw.seen.length === gwFallback && fbRun?.realGate?.real === false && fbRun?.mode === 'mock' && fsrc.length > 0 && fsrc.every((x) => x === 'mock' || x === 'not-run') && (await t('mock-in-real').count()) === 0 && (await t('hop-source').count()) === 0, `${tag}: a use case the gateway cannot serve runs whole on the lab's own steps in a Real page: no gateway call, realGate.real false, every hop source mock or not-run in the data, and nothing on the page says so (${new Set(fsrc).size} source kinds)`);
     await walk(page, `${tag}: a whole-run fallback shown like any other run`);
-    const seen = fullGw.seen.length; const rn2 = watch.runs.length;
+    const seen = fullGw.seen.length; const rn2 = watch.posts.length; const prev961 = await watch.last();
     const toOwn = await switchMode(page, 'mock');
     await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
     await t('run').click();
-    const ownRun = await watch.next(rn2);
+    const ownRun = await watch.next(rn2, prev961);
     await page.waitForFunction(() => { const o = document.querySelector('[data-testid="outcome"]'); return o && !o.textContent.startsWith('REAL_'); });
     const msrc = (ownRun?.hops || []).map((h) => h.source);
     check(toOwn.status === 200 && ownRun?.mode === 'mock' && fullGw.seen.length === seen && msrc.length > 0 && msrc.every((x) => x === 'mock' || x === 'not-run'), `${tag}: switched with POST /api/mode, no restart: the run is on the lab's own steps, no gateway call, every hop source mock or not-run`);
@@ -946,6 +989,8 @@ try {
     await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     fullGw.seen.length = 0; fullGw.state.behaviour = 'ok'; fullP1.state.full.exchange = 'ok'; fullP1.state.resources.gateway.act = 'passthrough';
     const setGroups = (g) => { fullP1.state.tools = fullP1.state.tools || {}; fullP1.state.tools.groups = g; };
+    // The pinned workspace id is shared across blocks: a Reset keeps the history checks exact.
+    await fetch(`${fullBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     setGroups([]);
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
@@ -955,17 +1000,21 @@ try {
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
     page.on('response', async (r) => { if (r.status() === 400) console.log(`INFO  ${tag}: HTTP 400 from ${r.request().method()} ${new URL(r.url()).pathname}: ${(await r.text().catch(() => '')).slice(0, 200)} request body ${String(r.request().postData() || '').slice(0, 300)}`); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, fullBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     // Run the picked use case; when Real asks for the sign-in, sign in (the password is the fake's); return the run the page received.
     const runIt = async () => {
-      const n = watch.runs.length;
+      const prev = await watch.last();
       await t('run').click();
-      for (let i = 0; i < 300 && !watch.runs.slice(n).some(Boolean); i++) {
+      // A signed-out Real run's first POST is a 401 (no run stored): keep the loop alive, handling the dialog, until a
+      // NEW run (a different traceId) is in the workspace — the same shape the old body-reading watcher waited for.
+      for (let i = 0; i < 900; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        const r = await lastRunOf(watch);
+        if (r && (!prev || r.traceId !== prev.traceId)) return r;
         await sleep(100);
       }
-      const run = await watch.next(n);
+      const run = await watch.settled(prev, { timeout: 5000 });
       await sleep(400);
       return run;
     };
@@ -1022,15 +1071,15 @@ try {
     await t('mp-deny').waitFor({ timeout: 10000 }); await t('mp-deny').click(); await t('mp-outcome').waitFor();
 
     // UC8: held for a person, approved on the phone, the retry carries the receipt and completes (the lab's own approval service)
-    const before = watch.runs.length;
+    const before = watch.posts.length; const prev1061 = await watch.last();
     await pick('UC8');
     await t('run').click();
     await t('mp-approve').waitFor({ timeout: 20000 });
-    const held = await watch.next(before);
+    const held = await watch.next(before, prev1061);
     check(held?.outcome === 'REAL_HOLD' && typeof held.challenge === 'string' && held.provider === 'local' && held.reply?.approval?.head === 'Held for approval', `${tag}: UC8 (300 issues) is held for a person: REAL_HOLD with a challenge, provider local`);
     check(approvalStarts.length >= 1 && approvalStarts[approvalStarts.length - 1].provider === 'local' && approvalStarts[approvalStarts.length - 1].kind === 'real', `${tag}: the page told the server which service minted the challenge (provider local)`);
     await t('mp-approve').click();
-    const retried = await watch.next(before + 1); // the page retries the held use case by itself once the phone approves
+    const retried = await watch.next(before + 1, held); // the page retries the held use case by itself once the phone approves
     check(retried?.outcome === 'REAL_PERMIT' && retried.provider === 'local' && toolHop(retried)?.answeredBy === 'tool server (local)', `${tag}: after the phone approves, the retry with the receipt completes (REAL_PERMIT) through the lab's own approval service (${retried?.outcome}: ${String(retried?.reply?.text || retried?.narration || '').slice(0, 160)})`);
     await walk(page, `${tag}: after the approval`);
 
@@ -1082,6 +1131,8 @@ try {
     await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     fullGw.seen.length = 0; fullGw.state.behaviour = 'ok'; fullP1.state.full.exchange = 'ok'; fullP1.state.resources.gateway.act = 'passthrough';
     const setGroups = (g) => { fullP1.state.tools = fullP1.state.tools || {}; fullP1.state.tools.groups = g; };
+    // The pinned workspace id is shared across blocks: a Reset keeps the history checks exact.
+    await fetch(`${fullBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     setGroups([]);
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
@@ -1090,16 +1141,20 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, fullBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
-      const n = watch.runs.length;
+      const prev = await watch.last();
       await t('run').click();
-      for (let i = 0; i < 300 && !watch.runs.slice(n).some(Boolean); i++) {
+      // A signed-out Real run's first POST is a 401 (no run stored): keep the loop alive, handling the dialog, until a
+      // NEW run (a different traceId) is in the workspace — the same shape the old body-reading watcher waited for.
+      for (let i = 0; i < 900; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        const r = await lastRunOf(watch);
+        if (r && (!prev || r.traceId !== prev.traceId)) return r;
         await sleep(100);
       }
-      const run = await watch.next(n);
+      const run = await watch.settled(prev, { timeout: 5000 });
       await sleep(400);
       return run;
     };
@@ -1192,18 +1247,18 @@ try {
     await page.setViewportSize({ width: 1280, height: 900 }); await sleep(300);
 
     // UC6: Paris, $2,400: held for a person (428), approved on the phone, retried with the receipt and booked AS ASKED (an approval beats a narrowing)
-    const before = watch.runs.length;
+    const before = watch.posts.length; const prev1234 = await watch.last();
     await pick('UC6');
     await t('run').click();
     await t('mp-approve').waitFor({ timeout: 20000 });
-    const held = await watch.next(before);
+    const held = await watch.next(before, prev1234);
     check(held?.outcome === 'REAL_HOLD' && typeof held.challenge === 'string' && held.provider === 'local' && held.booking?.booked === null && held.booking.fare === 2400 && held.reply?.approval?.head === 'Held for approval', `${tag}: the Paris booking is held for a person (REAL_HOLD, a challenge, booking.booked null, the fare the rule judged is 2400)`);
     check((await t('decision-word').innerText()) === 'ESCALATED' && (await t('risk-4').getAttribute('aria-current')) === 'step' && (await textOf('decision-seat')).includes('business asked, not booked yet (held)'), `${tag}: the card says ESCALATED on the fourth rung, business asked, not booked yet`);
     check((await t('mock-phone').innerText()).includes('2,400'), `${tag}: the phone opens showing the fare the rule judged ($2,400)`);
     check(approvalStarts.length >= 1 && approvalStarts[approvalStarts.length - 1].provider === 'local' && approvalStarts[approvalStarts.length - 1].kind === 'real', `${tag}: the page told the server which service minted the challenge (provider local)`);
     check(!JSON.stringify({ hops: held.hops, tokens: held.tokens, gatewayTrace: held.gatewayTrace, reply: held.reply }).includes(held.challenge), `${tag}: the challenge id is in no hop, no token and not in the reply (it is a field of the run only)`);
     await t('mp-approve').click();
-    const retried = await watch.next(before + 1);
+    const retried = await watch.next(before + 1, held);
     check(retried?.outcome === 'REAL_PERMIT' && retried.booking?.booked === 'business' && !retried.constrained && retried.provider === 'local', `${tag}: after the phone approves, the retry books business as asked: REAL_PERMIT, no narrowing (${retried?.outcome} ${retried?.booking?.booked})`);
     await sleep(500);
     // The retry is not a new chat turn (the page retries the held use case by itself); the evidence column shows its run and its data carries the reply.
@@ -1242,7 +1297,7 @@ try {
       check(run?.realGate?.real === false && run.mode === 'mock' && (run.hops || []).every((h) => h.provider === undefined) && /human approval|lab only/.test(run.realGate?.reason || ''), `${tag}: ${id} stays on the lab's own steps and says why (${run?.realGate?.reason})`);
       if (await t('mp-deny').isVisible().catch(() => false)) { await t('mp-deny').click(); await t('mp-outcome').waitFor().catch(() => {}); }
     }
-    const via = await page.evaluate(async (b) => { const r = await fetch(`${b}/api/run/UC48`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: JSON.stringify({ vertical: 'airline', persona: 'standard' }) }); return { status: r.status, run: (await r.json()).run || null }; }, fullBase);
+    const via = await page.evaluate(async (b) => { const r = await fetch(`${b}/api/run/UC48`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: JSON.stringify({ vertical: 'airline', persona: 'standard' }) }); const ct = r.headers.get('content-type') || ''; const text = await r.text(); if (ct.includes('text/x-ndjson')) { for (const line of text.split('\n').reverse()) { if (!line.trim()) continue; try { const evt = JSON.parse(line); if (evt.type === 'done') return { status: r.status, run: evt.run || null }; } catch { /* not the done line */ } } return { status: r.status, run: null }; } return { status: r.status, run: JSON.parse(text).run || null }; }, fullBase);
     check(via.status === 200 && via.run?.realGate?.real === false && via.run.mode === 'mock', `${tag}: the over-the-limit walkthrough booking stays on the lab's own steps (data: realGate.real false)`);
 
     // No SE gateway call, no foreign origin, no error, and software and banking Real are checked by their own blocks
@@ -1255,7 +1310,8 @@ try {
   // ---- Real with only the lab's own provider: no SE gateway name at all, AAG_PROVIDER=local (the lab runs standalone on another machine) -----------------------------------
   {
     const tag = 'local-only';
-    await fetch(`${soloBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: soloBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
+    // The pinned workspace id is shared across blocks: a Reset keeps the run counts exact.
+    await fetch(`${soloBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: soloBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
     const external = []; const errors = [];
@@ -1263,16 +1319,20 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, soloBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
-      const n = watch.runs.length;
+      const prev = await watch.last();
       await t('run').click();
-      for (let i = 0; i < 300 && !watch.runs.slice(n).some(Boolean); i++) {
+      // A signed-out Real run's first POST is a 401 (no run stored): keep the loop alive, handling the dialog, until a
+      // NEW run (a different traceId) is in the workspace — the same shape the old body-reading watcher waited for.
+      for (let i = 0; i < 900; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        const r = await lastRunOf(watch);
+        if (r && (!prev || r.traceId !== prev.traceId)) return r;
         await sleep(100);
       }
-      const run = await watch.next(n);
+      const run = await watch.settled(prev, { timeout: 5000 });
       await sleep(400);
       return run;
     };
@@ -1302,6 +1362,7 @@ try {
     const az = authP1.authorize;
     az.reset(); az.setMode('ok');
     await fetch(`${authBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: authBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
+    await fetch(`${authBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: authBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await ctx.newPage();
     const external = []; const errors = []; const approvalStarts = [];
@@ -1309,16 +1370,18 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501|503)/.test(m.text())) errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, authBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     const runIt = async () => {
-      const n = watch.runs.length;
+      const prev = await watch.last();
       await t('run').click();
-      for (let i = 0; i < 400 && !watch.runs.slice(n).some(Boolean); i++) {
+      for (let i = 0; i < 400; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) { await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {}); }
+        const r = await lastRunOf(watch);
+        if (r && (!prev || r.traceId !== prev.traceId)) return r;
         await sleep(100);
       }
-      const run = await watch.next(n);
+      const run = await watch.settled(prev, { timeout: 5000 });
       await sleep(400);
       return run;
     };
@@ -1371,14 +1434,14 @@ try {
     await cardWords(`${tag}: the Toronto booking decided by PingOne Authorize`);
 
     // Paris: $2,400: Authorize says a person must approve (428), the phone approves on the lab's own approval service, the retry carries the receipt and Authorize answers approved
-    const start = watch.runs.length;
+    const start = watch.posts.length; const prev1417 = await watch.last();
     await pick('UC6');
     await t('run').click();
     await t('mp-approve').waitFor({ timeout: 30000 });
-    const held = await watch.next(start);
+    const held = await watch.next(start, prev1417);
     check(held?.outcome === 'REAL_HOLD' && held.decidedBy === 'pingone-authorize' && decisionHop(held)?.authorize?.code === 'airline-approval-required' && (await t('decision-word').innerText()) === 'ESCALATED' && (await textOf('decision-policy')).includes(LINE('airline-approval-required', 'hold for a person to approve')), `${tag}: the Paris booking is held for a person because PingOne Authorize answered airline-approval-required (the approval itself runs on the lab's own approval service)`);
     await t('mp-approve').click();
-    const retried = await watch.next(start + 1);
+    const retried = await watch.next(start + 1, held);
     await sleep(500);
     const parisCalls = az.seen.filter((x) => x.parameters.AirFare === '2400').map((x) => x.parameters.AirApproval);
     check(retried?.outcome === 'REAL_PERMIT' && retried.decidedBy === 'pingone-authorize' && retried.booking?.booked === 'business' && !retried.constrained && decisionHop(retried)?.authorize?.code === 'airline-approved-as-asked', `${tag}: after the phone approves, the retry books business as asked, decided by PingOne Authorize (airline-approved-as-asked)`);
@@ -1425,26 +1488,30 @@ try {
     await fetch(`${fullBase}/api/signout`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     fullGw.seen.length = 0; fullGw.state.behaviour = 'ok';
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    // The pinned workspace id is shared across blocks: a Reset keeps the history checks exact.
+    await fetch(`${fullBase}/api/reset`, { method: 'POST', headers: { 'content-type': 'application/json', origin: fullBase, 'x-workspace': 'w-eeeeeeeeeeeeeeee' }, body: '{}' });
     const page = await ctx.newPage();
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/status of (401|403|409|501)/.test(m.text())) errors.push(m.text()); });
     const t = (id) => page.getByTestId(id);
-    const watch = watchRuns(page);
+    const watch = watchRuns(page, fullBase);
     const pick = async (id) => { await t('search').fill(id); await page.locator(`[data-testid="uc-${id}"]`).click(); await t('search').fill(''); };
     // Run the picked use case; when Real asks for the sign-in, sign in (the dialog is walked once); return the run the page received.
     let dialogWalked = false;
     const runIt = async () => {
-      const n = watch.runs.length;
+      const prev = await watch.last();
       await t('run').click();
-      for (let i = 0; i < 200 && !watch.runs.slice(n).some(Boolean); i++) {
+      for (let i = 0; i < 200; i++) {
         if (await t('signin-dialog').isVisible().catch(() => false)) {
           if (!dialogWalked) { dialogWalked = true; await walk(page, `${tag}: the sign-in dialog`); }
           await t('signin-password').fill(DEMO_PASSWORD); await t('signin-submit').click(); await t('signin-dialog').waitFor({ state: 'detached', timeout: 20000 }).catch(() => {});
         }
+        const r = await lastRunOf(watch);
+        if (r && (!prev || r.traceId !== prev.traceId)) return r;
         await sleep(100);
       }
-      const run = await watch.next(n);
+      const run = await watch.settled(prev, { timeout: 5000 });
       await sleep(400);
       return run;
     };
@@ -1581,7 +1648,7 @@ try {
       page.on('pageerror', (e) => errors.push(e.message));
       page.on('console', (m) => { if (m.type() === 'error' && !/status of 409/.test(m.text())) errors.push(m.text()); });
       const t = (id) => page.getByTestId(id);
-      const watch = watchRuns(page);
+      const watch = watchRuns(page, hostedBase);
       const overflow = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       await page.goto(`${hostedBase}/`);
       await t('uc-UC1').waitFor();
@@ -1590,8 +1657,9 @@ try {
       check((await t('mode-select').count()) === 0 && (await t('real-hosted-note').count()) === 0 && (await t('mode-real').count()) === 1, `${tag}: no Mock | Real control and no hosted Real note; only the rule-19 marker`);
       watching = true;
       await t('search').fill('UC1'); await page.locator('[data-testid="uc-UC1"]').click(); await t('search').fill('');
+      const prev1636 = await watch.last();
       await t('run').click(); await t('result').waitFor();
-      const hostedRun = await watch.next(0);
+      const hostedRun = await watch.next(0, prev1636);
       check((await t('outcome').innerText()) === 'PERMIT' && hostedRun?.mode === 'mock' && modeCalls.length === 0, `${tag}: a use case runs on the hosted copy (PERMIT, no /api/mode write by the page: ${modeCalls.join(' | ')})`);
       await walk(page, `${tag}: the hosted page after a run`);
       if (tag === 'hosted-desktop-light') {

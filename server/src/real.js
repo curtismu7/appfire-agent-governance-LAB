@@ -584,7 +584,11 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
 
   // One Real run of a use case the gate let through. session: the workspace's sign-in. Never throws for a refusal by PingOne or the gateway (those
   // are hops with a verdict and a mapped outcome); throws RealRefused('busy') when two Real calls are in flight.
-  async function run(uc, { vertical, tool, traceparent, session, receipt = null, a2a = false, pick = null }) {
+  // onHop (owner, 2026-11-28): an optional callback fired with every hop the moment it is finished, so the page can draw the
+  // sequence live while a Real run is still working. It receives the ENRICHED hop (the same shape the finished run carries:
+  // shortTitle folded into title, toolsSpec merged), never the raw one. A throwing callback is swallowed: streaming must not
+  // change what the run does.
+  async function run(uc, { vertical, tool, traceparent, session, receipt = null, a2a = false, pick = null, onHop = null }) {
     let challenge = null; // the provider's HITL challenge id when the run holds for approval (never leaves here except via the return)
     if (!configured()) throw new RealRefused('not_configured', config.problem, 503);
     // pick = null is the SE Agent Gateway exactly as before (the settings' own trio); app.js passes the Pick provider.js chose once for this run.
@@ -600,9 +604,12 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
       const tp = () => formatTraceparent(trace.traceId, trace.span());
       const hops = []; const tokens = [];
       const gw = []; // "What Privilege did" (rule 25): one record per call the lab's MCP client made to the gateway, returned as `gatewayTrace`
-      const push = (h) => hops.push({ n: hops.length + 1, mock: false, live: false, source: 'real', ...h });
+      // The enrich step of done(), shared so a streamed hop is byte-identical to the same hop in the finished run.
+      const enrichOne = (h) => { const e0 = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'raw' }); const e = e0.verdict === 'error' ? { ...e0, fact: 'no decision' } : e0; const t0 = h.shortTitle ? { ...e, title: h.shortTitle } : e; const sp = L.tools ? toolsSpecFor(h.kind, L.lab, airline, h.decidedBy === 'pingone-authorize' || h.decision?.outcome === 'NO DECISION') : null; const t = sp && t0.spec && !t0.spec.none ? { ...t0, spec: { ...t0.spec, ...sp } } : t0; return h.factOverride && e.verdict === 'ok' ? { ...t, fact: h.factOverride } : t; };
+      const emit = (h) => { try { onHop?.(enrichOne(h)); } catch { /* streaming must not change what the run does */ } };
+      const push = (h) => { hops.push({ n: hops.length + 1, mock: false, live: false, source: 'real', ...h }); emit(hops[hops.length - 1]); };
       // shortTitle: the name "Where each hop ran" shows (the two exchanges share one catalog kind, so the catalog title cannot tell them apart).
-      const notRun = (kind, label, from, to, why, shortTitle, extra) => hops.push({ n: hops.length + 1, mock: false, live: false, source: 'not-run', kind, label: `${label} [NOT RUN]`, from, to, verdict: 'skip', note: why, request: {}, response: {}, ...(shortTitle ? { shortTitle } : {}), ...(extra ?? {}) });
+      const notRun = (kind, label, from, to, why, shortTitle, extra) => { hops.push({ n: hops.length + 1, mock: false, live: false, source: 'not-run', kind, label: `${label} [NOT RUN]`, from, to, verdict: 'skip', note: why, request: {}, response: {}, ...(shortTitle ? { shortTitle } : {}), ...(extra ?? {}) }); emit(hops[hops.length - 1]); };
       // A hop the provider would have answered (named in the data: provider, answeredBy) that did not run. key: check | decide | tool | api | reply.
       // It carries NO provider or answeredBy: nothing answered it, so no provider is named on it (hop.capability only says which path the run was on).
       const legNotRun = (key, why) => { const r = L.rows[key]; notRun(r.kind, r.label, r.from, r.to, why, r.title, L.tools ? { capability: 'tools' } : undefined); };
@@ -744,7 +751,7 @@ export function createReal({ config = { problem: 'not configured' }, missing = F
         expectedOutcome: uc.expectedOutcome, real: { level: 'full', tool, provider: P.provider, ...(A2A ? { a2a: true } : {}) }, labSimulated: false, computed: false, persona: null, outcome, matchesExpected: null, reply,
         // Who answered is DATA (hop.provider, hop.answeredBy, run.provider), not a chip: the page never names it by itself (owner 2026-11-16).
         provider: P.provider, providerWhy: P.why,
-        hops: hops.map(({ shortTitle, factOverride, ...h }) => { const e0 = enrichHop(h, HOP_CATALOG, h.decision ? { decision: h.decision } : undefined, { tokens: 'raw' }); const e = e0.verdict === 'error' ? { ...e0, fact: 'no decision' } : e0; const t0 = shortTitle ? { ...e, title: shortTitle } : e; const sp = L.tools ? toolsSpecFor(h.kind, L.lab, airline, h.decidedBy === 'pingone-authorize' || h.decision?.outcome === 'NO DECISION') : null; const t = sp && t0.spec && !t0.spec.none ? { ...t0, spec: { ...t0.spec, ...sp } } : t0; return factOverride && e.verdict === 'ok' ? { ...t, fact: factOverride } : t; }),
+        hops: hops.map((h) => enrichOne(h)),
         // A tool server's refusal is the lab's own rule, not a gateway's: the vendored "What Privilege did" panel would attribute it to one, so a tools run builds none.
         gatewayTrace: L.tools ? [] : gw, tokens, traceId: trace.traceId, traceparent: formatTraceparent(trace.traceId, rootSpan),
         narration: reply?.text ?? '',

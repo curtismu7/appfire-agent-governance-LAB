@@ -61,7 +61,8 @@ export default function FullPageEvidence({ page, onPage, onBack, catalog, select
       <section className="fullpage__main" aria-label={`${title}, full page`}>
         <header className="fullpage__head">
           <h2 className="fullpage__title">{run ? `${run.useCase?.title}` : title}</h2>
-          {run && <Tag state={outcomeState(run.outcome)} testId="full-outcome">{run.outcome}</Tag>}
+          {/* Live sequence (owner 2026-11-28): while the run streams in, the outcome tag waits for the finished run. */}
+          {run && !running && <Tag state={outcomeState(run.outcome)} testId="full-outcome">{run.outcome}</Tag>}
           {running && <Tag state="info">running</Tag>}
           <span className="spacer" />
           <div className="seg" role="group" aria-label="Diagram">
@@ -71,6 +72,7 @@ export default function FullPageEvidence({ page, onPage, onBack, catalog, select
         </header>
         {!run && <p className="muted" data-testid="full-empty">Nothing has run yet. Pick a use case on the left: it runs and draws here.</p>}
         {run && (page === "reel" ? <MovieReel hops={hops} selected={selHop} onSelect={onSelect} /> : <SequenceView hops={hops} selected={selHop} onSelect={onSelect} />)}
+        {running && run && hops.length > 0 && <p className="muted" data-testid="full-live-note">Drawing the run live: {hops.length} hop{hops.length === 1 ? "" : "s"} so far.</p>}
         {run && selHop != null && <StepDetail hops={hops} selected={selHop} onSelect={onSelect} onClose={() => onSelect(null)} />}
       </section>
     </div>

@@ -133,7 +133,7 @@ describe("What to type and the Scripted brain", () => {
     const turn = await screen.findByTestId("turn");
     await within(turn).findByTestId("turn-answer");
     expect(posts("UC1")).toHaveLength(1);
-    expect(posts("UC1")[0].body).toEqual({ vertical: "airline", persona: "standard", said: "show my balance", brain: "scripted" });
+    expect(posts("UC1")[0].body).toEqual({ vertical: "airline", persona: "standard", said: "show my balance", brain: "scripted", stream: true });
     expect(within(turn).getByTestId("turn-said").textContent).toBe("show my balance");
     onlyReply(turn);
     expect(within(turn).getByTestId("turn-who").textContent).toBe("Agent");
@@ -479,7 +479,7 @@ describe("the llama.cpp brain (Step 2)", () => {
     await typeAndSend(u, "how much money do I have");
     await waitFor(() => expect(posts("UC1")).toHaveLength(1));
     expect(picks()[0].body).toEqual({ vertical: "airline", text: "how much money do I have" });
-    expect(posts("UC1")[0].body).toEqual({ vertical: "airline", persona: "standard", said: "how much money do I have", brain: "llama" });
+    expect(posts("UC1")[0].body).toEqual({ vertical: "airline", persona: "standard", said: "how much money do I have", brain: "llama", stream: true });
     await screen.findByTestId("turn-answer");
     onlyReply(screen.getByTestId("turn"));
     expect(screen.getByTestId("evidence-why").textContent).toMatch(/llama\.cpp picked “Delegated access \(consent only\)” from this vertical's list/);

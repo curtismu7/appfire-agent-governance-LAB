@@ -39,12 +39,12 @@ export function createWorkspaces({ max = 500, ttlMs = 60 * 60 * 1000, now = Date
       return result;
     },
     // Read-only look: the state if the workspace exists, else a fresh default that is not stored.
-    peek(id) { sweep(); const v = map.get(id); return v ? { mode: v.mode, seq: v.seq, runs: v.runs } : { mode: defaultMode, seq: 0, runs: [] }; },
+    peek(id) { sweep(); const v = map.get(id); return v ? { mode: v.mode, seq: v.seq, runs: v.runs, lastRun: v.lastRun ?? null } : { mode: defaultMode, seq: 0, runs: [], lastRun: null }; },
     // Clears this workspace's state in place, after any write already queued for it. A workspace that does not exist is left alone (nothing is created).
     async reset(id) {
       const v = map.get(id);
       if (!v) return;
-      await this.write(id, (w) => { w.mode = defaultMode; w.seq = 0; w.runs = []; });
+      await this.write(id, (w) => { w.mode = defaultMode; w.seq = 0; w.runs = []; delete w.lastRun; });
     },
     size() { return map.size; },
   };

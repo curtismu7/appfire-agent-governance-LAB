@@ -246,8 +246,10 @@ export function mockApi(state = {}) {
     if (path === "/api/runs") return json(200, { ...RUNS, count: s.runs.length, runs: s.runs });
     if (path === "/api/reset") { s.runs = []; s.mode = opening; s.signedIn = false; return json(200, { reset: "ok", workspace: "w-test" }); }
     if (path.startsWith("/api/run/")) {
-      if (s.runAnswer) return s.runAnswer(path.slice(9), JSON.parse(opts.body));
-      const id = decodeURIComponent(path.slice(9));
+      // postJsonStream (owner 2026-11-28): the page asks for a stream; the fixture's runAnswer stands in for the whole
+      // answer either way. A rejected promise still simulates a dead server; a Response with a non-ndjson content-type
+      // (or any plain object) is read as one JSON document, exactly as the page's stream reader does.
+      if (s.runAnswer) return s.runAnswer(path.slice(9), JSON.parse(opts.body));      const id = decodeURIComponent(path.slice(9));
       if (JSON.parse(opts.body).vertical === "government") return json(501, { error: "vertical_stub", detail: "this vertical is a data stub: it has a name and no pack yet" });
       if (s.mode === "live" && s.full) {
         if (s.realAnswer) return json(200, s.realAnswer(id));
